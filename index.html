@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PeopleDesk HR — Management Dashboard</title>
+<title>PeopleDesk HR — Management Portal</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -19,26 +19,33 @@
   --radius:8px;--radius-lg:12px;
 }
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg3);color:var(--text);min-height:100vh;font-size:14px}
+
+/* ── LOGIN ── */
 #login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#0F6E56 0%,#1D9E75 50%,#378ADD 100%)}
-.login-card{background:#fff;border-radius:16px;padding:36px 32px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.15)}
+.login-card{background:#fff;border-radius:16px;padding:36px 32px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.18)}
 .login-logo{display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:18px;font-weight:600}
-.login-sub{font-size:13px;color:var(--text3);margin-bottom:22px}
-.lf{margin-bottom:13px}.lf label{display:block;font-size:12px;font-weight:500;color:var(--text2);margin-bottom:4px}
-.lf input,.lf select{width:100%;padding:9px 12px;border:1px solid var(--border2);border-radius:var(--radius);font-size:13px;color:var(--text);outline:none;transition:border .15s}
-.lf input:focus,.lf select:focus{border-color:var(--green)}
-.login-btn{width:100%;padding:10px;background:var(--green);color:#fff;border:none;border-radius:var(--radius);font-size:14px;font-weight:500;cursor:pointer;margin-top:6px}
+.login-sub{font-size:13px;color:var(--text3);margin-bottom:24px}
+.lf{margin-bottom:14px}.lf label{display:block;font-size:12px;font-weight:500;color:var(--text2);margin-bottom:5px}
+.lf input{width:100%;padding:9px 12px;border:1px solid var(--border2);border-radius:var(--radius);font-size:13px;color:var(--text);outline:none;transition:border .15s}
+.lf input:focus{border-color:var(--green)}
+.login-btn{width:100%;padding:10px;background:var(--green);color:#fff;border:none;border-radius:var(--radius);font-size:14px;font-weight:500;cursor:pointer;margin-top:6px;transition:background .15s}
 .login-btn:hover{background:var(--green-dark)}
-.login-demo{font-size:11.5px;color:var(--text3);margin-top:14px;text-align:center;line-height:1.7}
-.login-err{font-size:12px;color:var(--red);margin-top:6px;display:none}
+.login-err{font-size:12px;color:var(--red);margin-top:8px;display:none;padding:8px 10px;background:var(--red-light);border-radius:var(--radius)}
+.setup-notice{font-size:12px;color:var(--blue-deep);margin-top:12px;padding:10px 12px;background:var(--blue-light);border-radius:var(--radius);line-height:1.5}
+
+/* ── APP ── */
 #app{display:none;min-height:100vh;flex-direction:column}
 .topnav{background:#fff;border-bottom:1px solid var(--border);padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
-.nav-logo{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.nav-logo{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
 .nav-tabs{display:flex;gap:2px;margin-left:16px;flex-wrap:wrap}
 .nav-tab{padding:6px 12px;border-radius:var(--radius);font-size:13px;color:var(--text2);cursor:pointer;border:none;background:transparent;font-family:inherit;transition:all .12s}
 .nav-tab:hover{background:var(--bg2);color:var(--text)}.nav-tab.active{background:var(--bg3);color:var(--text);font-weight:500}
 .topnav-right{display:flex;align-items:center;gap:8px}
 .role-badge{padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:500}
-.role-admin{background:var(--purple-light);color:var(--purple-deep)}.role-hr{background:var(--blue-light);color:var(--blue-deep)}.role-manager{background:var(--green-light);color:var(--green-deep)}
+.role-admin{background:var(--purple-light);color:var(--purple-deep)}
+.role-hr{background:var(--blue-light);color:var(--blue-deep)}
+.role-manager{background:var(--green-light);color:var(--green-deep)}
+.role-viewer{background:var(--gray-light);color:var(--gray-deep)}
 .user-pill{font-size:13px;color:var(--text2);padding:4px 10px;background:var(--bg2);border-radius:20px;white-space:nowrap}
 .logout-btn{padding:5px 12px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;font-size:12.5px;cursor:pointer;color:var(--text2);font-family:inherit}
 .logout-btn:hover{background:var(--bg2)}
@@ -54,38 +61,52 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .notif-item{padding:9px 14px;border-bottom:1px solid var(--border);font-size:12.5px;line-height:1.5}
 .notif-item .ni-t{font-size:11px;color:var(--text3);margin-top:2px}
 .notif-empty{padding:20px;text-align:center;color:var(--text3);font-size:13px}
+
+/* ── LAYOUT ── */
 .main-content{padding:20px 24px;max-width:1240px;margin:0 auto;width:100%}
 .page{display:none}.page.active{display:block}
 .ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:10px;flex-wrap:wrap}
 .ph-title{font-size:18px;font-weight:600}
 .ph-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ── BUTTONS ── */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--radius);border:1px solid var(--border2);background:#fff;font-size:13px;cursor:pointer;color:var(--text);font-family:inherit;transition:all .12s;white-space:nowrap}
 .btn:hover{background:var(--bg2)}
 .btn-primary{background:var(--green);color:#fff;border-color:var(--green)}.btn-primary:hover{background:var(--green-dark)}
 .btn-blue{background:var(--blue);color:#fff;border-color:var(--blue)}.btn-blue:hover{background:#185FA5}
 .btn-danger{background:var(--red);color:#fff;border-color:var(--red)}.btn-danger:hover{background:var(--red-deep)}
+.btn-amber{background:var(--amber);color:#fff;border-color:var(--amber)}.btn-amber:hover{background:var(--amber-deep)}
 .btn-sm{padding:4px 10px;font-size:12px}.btn-xs{padding:3px 8px;font-size:11.5px}
+
+/* ── METRICS ── */
 .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
 .mc{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px}
 .mc-label{font-size:12px;color:var(--text2);margin-bottom:8px}
 .mc-value{font-size:26px;font-weight:600;line-height:1}
 .mc-delta{font-size:12px;margin-top:6px;color:var(--text3)}
 .delta-up{color:var(--green)}.delta-down{color:var(--red)}
+
+/* ── CARDS ── */
 .card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:14px}
 .ch{padding:13px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
 .ct{font-size:13.5px;font-weight:600}
 .cb{padding:16px 18px}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+
+/* ── TABLE ── */
 table{width:100%;border-collapse:collapse;font-size:13px}
 thead th{text-align:left;padding:10px 14px;font-size:12px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);background:var(--bg2)}
 tbody td{padding:11px 14px;border-bottom:1px solid var(--border)}
 tbody tr:last-child td{border-bottom:none}
-tbody tr:hover td{background:var(--bg2);cursor:pointer}
+tbody tr:hover td{background:var(--bg2)}
 .tm{color:var(--text2)}.ts{font-size:12px}.txs{font-size:11.5px}
+
+/* ── AVATAR ── */
 .avatar{width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:600;flex-shrink:0}
 .avatar-lg{width:48px;height:48px;font-size:16px}
 .emp-cell{display:flex;align-items:center;gap:9px}
+
+/* ── BADGES ── */
 .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:500;white-space:nowrap}
 .b-active{background:var(--green-light);color:var(--green-deep)}
 .b-onboarding{background:var(--blue-light);color:var(--blue-deep)}
@@ -100,15 +121,23 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 .b-failed{background:var(--red-light);color:var(--red-deep)}
 .b-overdue{background:var(--amber-light);color:var(--amber-deep)}
 .b-mandatory{background:var(--purple-light);color:var(--purple-deep)}
+.b-admin{background:var(--purple-light);color:var(--purple-deep)}
+.b-hr{background:var(--blue-light);color:var(--blue-deep)}
+.b-manager{background:var(--green-light);color:var(--green-deep)}
+.b-viewer{background:var(--gray-light);color:var(--gray-deep)}
+
+/* ── FILTERS ── */
 .filters{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
 .fb{padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:#fff;font-size:12.5px;color:var(--text2);cursor:pointer;font-family:inherit;transition:all .12s}
 .fb:hover{background:var(--bg2)}.fb.active{background:var(--text);color:#fff;border-color:var(--text)}
-.si{padding:7px 12px;border:1px solid var(--border2);border-radius:var(--radius);font-size:13px;color:var(--text);outline:none;width:200px;font-family:inherit}
+.si{padding:7px 12px;border:1px solid var(--border2);border-radius:var(--radius);font-size:13px;color:var(--text);outline:none;width:210px;font-family:inherit;background:#fff}
 .si:focus{border-color:var(--green)}
-.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:300;display:none;align-items:center;justify-content:center;padding:20px}
+
+/* ── MODAL ── */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:300;display:none;align-items:center;justify-content:center;padding:20px}
 .modal-backdrop.open{display:flex}
-.modal-box{background:#fff;border-radius:var(--radius-lg);padding:22px 24px;width:460px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.18)}
-.modal-box.wide{width:560px}.modal-box.xl{width:680px}
+.modal-box{background:#fff;border-radius:var(--radius-lg);padding:22px 24px;width:460px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal-box.wide{width:560px}.modal-box.xl{width:700px}
 .modal-title{font-size:15px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between}
 .modal-close{background:none;border:none;cursor:pointer;color:var(--text3);font-size:20px;line-height:1;padding:0}
 .fg{margin-bottom:13px}
@@ -120,76 +149,145 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 .fr3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .mf{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
 .fsec{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:16px 0 10px;padding-top:10px;border-top:1px solid var(--border)}
+.fsec:first-of-type{border-top:none;margin-top:0;padding-top:0}
+
+/* ── TIMELINE ── */
 .tl{display:flex;flex-direction:column}
 .tl-item{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
 .tl-item:last-child{border-bottom:none}
 .tl-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:600}
 .tl-body{flex:1}.tl-desc{font-size:13px}.tl-meta{font-size:11.5px;color:var(--text3);margin-top:2px}
+
+/* ── KANBAN ── */
 .kanban{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 .kc{background:var(--bg2);border-radius:var(--radius-lg);padding:12px}
 .kch{font-size:12.5px;font-weight:600;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
 .kcard{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px;cursor:pointer;transition:box-shadow .15s}
 .kcard:hover{box-shadow:0 2px 10px rgba(0,0,0,.08)}
 .pt{height:5px;background:var(--bg3);border-radius:3px}.pf{height:5px;border-radius:3px;background:var(--green)}
+
+/* ── BARS ── */
 .brow{margin-bottom:12px}.brlabs{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px}
 .btrack{height:7px;background:var(--bg3);border-radius:4px}.bfill{height:7px;border-radius:4px}
+
+/* ── CHECKLIST ── */
 .cli{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid var(--border)}
 .cli:last-child{border-bottom:none}
 .cli input[type=checkbox]{width:15px;height:15px;accent-color:var(--green);cursor:pointer;flex-shrink:0}
+
+/* ── SALARY ── */
 .sal-card{background:var(--bg2);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
 .sal-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
 .sal-value{font-size:18px;font-weight:600}
 .sal-meta{font-size:12px;color:var(--text2);margin-top:2px}
 .tpb{height:6px;background:var(--bg3);border-radius:3px;margin-top:4px}
 .tpf{height:6px;border-radius:3px}
+
+/* ── TABS ── */
 .tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:16px}
 .tbb{padding:8px 16px;font-size:13px;color:var(--text2);cursor:pointer;border:none;background:transparent;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .12s}
 .tbb:hover{color:var(--text)}.tbb.active{color:var(--green);border-bottom-color:var(--green);font-weight:500}
 .tab-pane{display:none}.tab-pane.active{display:block}
+
+/* ── INFO GRID ── */
 .ig{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
 .ig-item{background:var(--bg2);border-radius:var(--radius);padding:10px 12px}
 .ig-label{font-size:11px;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
 .ig-value{font-size:13.5px;font-weight:500}
+
+/* ── CSV UPLOAD ── */
+.upload-zone{border:2px dashed var(--border2);border-radius:var(--radius-lg);padding:30px;text-align:center;cursor:pointer;transition:all .15s;background:var(--bg2)}
+.upload-zone:hover,.upload-zone.drag-over{border-color:var(--green);background:var(--green-light)}
+.upload-zone input[type=file]{display:none}
+.upload-icon{font-size:32px;margin-bottom:10px}
+.upload-title{font-size:14px;font-weight:500;margin-bottom:4px}
+.upload-sub{font-size:12px;color:var(--text3)}
+.csv-preview{margin-top:14px;overflow-x:auto}
+.csv-preview table{font-size:12px}
+.csv-preview thead th{padding:7px 10px}
+.csv-preview tbody td{padding:7px 10px}
+.import-result{padding:12px;border-radius:var(--radius);font-size:13px;margin-top:12px}
+.import-result.success{background:var(--green-light);color:var(--green-deep)}
+.import-result.error{background:var(--red-light);color:var(--red-deep)}
+.import-result.warning{background:var(--amber-light);color:var(--amber-deep)}
+
+/* ── USER MGMT ── */
+.user-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:12px}
+.user-card-info{flex:1}
+.user-card-name{font-size:14px;font-weight:500}
+.user-card-meta{font-size:12px;color:var(--text3);margin-top:2px}
+.user-card-actions{display:flex;gap:6px;align-items:center}
+.permission-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.perm-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:var(--radius);background:var(--bg2);font-size:12.5px}
+.perm-item input[type=checkbox]{accent-color:var(--green);width:14px;height:14px}
+.role-desc{font-size:12px;color:var(--text3);margin-top:4px;padding:8px 10px;background:var(--bg2);border-radius:var(--radius);line-height:1.5}
+
+/* ── TOAST ── */
 .toast-container{position:fixed;bottom:20px;right:20px;z-index:500;display:flex;flex-direction:column;gap:8px}
-.toast{background:#1a1a18;color:#fff;padding:10px 16px;border-radius:var(--radius);font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.2);display:flex;align-items:center;gap:8px;max-width:320px;animation:sIn .2s ease}
+.toast{background:#1a1a18;color:#fff;padding:10px 16px;border-radius:var(--radius);font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.2);display:flex;align-items:center;gap:8px;max-width:340px;animation:sIn .2s ease}
 .toast.success{border-left:3px solid var(--green)}.toast.error{border-left:3px solid var(--red)}.toast.info{border-left:3px solid var(--blue)}
 @keyframes sIn{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
-@media(max-width:768px){.metrics,.g2,.g3,.kanban,.ig{grid-template-columns:1fr 1fr}.nav-tabs{display:none}}
+
+@media(max-width:768px){.metrics,.g2,.kanban,.ig{grid-template-columns:1fr 1fr}.nav-tabs{display:none}}
 @media(max-width:500px){.metrics,.ig{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<div id="login-screen">
-  <div class="login-card">
+
+<!-- ── SETUP SCREEN (first time only) ── -->
+<div id="setup-screen" style="display:none;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#0F6E56 0%,#1D9E75 50%,#378ADD 100%)">
+  <div class="login-card" style="width:420px">
     <div class="login-logo">
       <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       PeopleDesk HR
     </div>
-    <div class="login-sub">Sign in to the management portal</div>
-    <div class="lf"><label>Username</label><input id="lu" placeholder="Enter username" autocomplete="off"></div>
-    <div class="lf"><label>Password</label><input type="password" id="lp" placeholder="Enter password"></div>
-    <div class="lf"><label>Role</label><select id="lr"><option value="admin">Admin — Full access</option><option value="hr">HR — People management</option><option value="manager">Manager — View + log events</option></select></div>
-    <button class="login-btn" onclick="doLogin()">Sign in</button>
-    <div class="login-err" id="lerr">Invalid credentials.</div>
-    <div class="login-demo">Demo: <strong>admin/admin123</strong> · <strong>hr/hr123</strong> · <strong>manager/mgr123</strong></div>
+    <div class="login-sub">Create your administrator account to get started</div>
+    <div style="background:var(--green-light);border-radius:var(--radius);padding:10px 12px;font-size:12.5px;color:var(--green-deep);margin-bottom:18px">
+      🔐 This is a one-time setup. You will be the super admin and can create all other users.
+    </div>
+    <div class="lf"><label>Your full name *</label><input id="setup-name" placeholder="e.g. John Doe"></div>
+    <div class="lf"><label>Admin username *</label><input id="setup-user" placeholder="e.g. admin" autocomplete="off"></div>
+    <div class="lf"><label>Email address *</label><input id="setup-email" placeholder="admin@company.com" type="email"></div>
+    <div class="lf"><label>Password *</label><input type="password" id="setup-pass" placeholder="Choose a strong password"></div>
+    <div class="lf"><label>Confirm password *</label><input type="password" id="setup-pass2" placeholder="Repeat password"></div>
+    <div class="lf"><label>Company / Organisation name</label><input id="setup-org" placeholder="e.g. Acme Corp"></div>
+    <div class="login-err" id="setup-err"></div>
+    <button class="login-btn" onclick="doSetup()">Create admin account →</button>
   </div>
 </div>
 
+<!-- ── LOGIN SCREEN ── -->
+<div id="login-screen" style="display:none">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span id="org-name-login">PeopleDesk HR</span>
+    </div>
+    <div class="login-sub">Sign in to the management portal</div>
+    <div class="lf"><label>Username</label><input id="lu" placeholder="Enter your username" autocomplete="off"></div>
+    <div class="lf"><label>Password</label><input type="password" id="lp" placeholder="Enter your password"></div>
+    <div class="login-err" id="lerr">Incorrect username or password.</div>
+    <button class="login-btn" onclick="doLogin()">Sign in</button>
+  </div>
+</div>
+
+<!-- ── MAIN APP ── -->
 <div id="app">
   <nav class="topnav">
     <div style="display:flex;align-items:center;min-width:0">
       <div class="nav-logo">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        PeopleDesk HR
+        <span id="org-name-nav">PeopleDesk HR</span>
       </div>
       <div class="nav-tabs" id="nav-tabs">
         <button class="nav-tab active" onclick="showPage('dashboard',this)">Dashboard</button>
-        <button class="nav-tab" onclick="showPage('employees',this)">Employees</button>
-        <button class="nav-tab hr-only" onclick="showPage('onboarding',this)">Onboarding</button>
-        <button class="nav-tab" onclick="showPage('events',this)">Events</button>
-        <button class="nav-tab" onclick="showPage('training',this)">Training</button>
-        <button class="nav-tab hr-only admin-only" onclick="showPage('offboarding',this)">Offboarding</button>
-        <button class="nav-tab hr-only admin-only" onclick="showPage('analytics',this)">Analytics</button>
+        <button class="nav-tab" data-perm="view_employees" onclick="showPage('employees',this)">Employees</button>
+        <button class="nav-tab" data-perm="manage_onboarding" onclick="showPage('onboarding',this)">Onboarding</button>
+        <button class="nav-tab" data-perm="view_events" onclick="showPage('events',this)">Events</button>
+        <button class="nav-tab" data-perm="view_training" onclick="showPage('training',this)">Training</button>
+        <button class="nav-tab" data-perm="manage_offboarding" onclick="showPage('offboarding',this)">Offboarding</button>
+        <button class="nav-tab" data-perm="view_analytics" onclick="showPage('analytics',this)">Analytics</button>
+        <button class="nav-tab" data-perm="admin" onclick="showPage('usermgmt',this)" id="tab-usermgmt">👤 Users</button>
       </div>
     </div>
     <div class="topnav-right">
@@ -198,7 +296,10 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           <div class="notif-count hidden" id="nc">0</div>
         </div>
-        <div class="notif-panel" id="np"><div class="notif-hdr">Notifications <span class="notif-clear" onclick="clearNotifs()">Clear</span></div><div id="nl"><div class="notif-empty">No notifications</div></div></div>
+        <div class="notif-panel" id="np">
+          <div class="notif-hdr">Notifications <span class="notif-clear" onclick="clearNotifs()">Clear all</span></div>
+          <div id="nl"><div class="notif-empty">No notifications</div></div>
+        </div>
       </div>
       <span class="role-badge" id="rd"></span>
       <div class="user-pill" id="ud"></div>
@@ -210,10 +311,12 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 
     <!-- DASHBOARD -->
     <div class="page active" id="page-dashboard">
-      <div class="ph"><div class="ph-title">Management Overview</div><div class="ph-actions">
-        <button class="btn" onclick="exportCSV('employees')">⬇ Export</button>
-        <button class="btn btn-primary ahr-btn" onclick="openModal('addEmployee')">+ Add Employee</button>
-      </div></div>
+      <div class="ph"><div class="ph-title">Management Overview</div>
+        <div class="ph-actions">
+          <button class="btn" onclick="exportCSV('employees')">⬇ Export</button>
+          <button class="btn btn-primary" data-perm-btn="add_employees" onclick="openModal('addEmployee')">+ Add Employee</button>
+        </div>
+      </div>
       <div class="metrics" id="dash-metrics"></div>
       <div class="g2">
         <div class="card"><div class="ch"><span class="ct">Recent Events</span><span class="ts tm" id="etl"></span></div><div id="dash-events"></div></div>
@@ -223,11 +326,14 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 
     <!-- EMPLOYEES -->
     <div class="page" id="page-employees">
-      <div class="ph"><div class="ph-title">All Employees</div><div class="ph-actions">
-        <input class="si" placeholder="Search…" oninput="filterEmp(this.value)">
-        <button class="btn" onclick="exportCSV('employees')">⬇ CSV</button>
-        <button class="btn btn-primary ahr-btn" onclick="openModal('addEmployee')">+ Add Employee</button>
-      </div></div>
+      <div class="ph"><div class="ph-title">All Employees</div>
+        <div class="ph-actions">
+          <input class="si" placeholder="Search…" oninput="filterEmp(this.value)">
+          <button class="btn" onclick="exportCSV('employees')">⬇ CSV</button>
+          <button class="btn btn-amber" data-perm-btn="add_employees" onclick="openModal('csvImport')">⬆ Import CSV</button>
+          <button class="btn btn-primary" data-perm-btn="add_employees" onclick="openModal('addEmployee')">+ Add Employee</button>
+        </div>
+      </div>
       <div class="filters" id="ef">
         <button class="fb active" onclick="setEF('all',this)">All</button>
         <button class="fb" onclick="setEF('active',this)">Active</button>
@@ -239,16 +345,20 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 
     <!-- ONBOARDING -->
     <div class="page" id="page-onboarding">
-      <div class="ph"><div class="ph-title">Onboarding Pipeline</div><div class="ph-actions"><button class="btn btn-primary ahr-btn" onclick="openModal('addEmployee')">+ New Hire</button></div></div>
+      <div class="ph"><div class="ph-title">Onboarding Pipeline</div>
+        <div class="ph-actions"><button class="btn btn-primary" data-perm-btn="add_employees" onclick="openModal('addEmployee')">+ New Hire</button></div>
+      </div>
       <div class="kanban" id="onb-kanban"></div>
     </div>
 
     <!-- EVENTS -->
     <div class="page" id="page-events">
-      <div class="ph"><div class="ph-title">Events Log</div><div class="ph-actions">
-        <button class="btn" onclick="exportCSV('events')">⬇ CSV</button>
-        <button class="btn btn-primary" onclick="openModal('addEvent')">+ Log Event</button>
-      </div></div>
+      <div class="ph"><div class="ph-title">Events Log</div>
+        <div class="ph-actions">
+          <button class="btn" onclick="exportCSV('events')">⬇ Export CSV</button>
+          <button class="btn btn-primary" data-perm-btn="log_events" onclick="openModal('addEvent')">+ Log Event</button>
+        </div>
+      </div>
       <div class="filters" id="evf">
         <button class="fb active" onclick="setEVF('all',this)">All</button>
         <button class="fb" onclick="setEVF('absence',this)">Absences</button>
@@ -261,11 +371,13 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 
     <!-- TRAINING -->
     <div class="page" id="page-training">
-      <div class="ph"><div class="ph-title">Training Tracker</div><div class="ph-actions">
-        <button class="btn" onclick="exportCSV('training')">⬇ CSV</button>
-        <button class="btn btn-blue ahr-btn" onclick="openModal('addProgram')">+ New Program</button>
-        <button class="btn btn-primary ahr-btn" onclick="openModal('assignTraining')">+ Assign Training</button>
-      </div></div>
+      <div class="ph"><div class="ph-title">Training Tracker</div>
+        <div class="ph-actions">
+          <button class="btn" onclick="exportCSV('training')">⬇ CSV</button>
+          <button class="btn btn-blue" data-perm-btn="manage_training" onclick="openModal('addProgram')">+ New Program</button>
+          <button class="btn btn-primary" data-perm-btn="manage_training" onclick="openModal('assignTraining')">+ Assign Training</button>
+        </div>
+      </div>
       <div class="metrics" id="tr-metrics"></div>
       <div class="tab-bar">
         <button class="tbb active" onclick="setTrTab('assignments',this)">Employee Assignments</button>
@@ -283,16 +395,18 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
         <div class="card"><table><thead><tr><th>Employee</th><th>Program</th><th>Type</th><th>Due Date</th><th>Status</th><th>Progress</th><th>Score</th><th>Actions</th></tr></thead><tbody id="tr-tbody"></tbody></table></div>
       </div>
       <div class="tab-pane" id="tab-programs">
-        <div class="card"><table><thead><tr><th>Program</th><th>Category</th><th>Duration</th><th>Mandatory</th><th>Assigned</th><th>Completion Rate</th><th>Actions</th></tr></thead><tbody id="prog-tbody"></tbody></table></div>
+        <div class="card"><table><thead><tr><th>Program</th><th>Category</th><th>Duration</th><th>Mandatory</th><th>Assigned</th><th>Completion</th><th>Actions</th></tr></thead><tbody id="prog-tbody"></tbody></table></div>
       </div>
     </div>
 
     <!-- OFFBOARDING -->
     <div class="page" id="page-offboarding">
-      <div class="ph"><div class="ph-title">Offboarding</div><div class="ph-actions">
-        <button class="btn" onclick="exportCSV('offboarded')">⬇ CSV</button>
-        <button class="btn btn-danger ahr-btn" onclick="openModal('offboard')">Offboard Employee</button>
-      </div></div>
+      <div class="ph"><div class="ph-title">Offboarding</div>
+        <div class="ph-actions">
+          <button class="btn" onclick="exportCSV('offboarded')">⬇ CSV</button>
+          <button class="btn btn-danger" data-perm-btn="manage_offboarding" onclick="openModal('offboard')">Offboard Employee</button>
+        </div>
+      </div>
       <div class="card"><table><thead><tr><th>Employee</th><th>Department</th><th>Last Day</th><th>Reason</th><th>Checklist</th><th></th></tr></thead><tbody id="off-tbody"></tbody></table></div>
     </div>
 
@@ -309,104 +423,259 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
         <div class="card"><div class="ch"><span class="ct">Salary distribution</span></div><div class="cb" id="an-salary"></div></div>
       </div>
     </div>
+
+    <!-- USER MANAGEMENT (admin only) -->
+    <div class="page" id="page-usermgmt">
+      <div class="ph"><div class="ph-title">User Management</div>
+        <div class="ph-actions">
+          <button class="btn btn-primary" onclick="openModal('addUser')">+ Create User</button>
+        </div>
+      </div>
+      <div class="g2" style="align-items:start">
+        <div>
+          <div class="card">
+            <div class="ch"><span class="ct">System Users</span><span class="ts tm" id="user-count-label"></span></div>
+            <div class="cb" id="user-list" style="padding:8px 16px"></div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <div class="ch"><span class="ct">Access Level Guide</span></div>
+            <div class="cb">
+              <div style="margin-bottom:14px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span class="badge b-admin">Admin</span><span style="font-size:13px;font-weight:500">Full access</span></div>
+                <div style="font-size:12.5px;color:var(--text2)">Can do everything: manage users, view salaries, offboard employees, access all analytics.</div>
+              </div>
+              <div style="margin-bottom:14px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span class="badge b-hr">HR</span><span style="font-size:13px;font-weight:500">People management</span></div>
+                <div style="font-size:12.5px;color:var(--text2)">Add employees, log events, manage onboarding & offboarding, view salaries, assign training.</div>
+              </div>
+              <div style="margin-bottom:14px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span class="badge b-manager">Manager</span><span style="font-size:13px;font-weight:500">View + limited actions</span></div>
+                <div style="font-size:12.5px;color:var(--text2)">View employees and events, log events for their team. Cannot view salaries or manage offboarding.</div>
+              </div>
+              <div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span class="badge b-viewer">Viewer</span><span style="font-size:13px;font-weight:500">Read-only</span></div>
+                <div style="font-size:12.5px;color:var(--text2)">Can only view the dashboard, employees list, and training status. No editing allowed.</div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="ch"><span class="ct">Audit Log</span></div>
+            <div class="cb" style="padding:0"><div class="tl" style="padding:0 16px" id="audit-log"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
+<!-- MODAL -->
 <div class="modal-backdrop" id="mb" onclick="if(event.target===this)closeModal()">
   <div class="modal-box" id="mbox"></div>
 </div>
 <div class="toast-container" id="tc"></div>
 
 <script>
-const ACCS={admin:{pass:'admin123',role:'admin',name:'Admin User'},hr:{pass:'hr123',role:'hr',name:'Sarah Chen'},manager:{pass:'mgr123',role:'manager',name:'Marcus Webb'}};
-let CU=null;
+// ─── STORAGE HELPERS ──────────────────────────────────────────────────────────
+const S={
+  get:(k,def=null)=>{try{const v=localStorage.getItem('pdhr_'+k);return v?JSON.parse(v):def;}catch{return def;}},
+  set:(k,v)=>{try{localStorage.setItem('pdhr_'+k,JSON.stringify(v));}catch{}}
+};
+
+// ─── ROLE PERMISSIONS ─────────────────────────────────────────────────────────
+const ROLE_PERMS={
+  admin:['view_employees','add_employees','edit_employees','view_salary','manage_onboarding','log_events','view_events','view_training','manage_training','manage_offboarding','view_analytics','admin'],
+  hr:['view_employees','add_employees','edit_employees','view_salary','manage_onboarding','log_events','view_events','view_training','manage_training','manage_offboarding','view_analytics'],
+  manager:['view_employees','log_events','view_events','view_training'],
+  viewer:['view_employees','view_events','view_training'],
+};
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let CU=null; // current user
+let notifs=[], ef='all', evf='all', empSearch='', trf='all';
+
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
+function boot(){
+  const users=S.get('users',[]);
+  if(users.length===0){
+    // No users yet — show setup
+    document.getElementById('setup-screen').style.display='flex';
+  } else {
+    // Show login
+    document.getElementById('login-screen').style.display='flex';
+    const org=S.get('org','PeopleDesk HR');
+    document.getElementById('org-name-login').textContent=org;
+  }
+}
+boot();
+
+// ─── SETUP (first-time admin creation) ───────────────────────────────────────
+function doSetup(){
+  const name=document.getElementById('setup-name').value.trim();
+  const username=document.getElementById('setup-user').value.trim().toLowerCase();
+  const email=document.getElementById('setup-email').value.trim();
+  const pass=document.getElementById('setup-pass').value;
+  const pass2=document.getElementById('setup-pass2').value;
+  const org=document.getElementById('setup-org').value.trim()||'PeopleDesk HR';
+  const err=document.getElementById('setup-err');
+  if(!name||!username||!email||!pass){err.textContent='All required fields must be filled.';err.style.display='block';return;}
+  if(pass!==pass2){err.textContent='Passwords do not match.';err.style.display='block';return;}
+  if(pass.length<6){err.textContent='Password must be at least 6 characters.';err.style.display='block';return;}
+  if(!/^[a-z0-9_]+$/.test(username)){err.textContent='Username: only letters, numbers, underscores.';err.style.display='block';return;}
+  const adminUser={id:Date.now(),name,username,email,role:'admin',createdAt:new Date().toISOString(),active:true,passwordHash:simpleHash(pass)};
+  S.set('users',[adminUser]);
+  S.set('org',org);
+  addAudit('System','Admin account created: '+name);
+  document.getElementById('setup-screen').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+  document.getElementById('org-name-login').textContent=org;
+  toast('Admin account created! You can now sign in.','success');
+}
+
+// ─── SIMPLE HASH (not cryptographic — for demo/local use) ────────────────────
+function simpleHash(str){
+  let h=5381;for(let i=0;i<str.length;i++)h=((h<<5)+h)+str.charCodeAt(i);
+  return(h>>>0).toString(16);
+}
+
+// ─── LOGIN ────────────────────────────────────────────────────────────────────
 function doLogin(){
-  const u=document.getElementById('lu').value.trim(),p=document.getElementById('lp').value,a=ACCS[u];
-  if(!a||a.pass!==p){document.getElementById('lerr').style.display='block';return;}
-  CU={username:u,role:a.role,name:a.name};
+  const u=document.getElementById('lu').value.trim().toLowerCase();
+  const p=document.getElementById('lp').value;
+  const users=S.get('users',[]);
+  const user=users.find(x=>x.username===u&&x.active!==false);
+  if(!user||user.passwordHash!==simpleHash(p)){
+    document.getElementById('lerr').style.display='block';return;
+  }
   document.getElementById('lerr').style.display='none';
+  CU=user;
+  S.set('session',{userId:user.id,loginAt:new Date().toISOString()});
+  addAudit(user.name,'Logged in');
   document.getElementById('login-screen').style.display='none';
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='column';
-  applyRole();renderDashboard();toast('Welcome back, '+a.name+'!','success');
+  const org=S.get('org','PeopleDesk HR');
+  document.getElementById('org-name-nav').textContent=org;
+  applyPermissions();
+  renderDashboard();
+  toast('Welcome back, '+user.name+'!','success');
 }
-function doLogout(){CU=null;location.reload();}
-function applyRole(){
-  const r=CU.role,isHR=r==='hr'||r==='admin',isA=r==='admin';
+
+function doLogout(){
+  addAudit(CU?.name||'User','Logged out');
+  CU=null;S.set('session',null);
+  location.reload();
+}
+
+// ─── PERMISSIONS ─────────────────────────────────────────────────────────────
+function hasPerm(perm){
+  if(!CU)return false;
+  const perms=CU.customPerms||ROLE_PERMS[CU.role]||[];
+  return perms.includes(perm)||perms.includes('admin');
+}
+function canEdit(){return hasPerm('edit_employees')||hasPerm('add_employees');}
+
+function applyPermissions(){
+  const r=CU.role;
   document.getElementById('rd').textContent=r[0].toUpperCase()+r.slice(1);
   document.getElementById('rd').className='role-badge role-'+r;
   document.getElementById('ud').textContent=CU.name;
-  document.querySelectorAll('.hr-only').forEach(el=>el.style.display=isHR?'':'none');
-  document.querySelectorAll('.admin-only').forEach(el=>el.style.display=isA?'':'none');
-  document.querySelectorAll('.ahr-btn').forEach(el=>el.style.display=isHR?'inline-flex':'none');
+  // Nav tabs
+  document.querySelectorAll('.nav-tab[data-perm]').forEach(tab=>{
+    const perm=tab.dataset.perm;
+    tab.style.display=hasPerm(perm)?'':'none';
+  });
+  // Perm buttons
+  document.querySelectorAll('[data-perm-btn]').forEach(btn=>{
+    btn.style.display=hasPerm(btn.dataset.permBtn)?'inline-flex':'none';
+  });
 }
-const canEdit=()=>CU&&(CU.role==='admin'||CU.role==='hr');
 
-// DATA
-let employees=[
-  {id:1,name:'Amara Diallo',dept:'Engineering',role:'Senior Engineer',manager:'Clara Smith',start:'2022-03-15',status:'active',email:'a.diallo@company.com',phone:'+230 5700 1234',
-   salary:{amount:85000,currency:'USD',frequency:'Annual',lastReview:'2024-09-01',nextReview:'2025-09-01',history:[{date:'2022-03-15',amount:72000,note:'Starting salary'},{date:'2023-04-01',amount:78000,note:'Performance review +8%'},{date:'2024-09-01',amount:85000,note:'Promotion to Senior'}]}},
-  {id:2,name:'Lucas Moraes',dept:'Marketing',role:'Brand Manager',manager:'Tom Reid',start:'2023-07-01',status:'active',email:'l.moraes@company.com',phone:'+230 5700 2345',
-   salary:{amount:62000,currency:'USD',frequency:'Annual',lastReview:'2024-07-01',nextReview:'2025-07-01',history:[{date:'2023-07-01',amount:58000,note:'Starting salary'},{date:'2024-07-01',amount:62000,note:'Annual review +7%'}]}},
-  {id:3,name:'Sophie Nguyen',dept:'HR',role:'HR Specialist',manager:'Jane Doe',start:'2025-01-15',status:'onboarding',email:'s.nguyen@company.com',phone:'+230 5700 3456',
-   salary:{amount:48000,currency:'USD',frequency:'Annual',lastReview:null,nextReview:'2026-01-15',history:[{date:'2025-01-15',amount:48000,note:'Starting salary'}]},
-   checklist:{'Paperwork submitted':true,'System access granted':false,'IT equipment issued':false,'Benefits enrolled':false,'Manager intro done':true}},
-  {id:4,name:'Kwame Asante',dept:'Finance',role:'Financial Analyst',manager:'Mark Black',start:'2025-01-20',status:'onboarding',email:'k.asante@company.com',phone:'+230 5700 4567',
-   salary:{amount:55000,currency:'USD',frequency:'Annual',lastReview:null,nextReview:'2026-01-20',history:[{date:'2025-01-20',amount:55000,note:'Starting salary'}]},
-   checklist:{'Paperwork submitted':true,'System access granted':true,'IT equipment issued':true,'Benefits enrolled':false,'Manager intro done':true}},
-  {id:5,name:'Priya Patel',dept:'Engineering',role:'DevOps Engineer',manager:'Clara Smith',start:'2021-06-10',status:'active',email:'p.patel@company.com',phone:'+230 5700 5678',
-   salary:{amount:91000,currency:'USD',frequency:'Annual',lastReview:'2024-06-10',nextReview:'2025-06-10',history:[{date:'2021-06-10',amount:70000,note:'Starting salary'},{date:'2022-07-01',amount:76000,note:'Annual review'},{date:'2023-07-01',amount:84000,note:'Annual review'},{date:'2024-06-10',amount:91000,note:'Promotion + review'}]}},
-  {id:6,name:'James Osei',dept:'Sales',role:'Account Executive',manager:'Tom Reid',start:'2023-01-18',status:'active',email:'j.osei@company.com',phone:'+230 5700 6789',
-   salary:{amount:58000,currency:'USD',frequency:'Annual',lastReview:'2024-01-18',nextReview:'2025-01-18',history:[{date:'2023-01-18',amount:52000,note:'Starting salary'},{date:'2024-01-18',amount:58000,note:'Annual review +12%'}]}},
-  {id:7,name:'Marie Fontaine',dept:'Design',role:'UX Designer',manager:'Jane Doe',start:'2020-09-05',status:'offboarded',email:'m.fontaine@company.com',phone:'+230 5700 7890',lastDay:'2024-12-15',reason:'Resigned',
-   salary:{amount:67000,currency:'USD',frequency:'Annual',lastReview:'2024-09-05',nextReview:null,history:[{date:'2020-09-05',amount:52000,note:'Starting salary'},{date:'2022-10-01',amount:58000,note:'Review'},{date:'2024-09-05',amount:67000,note:'Final review'}]},
-   offChecklist:{'Exit interview done':true,'Equipment returned':true,'System access revoked':true,'Final payroll processed':false}},
-];
-let events=[
-  {id:1,date:'2025-01-20',empId:3,type:'training',desc:'Onboarding orientation completed',loggedBy:'Jane Doe',notified:true},
-  {id:2,date:'2025-01-18',empId:1,type:'training',desc:'AWS Solution Architect certification passed',loggedBy:'Clara Smith',notified:true},
-  {id:3,date:'2025-01-12',empId:6,type:'absence',desc:'Sick leave — 2 days',loggedBy:'Tom Reid',notified:true},
-  {id:4,date:'2025-01-05',empId:2,type:'warning',desc:'Verbal warning — missed campaign deadline',loggedBy:'Tom Reid',notified:true},
-  {id:5,date:'2024-12-20',empId:5,type:'milestone',desc:'3-year work anniversary',loggedBy:'System',notified:false},
-  {id:6,date:'2024-12-18',empId:7,type:'milestone',desc:'Offboarding completed',loggedBy:'Jane Doe',notified:true},
-  {id:7,date:'2024-12-10',empId:4,type:'training',desc:'GDPR compliance training passed',loggedBy:'Jane Doe',notified:false},
-  {id:8,date:'2024-12-03',empId:1,type:'absence',desc:'Annual leave — 5 days',loggedBy:'Clara Smith',notified:false},
-];
-let trainingPrograms=[
-  {id:1,name:'GDPR & Data Compliance',category:'Compliance',duration:'4h',mandatory:true,description:'EU data protection regulations'},
-  {id:2,name:'AWS Cloud Fundamentals',category:'Technical',duration:'16h',mandatory:false,description:'Introduction to AWS services'},
-  {id:3,name:'Health & Safety Induction',category:'Safety',duration:'2h',mandatory:true,description:'Workplace health & safety'},
-  {id:4,name:'Leadership Essentials',category:'Management',duration:'8h',mandatory:false,description:'Core leadership skills'},
-  {id:5,name:'Cybersecurity Awareness',category:'Security',duration:'3h',mandatory:true,description:'Phishing, passwords, data handling'},
-  {id:6,name:'Company Onboarding Program',category:'Onboarding',duration:'8h',mandatory:true,description:'Company culture, policies, tools'},
-  {id:7,name:'HubSpot Digital Marketing',category:'Marketing',duration:'12h',mandatory:false,description:'Inbound marketing certification'},
-];
-let trainingAssignments=[
-  {id:1,empId:1,programId:2,status:'completed',assignedDate:'2024-11-01',dueDate:'2025-01-31',completedDate:'2025-01-18',score:92,notes:'Passed with distinction',progress:100},
-  {id:2,empId:1,programId:5,status:'completed',assignedDate:'2024-10-01',dueDate:'2024-12-31',completedDate:'2024-11-15',score:88,notes:'',progress:100},
-  {id:3,empId:2,programId:7,status:'completed',assignedDate:'2024-10-15',dueDate:'2024-12-15',completedDate:'2024-11-28',score:95,notes:'HubSpot certified',progress:100},
-  {id:4,empId:2,programId:5,status:'in-progress',assignedDate:'2025-01-05',dueDate:'2025-02-28',completedDate:null,score:null,notes:'',progress:40},
-  {id:5,empId:3,programId:6,status:'completed',assignedDate:'2025-01-15',dueDate:'2025-01-31',completedDate:'2025-01-20',score:100,notes:'Orientation complete',progress:100},
-  {id:6,empId:3,programId:1,status:'not-started',assignedDate:'2025-01-20',dueDate:'2025-02-15',completedDate:null,score:null,notes:'',progress:0},
-  {id:7,empId:4,programId:1,status:'completed',assignedDate:'2024-12-02',dueDate:'2024-12-31',completedDate:'2024-12-10',score:85,notes:'',progress:100},
-  {id:8,empId:4,programId:6,status:'in-progress',assignedDate:'2025-01-20',dueDate:'2025-02-10',completedDate:null,score:null,notes:'',progress:65},
-  {id:9,empId:5,programId:3,status:'completed',assignedDate:'2021-06-10',dueDate:'2021-07-10',completedDate:'2021-06-20',score:100,notes:'',progress:100},
-  {id:10,empId:6,programId:4,status:'not-started',assignedDate:'2025-01-10',dueDate:'2025-03-01',completedDate:null,score:null,notes:'',progress:0},
-  {id:11,empId:6,programId:5,status:'overdue',assignedDate:'2024-11-01',dueDate:'2024-12-31',completedDate:null,score:null,notes:'',progress:20},
-  {id:12,empId:2,programId:1,status:'overdue',assignedDate:'2024-12-01',dueDate:'2025-01-10',completedDate:null,score:null,notes:'',progress:0},
-];
+// ─── DATA ACCESS ─────────────────────────────────────────────────────────────
+const getData=k=>S.get(k,DEFAULT_DATA[k]);
+const saveData=(k,v)=>S.set(k,v);
 
-let notifs=[],ef='all',evf='all',empSearch='',trf='all';
+const DEFAULT_DATA={
+  employees:[
+    {id:1,name:'Amara Diallo',dept:'Engineering',role:'Senior Engineer',manager:'Clara Smith',start:'2022-03-15',status:'active',email:'a.diallo@company.com',phone:'+230 5700 1234',
+     salary:{amount:85000,currency:'USD',frequency:'Annual',lastReview:'2024-09-01',nextReview:'2025-09-01',history:[{date:'2022-03-15',amount:72000,note:'Starting salary'},{date:'2023-04-01',amount:78000,note:'Performance review +8%'},{date:'2024-09-01',amount:85000,note:'Promotion to Senior'}]}},
+    {id:2,name:'Lucas Moraes',dept:'Marketing',role:'Brand Manager',manager:'Tom Reid',start:'2023-07-01',status:'active',email:'l.moraes@company.com',phone:'+230 5700 2345',
+     salary:{amount:62000,currency:'USD',frequency:'Annual',lastReview:'2024-07-01',nextReview:'2025-07-01',history:[{date:'2023-07-01',amount:58000,note:'Starting salary'},{date:'2024-07-01',amount:62000,note:'Annual review +7%'}]}},
+    {id:3,name:'Sophie Nguyen',dept:'HR',role:'HR Specialist',manager:'Jane Doe',start:'2025-01-15',status:'onboarding',email:'s.nguyen@company.com',phone:'+230 5700 3456',
+     salary:{amount:48000,currency:'USD',frequency:'Annual',lastReview:null,nextReview:'2026-01-15',history:[{date:'2025-01-15',amount:48000,note:'Starting salary'}]},
+     checklist:{'Paperwork submitted':true,'System access granted':false,'IT equipment issued':false,'Benefits enrolled':false,'Manager intro done':true}},
+    {id:4,name:'Kwame Asante',dept:'Finance',role:'Financial Analyst',manager:'Mark Black',start:'2025-01-20',status:'onboarding',email:'k.asante@company.com',phone:'+230 5700 4567',
+     salary:{amount:55000,currency:'USD',frequency:'Annual',lastReview:null,nextReview:'2026-01-20',history:[{date:'2025-01-20',amount:55000,note:'Starting salary'}]},
+     checklist:{'Paperwork submitted':true,'System access granted':true,'IT equipment issued':true,'Benefits enrolled':false,'Manager intro done':true}},
+    {id:5,name:'Priya Patel',dept:'Engineering',role:'DevOps Engineer',manager:'Clara Smith',start:'2021-06-10',status:'active',email:'p.patel@company.com',phone:'+230 5700 5678',
+     salary:{amount:91000,currency:'USD',frequency:'Annual',lastReview:'2024-06-10',nextReview:'2025-06-10',history:[{date:'2021-06-10',amount:70000,note:'Starting salary'},{date:'2024-06-10',amount:91000,note:'Promotion + review'}]}},
+    {id:6,name:'James Osei',dept:'Sales',role:'Account Executive',manager:'Tom Reid',start:'2023-01-18',status:'active',email:'j.osei@company.com',phone:'+230 5700 6789',
+     salary:{amount:58000,currency:'USD',frequency:'Annual',lastReview:'2024-01-18',nextReview:'2025-01-18',history:[{date:'2023-01-18',amount:52000,note:'Starting salary'},{date:'2024-01-18',amount:58000,note:'Annual review +12%'}]}},
+    {id:7,name:'Marie Fontaine',dept:'Design',role:'UX Designer',manager:'Jane Doe',start:'2020-09-05',status:'offboarded',email:'m.fontaine@company.com',phone:'+230 5700 7890',lastDay:'2024-12-15',reason:'Resigned',
+     salary:{amount:67000,currency:'USD',frequency:'Annual',lastReview:'2024-09-05',nextReview:null,history:[{date:'2020-09-05',amount:52000,note:'Starting salary'},{date:'2024-09-05',amount:67000,note:'Final review'}]},
+     offChecklist:{'Exit interview done':true,'Equipment returned':true,'System access revoked':true,'Final payroll processed':false}},
+  ],
+  events:[
+    {id:1,date:'2025-01-20',empId:3,type:'training',desc:'Onboarding orientation completed',loggedBy:'Jane Doe',notified:true},
+    {id:2,date:'2025-01-18',empId:1,type:'training',desc:'AWS Solution Architect certification passed',loggedBy:'Clara Smith',notified:true},
+    {id:3,date:'2025-01-12',empId:6,type:'absence',desc:'Sick leave — 2 days',loggedBy:'Tom Reid',notified:true},
+    {id:4,date:'2025-01-05',empId:2,type:'warning',desc:'Verbal warning — missed campaign deadline',loggedBy:'Tom Reid',notified:true},
+    {id:5,date:'2024-12-20',empId:5,type:'milestone',desc:'3-year work anniversary',loggedBy:'System',notified:false},
+    {id:6,date:'2024-12-18',empId:7,type:'milestone',desc:'Offboarding completed',loggedBy:'Jane Doe',notified:true},
+    {id:7,date:'2024-12-10',empId:4,type:'training',desc:'GDPR compliance training passed',loggedBy:'Jane Doe',notified:false},
+  ],
+  trainingPrograms:[
+    {id:1,name:'GDPR & Data Compliance',category:'Compliance',duration:'4h',mandatory:true,description:'EU data protection regulations'},
+    {id:2,name:'AWS Cloud Fundamentals',category:'Technical',duration:'16h',mandatory:false,description:'Introduction to AWS services'},
+    {id:3,name:'Health & Safety Induction',category:'Safety',duration:'2h',mandatory:true,description:'Workplace health & safety'},
+    {id:4,name:'Leadership Essentials',category:'Management',duration:'8h',mandatory:false,description:'Core leadership skills'},
+    {id:5,name:'Cybersecurity Awareness',category:'Security',duration:'3h',mandatory:true,description:'Phishing, passwords, data handling'},
+    {id:6,name:'Company Onboarding Program',category:'Onboarding',duration:'8h',mandatory:true,description:'Company culture, policies, tools'},
+  ],
+  trainingAssignments:[
+    {id:1,empId:1,programId:2,status:'completed',assignedDate:'2024-11-01',dueDate:'2025-01-31',completedDate:'2025-01-18',score:92,notes:'Passed with distinction',progress:100},
+    {id:2,empId:2,programId:5,status:'in-progress',assignedDate:'2025-01-05',dueDate:'2025-02-28',completedDate:null,score:null,notes:'',progress:40},
+    {id:3,empId:3,programId:6,status:'completed',assignedDate:'2025-01-15',dueDate:'2025-01-31',completedDate:'2025-01-20',score:100,notes:'Orientation complete',progress:100},
+    {id:4,empId:3,programId:1,status:'not-started',assignedDate:'2025-01-20',dueDate:'2025-02-15',completedDate:null,score:null,notes:'',progress:0},
+    {id:5,empId:4,programId:1,status:'completed',assignedDate:'2024-12-02',dueDate:'2024-12-31',completedDate:'2024-12-10',score:85,notes:'',progress:100},
+    {id:6,empId:4,programId:6,status:'in-progress',assignedDate:'2025-01-20',dueDate:'2025-02-10',completedDate:null,score:null,notes:'',progress:65},
+    {id:7,empId:6,programId:5,status:'overdue',assignedDate:'2024-11-01',dueDate:'2024-12-31',completedDate:null,score:null,notes:'',progress:20},
+  ],
+  audit:[]
+};
+
+// Helper shorthands that always read/write live storage
+const getEmps=()=>getData('employees');
+const getEvts=()=>getData('events');
+const getTrProgs=()=>getData('trainingPrograms');
+const getTrAsgn=()=>getData('trainingAssignments');
+const getUsers=()=>S.get('users',[]);
+const getAudit=()=>S.get('audit',[]);
+
+const saveEmps=v=>saveData('employees',v);
+const saveEvts=v=>saveData('events',v);
+const saveTrProgs=v=>saveData('trainingPrograms',v);
+const saveTrAsgn=v=>saveData('trainingAssignments',v);
+
+// ─── UTILS ────────────────────────────────────────────────────────────────────
 const COLS=['#1D9E75','#378ADD','#BA7517','#D85A30','#D4537E','#7F77DD','#888780'];
 const inits=n=>n.split(' ').map(p=>p[0]).join('').toUpperCase().slice(0,2);
 const aColor=n=>{let h=0;for(let c of n)h=(h<<5)-h+c.charCodeAt(0);return COLS[Math.abs(h)%COLS.length];};
 const fDate=d=>d?new Date(d+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}):'—';
 const fCur=(n,c='USD')=>new Intl.NumberFormat('en-US',{style:'currency',currency:c,maximumFractionDigits:0}).format(n);
 const td=()=>new Date().toISOString().slice(0,10);
-const gE=id=>employees.find(e=>e.id===id);
-const gEE=id=>events.filter(e=>e.empId===id);
-const gEA=id=>trainingAssignments.filter(a=>a.empId===id);
-const gP=id=>trainingPrograms.find(p=>p.id===id);
-const TCFG={absence:{label:'Absence',color:'#D85A30',bg:'#FAECE7'},warning:{label:'Warning',color:'#BA7517',bg:'#FAEEDA'},training:{label:'Training',color:'#185FA5',bg:'#E6F1FB'},milestone:{label:'Milestone',color:'#085041',bg:'#E1F5EE'}};
+const gE=id=>getEmps().find(e=>e.id===id);
+const gEE=id=>getEvts().filter(e=>e.empId===id);
+const gEA=id=>getTrAsgn().filter(a=>a.empId===id);
+const gP=id=>getTrProgs().find(p=>p.id===id);
+
+const TCFG={
+  absence:{label:'Absence',color:'#D85A30',bg:'#FAECE7'},
+  warning:{label:'Warning',color:'#BA7517',bg:'#FAEEDA'},
+  training:{label:'Training',color:'#185FA5',bg:'#E6F1FB'},
+  milestone:{label:'Milestone',color:'#085041',bg:'#E1F5EE'}
+};
 const TRST={'not-started':{label:'Not Started',cls:'b-not-started'},'in-progress':{label:'In Progress',cls:'b-in-progress'},completed:{label:'Completed',cls:'b-completed'},failed:{label:'Failed',cls:'b-failed'},overdue:{label:'Overdue',cls:'b-overdue'}};
 const TRCOL={'not-started':'#888','in-progress':'#378ADD',completed:'#1D9E75',failed:'#D85A30',overdue:'#BA7517'};
 const sB=s=>({active:'<span class="badge b-active">Active</span>',onboarding:'<span class="badge b-onboarding">Onboarding</span>',offboarded:'<span class="badge b-offboarded">Offboarded</span>'}[s]||s);
@@ -415,24 +684,39 @@ function showPage(id,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');el.classList.add('active');
-  ({dashboard:renderDashboard,employees:renderEmployees,onboarding:renderOnboarding,events:renderEvents,training:renderTraining,offboarding:renderOffboarding,analytics:renderAnalytics})[id]?.();
+  ({dashboard:renderDashboard,employees:renderEmployees,onboarding:renderOnboarding,events:renderEvents,training:renderTraining,offboarding:renderOffboarding,analytics:renderAnalytics,usermgmt:renderUserMgmt})[id]?.();
 }
 
+// ─── AUDIT LOG ────────────────────────────────────────────────────────────────
+function addAudit(user,action){
+  const log=S.get('audit',[]);
+  log.unshift({user,action,time:new Date().toLocaleString()});
+  S.set('audit',log.slice(0,100));
+}
+function renderAuditLog(){
+  const log=S.get('audit',[]).slice(0,15);
+  document.getElementById('audit-log').innerHTML=log.length===0
+    ?'<div style="padding:12px;color:var(--text3);font-size:13px">No activity yet</div>'
+    :log.map(l=>`<div class="tl-item"><div class="tl-body"><div class="tl-desc">${l.action}</div><div class="tl-meta">${l.user} · ${l.time}</div></div></div>`).join('');
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
 function renderDashboard(){
-  const active=employees.filter(e=>e.status==='active').length,onb=employees.filter(e=>e.status==='onboarding').length;
-  const warns=events.filter(e=>e.type==='warning').length,od=trainingAssignments.filter(a=>a.status==='overdue').length;
+  const emps=getEmps(),evts=getEvts(),asgn=getTrAsgn();
+  const active=emps.filter(e=>e.status==='active').length,onb=emps.filter(e=>e.status==='onboarding').length;
+  const warns=evts.filter(e=>e.type==='warning').length,od=asgn.filter(a=>a.status==='overdue').length;
   document.getElementById('dash-metrics').innerHTML=`
-    <div class="mc"><div class="mc-label">Total Employees</div><div class="mc-value">${active+onb}</div><div class="mc-delta delta-up">↑ 2 this month</div></div>
+    <div class="mc"><div class="mc-label">Total Employees</div><div class="mc-value">${active+onb}</div><div class="mc-delta delta-up">Active headcount</div></div>
     <div class="mc"><div class="mc-label">Onboarding</div><div class="mc-value">${onb}</div><div class="mc-delta">${onb} in progress</div></div>
     <div class="mc"><div class="mc-label">Pending Warnings</div><div class="mc-value">${warns}</div><div class="mc-delta delta-down">${warns} unresolved</div></div>
     <div class="mc"><div class="mc-label">Overdue Trainings</div><div class="mc-value">${od}</div><div class="mc-delta delta-down">${od} need action</div></div>`;
-  const sorted=[...events].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,6);
-  document.getElementById('etl').textContent=events.length+' total';
+  const sorted=[...evts].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,6);
+  document.getElementById('etl').textContent=evts.length+' total';
   document.getElementById('dash-events').innerHTML='<div class="tl" style="padding:0 16px">'+sorted.map(ev=>{
     const emp=gE(ev.empId),cfg=TCFG[ev.type]||{label:ev.type,bg:'#eee',color:'#333'};
     return`<div class="tl-item"><div class="tl-icon" style="background:${cfg.bg};color:${cfg.color}">${cfg.label[0]}</div><div class="tl-body"><div class="tl-desc">${ev.desc}</div><div class="tl-meta">${emp?emp.name:'—'} · ${fDate(ev.date)}</div></div></div>`;
   }).join('')+'</div>';
-  const onboarding=employees.filter(e=>e.status==='onboarding');
+  const onboarding=emps.filter(e=>e.status==='onboarding');
   document.getElementById('dash-onb').innerHTML=onboarding.length===0?'<div style="padding:20px;color:var(--text3);text-align:center;font-size:13px">No active onboarding</div>':
     '<div class="tl" style="padding:0 16px">'+onboarding.map(emp=>{
       const c=aColor(emp.name),cl=emp.checklist||{},done=Object.values(cl).filter(Boolean).length,tot=Object.keys(cl).length;
@@ -447,13 +731,16 @@ function renderDashboard(){
     }).join('')+'</div>';
 }
 
+// ─── EMPLOYEES ────────────────────────────────────────────────────────────────
 function renderEmployees(){
-  let list=[...employees];
+  let list=[...getEmps()];
   if(ef!=='all')list=list.filter(e=>e.status===ef);
   if(empSearch)list=list.filter(e=>[e.name,e.dept,e.role,e.email].join(' ').toLowerCase().includes(empSearch));
+  const showSal=hasPerm('view_salary');
   document.getElementById('emp-tbody').innerHTML=list.map(emp=>{
-    const c=aColor(emp.name),cnt=gEE(emp.id).length,sal=emp.salary?fCur(emp.salary.amount,emp.salary.currency):'—';
-    return`<tr onclick="viewEmp(${emp.id})">
+    const c=aColor(emp.name),cnt=gEE(emp.id).length;
+    const sal=showSal&&emp.salary?fCur(emp.salary.amount,emp.salary.currency):'•••••';
+    return`<tr onclick="viewEmp(${emp.id})" style="cursor:pointer">
       <td><div class="emp-cell"><div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div><div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.email}</div></div></div></td>
       <td>${emp.dept}</td><td>${emp.role}</td><td>${fDate(emp.start)}</td>
       <td style="font-weight:500">${sal}</td><td>${sB(emp.status)}</td>
@@ -464,9 +751,10 @@ function renderEmployees(){
 function setEF(f,el){ef=f;document.querySelectorAll('#ef .fb').forEach(b=>b.classList.remove('active'));el.classList.add('active');renderEmployees();}
 function filterEmp(v){empSearch=v.toLowerCase();renderEmployees();}
 
+// ─── ONBOARDING ───────────────────────────────────────────────────────────────
 function renderOnboarding(){
   const stages=['Week 1 — Orientation','Week 2-3 — Training','Final Review'];
-  const onb=employees.filter(e=>e.status==='onboarding');
+  const onb=getEmps().filter(e=>e.status==='onboarding');
   document.getElementById('onb-kanban').innerHTML=stages.map((s,i)=>{
     const emps=onb.filter((_,j)=>j%3===i);
     return`<div class="kc"><div class="kch">${s}<span style="background:var(--bg3);padding:2px 7px;border-radius:10px;font-size:11px">${emps.length}</span></div>
@@ -483,8 +771,9 @@ function renderOnboarding(){
   }).join('');
 }
 
+// ─── EVENTS ───────────────────────────────────────────────────────────────────
 function renderEvents(){
-  let list=[...events].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  let list=[...getEvts()].sort((a,b)=>new Date(b.date)-new Date(a.date));
   if(evf!=='all')list=list.filter(e=>e.type===evf);
   document.getElementById('events-tbody').innerHTML=list.map(ev=>{
     const emp=gE(ev.empId),cfg=TCFG[ev.type]||{label:ev.type,bg:'#eee',color:'#333'};
@@ -500,18 +789,20 @@ function renderEvents(){
 }
 function setEVF(f,el){evf=f;document.querySelectorAll('#evf .fb').forEach(b=>b.classList.remove('active'));el.classList.add('active');renderEvents();}
 
+// ─── TRAINING ─────────────────────────────────────────────────────────────────
 function renderTraining(){
-  const tot=trainingAssignments.length,comp=trainingAssignments.filter(a=>a.status==='completed').length;
-  const od=trainingAssignments.filter(a=>a.status==='overdue').length,inp=trainingAssignments.filter(a=>a.status==='in-progress').length;
+  const asgn=getTrAsgn();
+  const tot=asgn.length,comp=asgn.filter(a=>a.status==='completed').length;
+  const od=asgn.filter(a=>a.status==='overdue').length,inp=asgn.filter(a=>a.status==='in-progress').length;
   document.getElementById('tr-metrics').innerHTML=`
     <div class="mc"><div class="mc-label">Total Assignments</div><div class="mc-value">${tot}</div><div class="mc-delta">across all employees</div></div>
-    <div class="mc"><div class="mc-label">Completed</div><div class="mc-value">${comp}</div><div class="mc-delta delta-up">${tot?Math.round(comp/tot*100):0}% completion rate</div></div>
+    <div class="mc"><div class="mc-label">Completed</div><div class="mc-value">${comp}</div><div class="mc-delta delta-up">${tot?Math.round(comp/tot*100):0}% completion</div></div>
     <div class="mc"><div class="mc-label">In Progress</div><div class="mc-value">${inp}</div><div class="mc-delta" style="color:var(--blue)">active learners</div></div>
     <div class="mc"><div class="mc-label">Overdue</div><div class="mc-value">${od}</div><div class="mc-delta delta-down">${od} need action</div></div>`;
   renderTrAssignments();renderTrPrograms();
 }
 function renderTrAssignments(){
-  let list=[...trainingAssignments].sort((a,b)=>new Date(b.assignedDate)-new Date(a.assignedDate));
+  let list=[...getTrAsgn()].sort((a,b)=>new Date(b.assignedDate)-new Date(a.assignedDate));
   if(trf!=='all')list=list.filter(a=>a.status===trf);
   document.getElementById('tr-tbody').innerHTML=list.map(a=>{
     const emp=gE(a.empId),prog=gP(a.programId);if(!emp||!prog)return'';
@@ -523,15 +814,15 @@ function renderTrAssignments(){
       <td>${prog.mandatory?'<span class="badge b-mandatory">Mandatory</span>':'<span class="txs tm">Optional</span>'}</td>
       <td style="${a.status==='overdue'?'color:var(--red);font-weight:500':''}">${fDate(a.dueDate)}</td>
       <td><span class="badge ${sc.cls}">${sc.label}</span></td>
-      <td style="min-width:100px"><div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px"><span class="tm">${pct}%</span></div><div class="tpb"><div class="tpf" style="width:${pct}%;background:${bc}"></div></div></td>
+      <td style="min-width:100px"><div class="tpb"><div class="tpf" style="width:${pct}%;background:${bc}"></div></div><div style="font-size:11px;color:var(--text3);margin-top:2px">${pct}%</div></td>
       <td>${a.score!==null?`<span style="font-weight:500;color:${a.score>=80?'var(--green)':a.score>=60?'var(--amber)':'var(--red)'}">${a.score}%</span>`:'<span class="tm">—</span>'}</td>
-      <td>${canEdit()?`<div style="display:flex;gap:4px"><button class="btn btn-xs" onclick="openModal('updateTraining',${a.id})">Update</button>${a.status!=='completed'?`<button class="btn btn-xs btn-primary" onclick="quickComplete(${a.id})">✓</button>`:''}</div>`:'<span class="txs tm">—</span>'}</td>
+      <td>${hasPerm('manage_training')?`<div style="display:flex;gap:4px"><button class="btn btn-xs" onclick="openModal('updateTraining',${a.id})">Update</button>${a.status!=='completed'?`<button class="btn btn-xs btn-primary" onclick="quickComplete(${a.id})">✓</button>`:''}</div>`:'<span class="txs tm">—</span>'}</td>
     </tr>`;
   }).join('');
 }
 function renderTrPrograms(){
-  document.getElementById('prog-tbody').innerHTML=trainingPrograms.map(prog=>{
-    const assigns=trainingAssignments.filter(a=>a.programId===prog.id);
+  document.getElementById('prog-tbody').innerHTML=getTrProgs().map(prog=>{
+    const assigns=getTrAsgn().filter(a=>a.programId===prog.id);
     const comp=assigns.filter(a=>a.status==='completed').length;
     const pct=assigns.length?Math.round(comp/assigns.length*100):0;
     return`<tr>
@@ -540,24 +831,27 @@ function renderTrPrograms(){
       <td>${prog.mandatory?'<span class="badge b-mandatory">Yes</span>':'<span class="txs tm">No</span>'}</td>
       <td>${assigns.length}</td>
       <td><div style="display:flex;align-items:center;gap:8px"><div class="tpb" style="width:80px;display:inline-block"><div class="tpf" style="width:${pct}%;background:var(--green)"></div></div><span class="txs">${pct}%</span></div></td>
-      <td>${canEdit()?`<div style="display:flex;gap:4px"><button class="btn btn-xs" onclick="openModal('editProgram',${prog.id})">Edit</button><button class="btn btn-xs btn-blue" onclick="openModal('assignTraining',null,${prog.id})">Assign</button></div>`:''}</td>
+      <td>${hasPerm('manage_training')?`<div style="display:flex;gap:4px"><button class="btn btn-xs" onclick="openModal('editProgram',${prog.id})">Edit</button><button class="btn btn-xs btn-blue" onclick="openModal('assignTraining',null,${prog.id})">Assign</button></div>`:''}</td>
     </tr>`;
   }).join('');
 }
 function setTrTab(tab,el){document.querySelectorAll('.tbb').forEach(b=>b.classList.remove('active'));document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));el.classList.add('active');document.getElementById('tab-'+tab).classList.add('active');}
 function setTRF(f,el){trf=f;document.querySelectorAll('#trf .fb').forEach(b=>b.classList.remove('active'));el.classList.add('active');renderTrAssignments();}
 function quickComplete(id){
-  const a=trainingAssignments.find(x=>x.id===id);if(!a)return;
+  const asgn=getTrAsgn();const a=asgn.find(x=>x.id===id);if(!a)return;
   const s=prompt('Enter score (0-100):','100');if(s===null)return;
   a.status='completed';a.completedDate=td();a.score=parseInt(s)||100;a.progress=100;
+  saveTrAsgn(asgn);
   const emp=gE(a.empId),prog=gP(a.programId);
+  const evts=getEvts();evts.push({id:Date.now(),empId:a.empId,type:'training',date:td(),desc:`Completed: ${prog?.name} — Score: ${a.score}%`,loggedBy:CU.name,notified:false});saveEvts(evts);
   addNotif(`${emp?.name} completed "${prog?.name}" — ${a.score}%`,'success');
-  events.push({id:Date.now(),empId:a.empId,type:'training',date:td(),desc:`Completed: ${prog?.name} — Score: ${a.score}%`,loggedBy:CU.name,notified:false});
+  addAudit(CU.name,`Marked training complete: ${prog?.name} for ${emp?.name}`);
   renderTraining();toast('Marked as completed.','success');
 }
 
+// ─── OFFBOARDING ─────────────────────────────────────────────────────────────
 function renderOffboarding(){
-  const off=employees.filter(e=>e.status==='offboarded');
+  const off=getEmps().filter(e=>e.status==='offboarded');
   document.getElementById('off-tbody').innerHTML=off.map(emp=>{
     const c=aColor(emp.name),cl=emp.offChecklist||{},done=Object.values(cl).filter(Boolean).length,tot=Object.keys(cl).length;
     return`<tr>
@@ -570,48 +864,88 @@ function renderOffboarding(){
   }).join('');
 }
 
+// ─── ANALYTICS ───────────────────────────────────────────────────────────────
 function renderAnalytics(){
-  const active=employees.filter(e=>e.status==='active').length;
-  const abs=events.filter(e=>e.type==='absence').length;
-  const trComp=trainingAssignments.filter(a=>a.status==='completed').length,trTot=trainingAssignments.length;
+  const emps=getEmps(),evts=getEvts(),asgn=getTrAsgn();
+  const active=emps.filter(e=>e.status==='active').length;
+  const abs=evts.filter(e=>e.type==='absence').length;
+  const trComp=asgn.filter(a=>a.status==='completed').length,trTot=asgn.length;
   document.getElementById('an-metrics').innerHTML=`
     <div class="mc"><div class="mc-label">Avg onboarding time</div><div class="mc-value">18d</div><div class="mc-delta delta-up">↓ 3d vs last quarter</div></div>
     <div class="mc"><div class="mc-label">Absence rate</div><div class="mc-value">${active?Math.round(abs/active*100):0}%</div><div class="mc-delta">last 30 days</div></div>
     <div class="mc"><div class="mc-label">Training completion</div><div class="mc-value">${trTot?Math.round(trComp/trTot*100):0}%</div><div class="mc-delta delta-up">overall rate</div></div>
     <div class="mc"><div class="mc-label">Retention rate</div><div class="mc-value">91%</div><div class="mc-delta delta-up">↑ 2% vs last year</div></div>`;
-  const tc={};events.forEach(e=>{tc[e.type]=(tc[e.type]||0)+1});const tot=events.length||1;
+  const tc={};evts.forEach(e=>{tc[e.type]=(tc[e.type]||0)+1});const tot=evts.length||1;
   document.getElementById('an-events').innerHTML=Object.entries(tc).map(([t,n])=>{
     const cfg=TCFG[t]||{label:t,color:'#888'};
     return`<div class="brow"><div class="brlabs"><span>${cfg.label}</span><span class="tm">${n} (${Math.round(n/tot*100)}%)</span></div><div class="btrack"><div class="bfill" style="width:${Math.round(n/tot*100)}%;background:${cfg.color}"></div></div></div>`;
   }).join('');
-  const dc={};employees.filter(e=>e.status!=='offboarded').forEach(e=>{dc[e.dept]=(dc[e.dept]||0)+1});
+  const dc={};emps.filter(e=>e.status!=='offboarded').forEach(e=>{dc[e.dept]=(dc[e.dept]||0)+1});
   const md=Math.max(...Object.values(dc),1);
   document.getElementById('an-depts').innerHTML=Object.entries(dc).sort((a,b)=>b[1]-a[1]).map(([d,n])=>
     `<div class="brow"><div class="brlabs"><span>${d}</span><span class="tm">${n}</span></div><div class="btrack"><div class="bfill" style="width:${Math.round(n/md*100)}%;background:var(--green)"></div></div></div>`
   ).join('');
-  const depts=[...new Set(employees.filter(e=>e.status!=='offboarded').map(e=>e.dept))];
+  const depts=[...new Set(emps.filter(e=>e.status!=='offboarded').map(e=>e.dept))];
   document.getElementById('an-training').innerHTML=depts.map(dept=>{
-    const ids=employees.filter(e=>e.dept===dept).map(e=>e.id);
-    const da=trainingAssignments.filter(a=>ids.includes(a.empId));
+    const ids=emps.filter(e=>e.dept===dept).map(e=>e.id);
+    const da=asgn.filter(a=>ids.includes(a.empId));
     const cp=da.filter(a=>a.status==='completed').length,pct=da.length?Math.round(cp/da.length*100):0;
     return`<div class="brow"><div class="brlabs"><span>${dept}</span><span class="tm">${cp}/${da.length} (${pct}%)</span></div><div class="btrack"><div class="bfill" style="width:${pct}%;background:var(--blue)"></div></div></div>`;
   }).join('');
-  const ae=employees.filter(e=>e.status!=='offboarded'&&e.salary);
-  const ranges=[{l:'Under $50k',min:0,max:50000},{l:'$50–$70k',min:50000,max:70000},{l:'$70–$90k',min:70000,max:90000},{l:'Over $90k',min:90000,max:Infinity}];
-  const ms=Math.max(...ranges.map(r=>ae.filter(e=>e.salary.amount>=r.min&&e.salary.amount<r.max).length),1);
-  document.getElementById('an-salary').innerHTML=ranges.map(r=>{
-    const n=ae.filter(e=>e.salary.amount>=r.min&&e.salary.amount<r.max).length;
-    return`<div class="brow"><div class="brlabs"><span>${r.l}</span><span class="tm">${n} employees</span></div><div class="btrack"><div class="bfill" style="width:${Math.round(n/ms*100)}%;background:var(--amber)"></div></div></div>`;
-  }).join('');
+  if(hasPerm('view_salary')){
+    const ae=emps.filter(e=>e.status!=='offboarded'&&e.salary);
+    const ranges=[{l:'Under $50k',min:0,max:50000},{l:'$50–$70k',min:50000,max:70000},{l:'$70–$90k',min:70000,max:90000},{l:'Over $90k',min:90000,max:Infinity}];
+    const ms=Math.max(...ranges.map(r=>ae.filter(e=>e.salary.amount>=r.min&&e.salary.amount<r.max).length),1);
+    document.getElementById('an-salary').innerHTML=ranges.map(r=>{
+      const n=ae.filter(e=>e.salary.amount>=r.min&&e.salary.amount<r.max).length;
+      return`<div class="brow"><div class="brlabs"><span>${r.l}</span><span class="tm">${n} employees</span></div><div class="btrack"><div class="bfill" style="width:${Math.round(n/ms*100)}%;background:var(--amber)"></div></div></div>`;
+    }).join('');
+  } else {
+    document.getElementById('an-salary').innerHTML='<div style="color:var(--text3);font-size:13px">Salary data restricted to HR and Admin.</div>';
+  }
 }
 
-// EMPLOYEE PROFILE
+// ─── USER MANAGEMENT ─────────────────────────────────────────────────────────
+function renderUserMgmt(){
+  const users=getUsers();
+  document.getElementById('user-count-label').textContent=users.length+' users';
+  document.getElementById('user-list').innerHTML=users.map(user=>{
+    const c=aColor(user.name);
+    const isSelf=user.id===CU.id;
+    return`<div class="user-card">
+      <div class="avatar avatar-lg" style="background:${c}22;color:${c}">${inits(user.name)}</div>
+      <div class="user-card-info">
+        <div class="user-card-name">${user.name} ${isSelf?'<span style="font-size:11px;color:var(--text3)">(you)</span>':''}</div>
+        <div class="user-card-meta">@${user.username} · ${user.email}</div>
+        <div style="margin-top:4px;display:flex;align-items:center;gap:6px">
+          <span class="badge b-${user.role}">${user.role}</span>
+          ${user.active===false?'<span class="badge b-offboarded">Disabled</span>':'<span class="badge b-active" style="font-size:10px">Active</span>'}
+        </div>
+      </div>
+      <div class="user-card-actions">
+        ${!isSelf?`<button class="btn btn-xs" onclick="openModal('editUser',${user.id})">Edit</button>
+        <button class="btn btn-xs ${user.active===false?'btn-primary':'btn-danger'}" onclick="toggleUser(${user.id})">${user.active===false?'Enable':'Disable'}</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+  renderAuditLog();
+}
+
+function toggleUser(userId){
+  const users=getUsers();const u=users.find(x=>x.id===userId);if(!u)return;
+  u.active=u.active===false?true:false;
+  S.set('users',users);
+  addAudit(CU.name,`${u.active?'Enabled':'Disabled'} user: ${u.name}`);
+  renderUserMgmt();toast(`User ${u.active?'enabled':'disabled'}.`,'success');
+}
+
+// ─── EMPLOYEE PROFILE ─────────────────────────────────────────────────────────
 function viewEmp(id){
   const emp=gE(id);if(!emp)return;
   const evts=[...gEE(id)].sort((a,b)=>new Date(b.date)-new Date(a.date));
   const assigns=gEA(id);const c=aColor(emp.name);
   const cl=emp.checklist||emp.offChecklist||{},hasCL=Object.keys(cl).length>0;
-  const sal=emp.salary;
+  const sal=emp.salary;const showSal=hasPerm('view_salary');
   const mb=document.getElementById('mbox');mb.className='modal-box xl';
   mb.innerHTML=`
     <div class="modal-title">Employee Profile <button class="modal-close" onclick="closeModal()">✕</button></div>
@@ -629,14 +963,14 @@ function viewEmp(id){
       ${emp.reason?`<div class="ig-item"><div class="ig-label">Reason</div><div class="ig-value">${emp.reason}</div></div>`:''}
     </div>
     <div class="tab-bar" style="margin-bottom:12px">
-      <button class="tbb active" onclick="swETab('salary',this)">💰 Salary</button>
-      <button class="tbb" onclick="swETab('training',this)">📚 Training</button>
+      ${showSal?`<button class="tbb active" onclick="swETab('salary',this)">💰 Salary</button>`:''}
+      <button class="tbb ${showSal?'':'active'}" onclick="swETab('training',this)">📚 Training</button>
       <button class="tbb" onclick="swETab('events',this)">📋 Events</button>
       ${hasCL?`<button class="tbb" onclick="swETab('checklist',this)">✅ Checklist</button>`:''}
     </div>
 
     <!-- SALARY TAB -->
-    <div class="tab-pane active" id="et-salary">
+    ${showSal?`<div class="tab-pane active" id="et-salary">
       ${sal?`
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
         <div class="sal-card"><div class="sal-label">Current Salary</div><div class="sal-value">${fCur(sal.amount,sal.currency)}</div><div class="sal-meta">${sal.frequency}</div></div>
@@ -651,10 +985,10 @@ function viewEmp(id){
       </tbody></table>
       ${canEdit()?`<div style="margin-top:12px"><button class="btn btn-sm btn-primary" onclick="closeModal();openModal('updateSalary',${id})">Update Salary</button></div>`:''}
       `:'<div class="tm ts">No salary data.</div>'}
-    </div>
+    </div>`:''}
 
     <!-- TRAINING TAB -->
-    <div class="tab-pane" id="et-training">
+    <div class="tab-pane ${!showSal?'active':''}" id="et-training">
       ${assigns.length===0?'<div class="tm ts">No training assignments.</div>':
       '<table><thead><tr><th>Program</th><th>Status</th><th>Due</th><th>Score</th><th>Progress</th></tr></thead><tbody>'+
       assigns.map(a=>{const prog=gP(a.programId),sc=TRST[a.status]||{label:a.status,cls:'b-not-started'};const pct=a.status==='completed'?100:(a.progress||0);
@@ -664,7 +998,7 @@ function viewEmp(id){
           <td style="min-width:90px"><div class="tpb"><div class="tpf" style="width:${pct}%;background:${TRCOL[a.status]||'#888'}"></div></div><div class="txs tm" style="margin-top:2px">${pct}%</div></td>
         </tr>`;
       }).join('')+'</tbody></table>'}
-      ${canEdit()?`<div style="margin-top:12px"><button class="btn btn-sm btn-blue" onclick="closeModal();openModal('assignTraining',${id})">Assign Training</button></div>`:''}
+      ${hasPerm('manage_training')?`<div style="margin-top:12px"><button class="btn btn-sm btn-blue" onclick="closeModal();openModal('assignTraining',${id})">Assign Training</button></div>`:''}
     </div>
 
     <!-- EVENTS TAB -->
@@ -673,7 +1007,7 @@ function viewEmp(id){
       '<div class="tl">'+evts.map(ev=>{const cfg=TCFG[ev.type]||{label:ev.type,bg:'#eee',color:'#333'};
         return`<div class="tl-item"><div class="tl-icon" style="background:${cfg.bg};color:${cfg.color}">${cfg.label[0]}</div><div class="tl-body"><div class="tl-desc">${ev.desc}</div><div class="tl-meta">${fDate(ev.date)} · <span style="color:${cfg.color}">${cfg.label}</span> · ${ev.loggedBy}</div></div></div>`;
       }).join('')+'</div>'}
-      ${canEdit()?`<div style="margin-top:12px"><button class="btn btn-sm btn-primary" onclick="closeModal();openModal('addEvent',${id})">Log Event</button></div>`:''}
+      ${hasPerm('log_events')?`<div style="margin-top:12px"><button class="btn btn-sm btn-primary" onclick="closeModal();openModal('addEvent',${id})">Log Event</button></div>`:''}
     </div>
 
     <!-- CHECKLIST TAB -->
@@ -692,13 +1026,20 @@ function swETab(tab,el){
   document.querySelectorAll('.modal-box .tab-pane').forEach(p=>p.classList.remove('active'));
   el.classList.add('active');const pane=document.getElementById('et-'+tab);if(pane)pane.classList.add('active');
 }
-function togCheck(id,item,val,isOff){const emp=gE(id);if(!emp)return;if(isOff){if(!emp.offChecklist)emp.offChecklist={};emp.offChecklist[item]=val;}else{if(!emp.checklist)emp.checklist={};emp.checklist[item]=val;}}
+function togCheck(id,item,val,isOff){
+  const emps=getEmps();const emp=emps.find(e=>e.id===id);if(!emp)return;
+  if(isOff){if(!emp.offChecklist)emp.offChecklist={};emp.offChecklist[item]=val;}
+  else{if(!emp.checklist)emp.checklist={};emp.checklist[item]=val;}
+  saveEmps(emps);
+}
 
-// MODALS
+// ─── MODALS ───────────────────────────────────────────────────────────────────
 function openModal(type,pid,pid2){
-  if(!canEdit()&&['addEmployee','editEmployee','updateSalary','addProgram','assignTraining','updateTraining','offboard'].includes(type)){toast('HR and Admin only.','error');return;}
   const mb=document.getElementById('mbox');mb.className='modal-box';
+
+  // ── ADD / EDIT EMPLOYEE ──
   if(type==='addEmployee'||type==='editEmployee'){
+    if(!canEdit()){toast('Access denied.','error');return;}
     const emp=type==='editEmployee'?gE(pid):null;
     mb.innerHTML=`<div class="modal-title">${emp?'Edit Employee':'Add Employee'} <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="fsec">Personal Information</div>
@@ -707,17 +1048,20 @@ function openModal(type,pid,pid2){
       <div class="fr"><div class="fg"><label class="fl">Phone</label><input class="fi" id="fph" value="${emp?.phone||''}" placeholder="+1 555 000 0000"></div>
       <div class="fg"><label class="fl">Start date</label><input class="fi" id="fst" type="date" value="${emp?.start||td()}"></div></div>
       <div class="fsec">Role</div>
-      <div class="fr"><div class="fg"><label class="fl">Role</label><input class="fi" id="fr" value="${emp?.role||''}" placeholder="Software Engineer"></div>
+      <div class="fr"><div class="fg"><label class="fl">Job title / Role</label><input class="fi" id="fr2" value="${emp?.role||''}" placeholder="Software Engineer"></div>
       <div class="fg"><label class="fl">Department</label><select class="fs" id="fd">${['Engineering','Marketing','HR','Finance','Sales','Design','Operations'].map(d=>`<option ${emp?.dept===d?'selected':''}>${d}</option>`).join('')}</select></div></div>
       <div class="fg"><label class="fl">Manager</label><input class="fi" id="fm" value="${emp?.manager||''}" placeholder="Manager name"></div>
       <div class="fsec">Compensation</div>
       <div class="fr3"><div class="fg"><label class="fl">Salary amount</label><input class="fi" id="fsal" type="number" value="${emp?.salary?.amount||''}" placeholder="50000"></div>
       <div class="fg"><label class="fl">Currency</label><select class="fs" id="fcur">${['USD','EUR','GBP','MUR','AUD','CAD'].map(c=>`<option ${emp?.salary?.currency===c?'selected':''}>${c}</option>`).join('')}</select></div>
       <div class="fg"><label class="fl">Frequency</label><select class="fs" id="ffreq">${['Annual','Monthly','Hourly'].map(f=>`<option ${emp?.salary?.frequency===f?'selected':''}>${f}</option>`).join('')}</select></div></div>
-      <div class="fr"><div class="fg"><label class="fl">Next review date</label><input class="fi" id="fnr" type="date" value="${emp?.salary?.nextReview||''}"></div></div>
+      <div class="fg"><label class="fl">Next review date</label><input class="fi" id="fnr" type="date" value="${emp?.salary?.nextReview||''}"></div>
       <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="${emp?`submitEdit(${pid})`:'submitAdd()'}">${emp?'Save changes':'Add employee'}</button></div>`;
+
+  // ── UPDATE SALARY ──
   } else if(type==='updateSalary'){
+    if(!hasPerm('view_salary')){toast('Access denied.','error');return;}
     const emp=gE(pid);
     mb.innerHTML=`<div class="modal-title">Update Salary — ${emp?.name} <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div style="background:var(--bg2);border-radius:var(--radius);padding:10px 12px;margin-bottom:14px;font-size:13px">Current: <strong>${emp?.salary?fCur(emp.salary.amount,emp.salary.currency):'—'}</strong></div>
@@ -727,17 +1071,23 @@ function openModal(type,pid,pid2){
       <div class="fg"><label class="fl">Next review</label><input class="fi" id="fnrd" type="date" value="${emp?.salary?.nextReview||''}"></div></div>
       <div class="fg"><label class="fl">Reason / Notes</label><input class="fi" id="fsn" placeholder="e.g. Annual review, Promotion…"></div>
       <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitSalary(${pid})">Update</button></div>`;
+
+  // ── ADD EVENT ──
   } else if(type==='addEvent'){
-    const ae=employees.filter(e=>e.status!=='offboarded');
+    if(!hasPerm('log_events')){toast('Access denied.','error');return;}
+    const ae=getEmps().filter(e=>e.status!=='offboarded');
     mb.innerHTML=`<div class="modal-title">Log Event <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="fg"><label class="fl">Employee *</label><select class="fs" id="femp">${ae.map(e=>`<option value="${e.id}"${e.id===pid?' selected':''}>${e.name} — ${e.dept}</option>`).join('')}</select></div>
       <div class="fr"><div class="fg"><label class="fl">Type</label><select class="fs" id="ftyp"><option value="absence">Absence</option><option value="warning">Warning</option><option value="training">Training</option><option value="milestone">Milestone</option></select></div>
       <div class="fg"><label class="fl">Date</label><input class="fi" id="fdt" type="date" value="${td()}"></div></div>
       <div class="fg"><label class="fl">Description *</label><textarea class="ft" id="fdes" placeholder="Describe the event…"></textarea></div>
       <div class="fg"><label class="fl">Logged by</label><input class="fi" id="flb" value="${CU?.name||''}"></div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><input type="checkbox" id="fno" checked style="accent-color:var(--green);width:15px;height:15px"><label for="fno" style="font-size:13px;cursor:pointer">Send email notification</label></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><input type="checkbox" id="fno" checked style="accent-color:var(--green);width:15px;height:15px"><label for="fno" style="font-size:13px;cursor:pointer">Send notification</label></div>
       <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEvent()">Log event</button></div>`;
+
+  // ── ADD TRAINING PROGRAM ──
   } else if(type==='addProgram'){
+    if(!hasPerm('manage_training')){toast('Access denied.','error');return;}
     mb.innerHTML=`<div class="modal-title">Add Training Program <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="fg"><label class="fl">Program name *</label><input class="fi" id="fpn" placeholder="e.g. GDPR Compliance"></div>
       <div class="fg"><label class="fl">Description</label><textarea class="ft" id="fpd" placeholder="Brief description…"></textarea></div>
@@ -745,6 +1095,8 @@ function openModal(type,pid,pid2){
       <div class="fg"><label class="fl">Duration</label><input class="fi" id="fpdu" placeholder="e.g. 4h, 2 days"></div></div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><input type="checkbox" id="fpm" style="accent-color:var(--green);width:15px;height:15px"><label for="fpm" style="font-size:13px;cursor:pointer">Mandatory for all employees</label></div>
       <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-blue" onclick="submitProgram()">Add program</button></div>`;
+
+  // ── EDIT TRAINING PROGRAM ──
   } else if(type==='editProgram'){
     const prog=gP(pid);
     mb.innerHTML=`<div class="modal-title">Edit Program <button class="modal-close" onclick="closeModal()">✕</button></div>
@@ -754,17 +1106,22 @@ function openModal(type,pid,pid2){
       <div class="fg"><label class="fl">Duration</label><input class="fi" id="fpdu" value="${prog?.duration||''}"></div></div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><input type="checkbox" id="fpm" ${prog?.mandatory?'checked':''} style="accent-color:var(--green);width:15px;height:15px"><label for="fpm" style="font-size:13px;cursor:pointer">Mandatory</label></div>
       <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-blue" onclick="submitEditProgram(${pid})">Save</button></div>`;
+
+  // ── ASSIGN TRAINING ──
   } else if(type==='assignTraining'){
-    const ae=employees.filter(e=>e.status!=='offboarded');
+    if(!hasPerm('manage_training')){toast('Access denied.','error');return;}
+    const ae=getEmps().filter(e=>e.status!=='offboarded');
     mb.innerHTML=`<div class="modal-title">Assign Training <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="fg"><label class="fl">Employee *</label><select class="fs" id="ftre">${ae.map(e=>`<option value="${e.id}"${e.id===pid?' selected':''}>${e.name} — ${e.dept}</option>`).join('')}</select></div>
-      <div class="fg"><label class="fl">Training program *</label><select class="fs" id="ftrp">${trainingPrograms.map(p=>`<option value="${p.id}"${p.id===pid2?' selected':''}>${p.name} (${p.category} · ${p.duration})</option>`).join('')}</select></div>
+      <div class="fg"><label class="fl">Training program *</label><select class="fs" id="ftrp">${getTrProgs().map(p=>`<option value="${p.id}"${p.id===pid2?' selected':''}>${p.name} (${p.category} · ${p.duration})</option>`).join('')}</select></div>
       <div class="fr"><div class="fg"><label class="fl">Assigned date</label><input class="fi" id="ftra" type="date" value="${td()}"></div>
       <div class="fg"><label class="fl">Due date *</label><input class="fi" id="ftrd" type="date"></div></div>
       <div class="fg"><label class="fl">Notes</label><input class="fi" id="ftrn" placeholder="Optional…"></div>
       <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-blue" onclick="submitAssign()">Assign</button></div>`;
+
+  // ── UPDATE TRAINING ──
   } else if(type==='updateTraining'){
-    const a=trainingAssignments.find(x=>x.id===pid),prog=a?gP(a.programId):null;
+    const a=getTrAsgn().find(x=>x.id===pid),prog=a?gP(a.programId):null;
     mb.innerHTML=`<div class="modal-title">Update: ${prog?.name||''} <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="fg"><label class="fl">Status</label><select class="fs" id="ftrs">${Object.entries(TRST).map(([k,v])=>`<option value="${k}"${a?.status===k?' selected':''}>${v.label}</option>`).join('')}</select></div>
       <div class="fr"><div class="fg"><label class="fl">Progress %</label><input class="fi" id="ftrpg" type="number" min="0" max="100" value="${a?.progress||0}"></div>
@@ -773,89 +1130,330 @@ function openModal(type,pid,pid2){
       <div class="fg"><label class="fl">Due date</label><input class="fi" id="ftrdupd" type="date" value="${a?.dueDate||''}"></div></div>
       <div class="fg"><label class="fl">Notes</label><input class="fi" id="ftrnu" value="${a?.notes||''}" placeholder="Notes…"></div>
       <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitUpdateTr(${a?.id})">Save</button></div>`;
+
+  // ── OFFBOARD ──
   } else if(type==='offboard'){
-    const ae=employees.filter(e=>e.status!=='offboarded');
+    if(!hasPerm('manage_offboarding')){toast('Access denied.','error');return;}
+    const ae=getEmps().filter(e=>e.status!=='offboarded');
     mb.innerHTML=`<div class="modal-title">Offboard Employee <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="fg"><label class="fl">Employee *</label><select class="fs" id="foe">${ae.map(e=>`<option value="${e.id}"${e.id===pid?' selected':''}>${e.name} — ${e.dept}</option>`).join('')}</select></div>
       <div class="fr"><div class="fg"><label class="fl">Last working day</label><input class="fi" id="fold" type="date" value="${td()}"></div>
       <div class="fg"><label class="fl">Reason</label><select class="fs" id="forr"><option>Resigned</option><option>Terminated</option><option>Retired</option><option>Contract ended</option><option>Redundancy</option></select></div></div>
       <div style="background:var(--red-light);border-radius:var(--radius);padding:10px 12px;font-size:12.5px;color:var(--red-deep);margin:6px 0">⚠ This will mark the employee as offboarded and generate an exit checklist.</div>
       <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-danger" onclick="submitOffboard()">Confirm</button></div>`;
+
+  // ── ADD USER ──
+  } else if(type==='addUser'){
+    if(!hasPerm('admin')){toast('Admin only.','error');return;}
+    mb.innerHTML=`<div class="modal-title">Create New User <button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="fsec">Account Details</div>
+      <div class="fr"><div class="fg"><label class="fl">Full name *</label><input class="fi" id="un-name" placeholder="Jane Smith"></div>
+      <div class="fg"><label class="fl">Username *</label><input class="fi" id="un-user" placeholder="janesmith" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9_]/g,'')"></div></div>
+      <div class="fg"><label class="fl">Email *</label><input class="fi" id="un-email" type="email" placeholder="jane@company.com"></div>
+      <div class="fr"><div class="fg"><label class="fl">Password *</label><input class="fi" id="un-pass" type="password" placeholder="Min. 6 characters"></div>
+      <div class="fg"><label class="fl">Confirm password *</label><input class="fi" id="un-pass2" type="password" placeholder="Repeat password"></div></div>
+      <div class="fsec">Role & Access</div>
+      <div class="fg"><label class="fl">Role *</label>
+        <select class="fs" id="un-role" onchange="updateRoleDesc(this.value)">
+          <option value="hr">HR — People management</option>
+          <option value="manager">Manager — View + log events</option>
+          <option value="viewer">Viewer — Read only</option>
+          <option value="admin">Admin — Full access</option>
+        </select>
+        <div class="role-desc" id="role-desc-box">Can add employees, log events, manage onboarding & offboarding, view salaries, assign training.</div>
+      </div>
+      <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitAddUser()">Create user</button></div>`;
+
+  // ── EDIT USER ──
+  } else if(type==='editUser'){
+    if(!hasPerm('admin')){toast('Admin only.','error');return;}
+    const users=getUsers();const u=users.find(x=>x.id===pid);if(!u)return;
+    mb.innerHTML=`<div class="modal-title">Edit User — ${u.name} <button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="fr"><div class="fg"><label class="fl">Full name</label><input class="fi" id="eu-name" value="${u.name}"></div>
+      <div class="fg"><label class="fl">Email</label><input class="fi" id="eu-email" value="${u.email}"></div></div>
+      <div class="fg"><label class="fl">Role</label>
+        <select class="fs" id="eu-role" onchange="updateRoleDesc(this.value,'eu-role-desc')">
+          ${['admin','hr','manager','viewer'].map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('')}
+        </select>
+        <div class="role-desc" id="eu-role-desc"></div>
+      </div>
+      <div class="fsec">Change Password (leave blank to keep current)</div>
+      <div class="fr"><div class="fg"><label class="fl">New password</label><input class="fi" id="eu-pass" type="password" placeholder="New password…"></div>
+      <div class="fg"><label class="fl">Confirm</label><input class="fi" id="eu-pass2" type="password" placeholder="Repeat…"></div></div>
+      <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditUser(${pid})">Save changes</button></div>`;
+
+  // ── CSV IMPORT ──
+  } else if(type==='csvImport'){
+    if(!canEdit()){toast('Access denied.','error');return;}
+    mb.className='modal-box wide';
+    mb.innerHTML=`<div class="modal-title">Import Employees via CSV <button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Upload a CSV file to add or update employee records. Existing employees matched by email will be updated; new emails will create new records.</div>
+
+      <div style="background:var(--bg2);border-radius:var(--radius);padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">
+        <div style="font-weight:600;margin-bottom:5px">Required columns:</div>
+        <div style="font-family:monospace;font-size:11.5px;color:var(--text3)">name, email</div>
+        <div style="font-weight:600;margin:8px 0 5px">Optional columns:</div>
+        <div style="font-family:monospace;font-size:11.5px;color:var(--text3)">phone, role, dept, manager, start, status, salary, currency</div>
+        <div style="margin-top:8px"><a href="#" onclick="downloadTemplate();return false;" style="color:var(--blue);font-size:12px;">⬇ Download template CSV</a></div>
+      </div>
+
+      <div class="upload-zone" id="upload-zone" onclick="document.getElementById('csv-file').click()" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFile(event)">
+        <input type="file" id="csv-file" accept=".csv" onchange="handleCSVFile(this.files[0])">
+        <div class="upload-icon">📄</div>
+        <div class="upload-title">Click to upload or drag & drop</div>
+        <div class="upload-sub">CSV files only · max 5MB</div>
+      </div>
+      <div id="csv-preview-area"></div>
+      <div class="mf">
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" id="import-btn" onclick="executeImport()" style="display:none">Import records</button>
+      </div>`;
   }
   document.getElementById('mb').classList.add('open');
 }
-function closeModal(){document.getElementById('mb').classList.remove('open');}
 
+function closeModal(){document.getElementById('mb').classList.remove('open');}
+function updateRoleDesc(role,elId='role-desc-box'){
+  const descs={admin:'Full access: manage users, view all data, offboard employees.',hr:'Can add employees, log events, manage onboarding & offboarding, view salaries, assign training.',manager:'Can view employees and events, log events for their team. Cannot view salaries or manage offboarding.',viewer:'Read-only access: dashboard, employees list, and training status only.'};
+  const el=document.getElementById(elId);if(el)el.textContent=descs[role]||'';
+}
+
+// ─── SUBMIT HANDLERS ──────────────────────────────────────────────────────────
 function submitAdd(){
   const name=document.getElementById('fn').value.trim(),email=document.getElementById('fe').value.trim();
   if(!name||!email){toast('Name and email required.','error');return;}
   const sa=parseFloat(document.getElementById('fsal').value);
-  employees.push({id:Date.now(),name,email,phone:document.getElementById('fph').value,role:document.getElementById('fr').value||'—',dept:document.getElementById('fd').value,manager:document.getElementById('fm').value||'—',start:document.getElementById('fst').value||td(),status:'onboarding',
+  const emps=getEmps();
+  emps.push({id:Date.now(),name,email,phone:document.getElementById('fph').value,role:document.getElementById('fr2').value||'—',dept:document.getElementById('fd').value,manager:document.getElementById('fm').value||'—',start:document.getElementById('fst').value||td(),status:'onboarding',
     salary:sa?{amount:sa,currency:document.getElementById('fcur').value,frequency:document.getElementById('ffreq').value,lastReview:null,nextReview:document.getElementById('fnr').value||null,history:[{date:document.getElementById('fst').value||td(),amount:sa,note:'Starting salary'}]}:null,
     checklist:{'Paperwork submitted':false,'System access granted':false,'IT equipment issued':false,'Benefits enrolled':false,'Manager intro done':false}});
-  addNotif('New hire added: '+name,'success');closeModal();renderDashboard();toast(name+' added. Onboarding started.','success');
+  saveEmps(emps);addNotif('New hire added: '+name,'success');addAudit(CU.name,'Added employee: '+name);
+  closeModal();renderDashboard();toast(name+' added. Onboarding started.','success');
 }
+
 function submitEdit(id){
-  const emp=gE(id);if(!emp)return;
-  emp.name=document.getElementById('fn').value.trim()||emp.name;emp.email=document.getElementById('fe').value.trim()||emp.email;
-  emp.phone=document.getElementById('fph').value;emp.role=document.getElementById('fr').value||emp.role;
+  const emps=getEmps();const emp=emps.find(e=>e.id===id);if(!emp)return;
+  emp.name=document.getElementById('fn').value.trim()||emp.name;
+  emp.email=document.getElementById('fe').value.trim()||emp.email;
+  emp.phone=document.getElementById('fph').value;
+  emp.role=document.getElementById('fr2').value||emp.role;
   emp.dept=document.getElementById('fd').value;emp.manager=document.getElementById('fm').value||emp.manager;
   const sa=parseFloat(document.getElementById('fsal').value);
   if(sa){if(!emp.salary)emp.salary={amount:sa,currency:'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[]};
     emp.salary.amount=sa;emp.salary.currency=document.getElementById('fcur').value;emp.salary.frequency=document.getElementById('ffreq').value;emp.salary.nextReview=document.getElementById('fnr').value||emp.salary.nextReview;}
-  closeModal();toast('Profile updated.','success');
+  saveEmps(emps);addAudit(CU.name,'Edited employee: '+emp.name);closeModal();toast('Profile updated.','success');
 }
+
 function submitSalary(id){
-  const emp=gE(id);if(!emp)return;
+  const emps=getEmps();const emp=emps.find(e=>e.id===id);if(!emp)return;
   const na=parseFloat(document.getElementById('fns').value);if(!na){toast('Enter a valid salary.','error');return;}
   const cur=document.getElementById('fnc').value,note=document.getElementById('fsn').value||'Salary update',date=document.getElementById('fed').value||td();
   if(!emp.salary)emp.salary={amount:na,currency:cur,frequency:'Annual',history:[],lastReview:null,nextReview:null};
   emp.salary.amount=na;emp.salary.currency=cur;emp.salary.lastReview=date;emp.salary.nextReview=document.getElementById('fnrd').value||emp.salary.nextReview;
   emp.salary.history.push({date,amount:na,note});
-  addNotif('Salary updated for '+emp.name+': '+fCur(na,cur),'info');closeModal();toast('Salary updated.','success');
+  saveEmps(emps);addNotif('Salary updated for '+emp.name+': '+fCur(na,cur),'info');addAudit(CU.name,'Updated salary for '+emp.name);
+  closeModal();toast('Salary updated.','success');
 }
+
 function submitEvent(){
   const empId=parseInt(document.getElementById('femp').value),desc=document.getElementById('fdes').value.trim();
   if(!desc){toast('Description required.','error');return;}
   const notify=document.getElementById('fno').checked;
-  events.push({id:Date.now(),empId,type:document.getElementById('ftyp').value,date:document.getElementById('fdt').value||td(),desc,loggedBy:document.getElementById('flb').value||CU.name,notified:notify});
-  addNotif('Event logged for '+(gE(empId)?.name||'employee'),'info');closeModal();renderDashboard();toast('Event logged.','success');
+  const evts=getEvts();
+  evts.push({id:Date.now(),empId,type:document.getElementById('ftyp').value,date:document.getElementById('fdt').value||td(),desc,loggedBy:document.getElementById('flb').value||CU.name,notified:notify});
+  saveEvts(evts);addNotif('Event logged for '+(gE(empId)?.name||'employee'),'info');addAudit(CU.name,'Logged event for '+gE(empId)?.name);
+  closeModal();renderDashboard();toast('Event logged.','success');
 }
+
 function submitProgram(){
   const name=document.getElementById('fpn').value.trim();if(!name){toast('Name required.','error');return;}
-  trainingPrograms.push({id:Date.now(),name,description:document.getElementById('fpd').value,category:document.getElementById('fpc').value,duration:document.getElementById('fpdu').value||'—',mandatory:document.getElementById('fpm').checked});
-  closeModal();renderTraining();toast('Program added.','success');
+  const progs=getTrProgs();
+  progs.push({id:Date.now(),name,description:document.getElementById('fpd').value,category:document.getElementById('fpc').value,duration:document.getElementById('fpdu').value||'—',mandatory:document.getElementById('fpm').checked});
+  saveTrProgs(progs);closeModal();renderTraining();toast('Program added.','success');
 }
+
 function submitEditProgram(id){
-  const prog=gP(id);if(!prog)return;
+  const progs=getTrProgs();const prog=progs.find(p=>p.id===id);if(!prog)return;
   prog.name=document.getElementById('fpn').value.trim()||prog.name;prog.description=document.getElementById('fpd').value;prog.category=document.getElementById('fpc').value;prog.duration=document.getElementById('fpdu').value||prog.duration;prog.mandatory=document.getElementById('fpm').checked;
-  closeModal();renderTraining();toast('Program updated.','success');
+  saveTrProgs(progs);closeModal();renderTraining();toast('Program updated.','success');
 }
+
 function submitAssign(){
   const empId=parseInt(document.getElementById('ftre').value),progId=parseInt(document.getElementById('ftrp').value),due=document.getElementById('ftrd').value;
   if(!due){toast('Due date required.','error');return;}
-  if(trainingAssignments.find(a=>a.empId===empId&&a.programId===progId&&a.status!=='completed')){toast('Already assigned.','error');return;}
-  trainingAssignments.push({id:Date.now(),empId,programId:progId,status:'not-started',assignedDate:document.getElementById('ftra').value||td(),dueDate:due,completedDate:null,score:null,notes:document.getElementById('ftrn').value,progress:0});
-  addNotif('"'+gP(progId)?.name+'" assigned to '+gE(empId)?.name,'info');closeModal();renderTraining();toast('Training assigned.','success');
+  const asgn=getTrAsgn();
+  if(asgn.find(a=>a.empId===empId&&a.programId===progId&&a.status!=='completed')){toast('Already assigned.','error');return;}
+  asgn.push({id:Date.now(),empId,programId:progId,status:'not-started',assignedDate:document.getElementById('ftra').value||td(),dueDate:due,completedDate:null,score:null,notes:document.getElementById('ftrn').value,progress:0});
+  saveTrAsgn(asgn);addNotif('"'+gP(progId)?.name+'" assigned to '+gE(empId)?.name,'info');addAudit(CU.name,'Assigned training "'+gP(progId)?.name+'" to '+gE(empId)?.name);
+  closeModal();renderTraining();toast('Training assigned.','success');
 }
+
 function submitUpdateTr(id){
-  const a=trainingAssignments.find(x=>x.id===id);if(!a)return;
+  const asgn=getTrAsgn();const a=asgn.find(x=>x.id===id);if(!a)return;
   a.status=document.getElementById('ftrs').value;a.progress=parseInt(document.getElementById('ftrpg').value)||a.progress;
   const sc=document.getElementById('ftrsc').value;if(sc)a.score=parseInt(sc);
   const cd=document.getElementById('ftrcd').value;if(cd)a.completedDate=cd;
   a.dueDate=document.getElementById('ftrdupd').value||a.dueDate;a.notes=document.getElementById('ftrnu').value;
   if(a.status==='completed'){if(!a.completedDate)a.completedDate=td();a.progress=100;}
-  closeModal();renderTraining();toast('Training updated.','success');
-}
-function submitOffboard(){
-  const empId=parseInt(document.getElementById('foe').value),emp=gE(empId);if(!emp)return;
-  emp.status='offboarded';emp.lastDay=document.getElementById('fold').value;emp.reason=document.getElementById('forr').value;
-  emp.offChecklist={'Exit interview done':false,'Equipment returned':false,'System access revoked':false,'Final payroll processed':false};
-  events.push({id:Date.now(),empId,type:'milestone',date:emp.lastDay||td(),desc:'Offboarding initiated — '+emp.reason,loggedBy:CU.name,notified:true});
-  addNotif(emp.name+' offboarded. Exit checklist created.','info');closeModal();renderDashboard();toast(emp.name+' offboarded.','success');
+  saveTrAsgn(asgn);closeModal();renderTraining();toast('Training updated.','success');
 }
 
-// NOTIFICATIONS
+function submitOffboard(){
+  const emps=getEmps();const empId=parseInt(document.getElementById('foe').value);const emp=emps.find(e=>e.id===empId);if(!emp)return;
+  emp.status='offboarded';emp.lastDay=document.getElementById('fold').value;emp.reason=document.getElementById('forr').value;
+  emp.offChecklist={'Exit interview done':false,'Equipment returned':false,'System access revoked':false,'Final payroll processed':false};
+  saveEmps(emps);
+  const evts=getEvts();evts.push({id:Date.now(),empId,type:'milestone',date:emp.lastDay||td(),desc:'Offboarding initiated — '+emp.reason,loggedBy:CU.name,notified:true});saveEvts(evts);
+  addNotif(emp.name+' offboarded. Exit checklist created.','info');addAudit(CU.name,'Offboarded: '+emp.name+' ('+emp.reason+')');
+  closeModal();renderDashboard();toast(emp.name+' offboarded.','success');
+}
+
+// ─── USER CRUD ────────────────────────────────────────────────────────────────
+function submitAddUser(){
+  const name=document.getElementById('un-name').value.trim();
+  const username=document.getElementById('un-user').value.trim().toLowerCase();
+  const email=document.getElementById('un-email').value.trim();
+  const pass=document.getElementById('un-pass').value;
+  const pass2=document.getElementById('un-pass2').value;
+  const role=document.getElementById('un-role').value;
+  if(!name||!username||!email||!pass){toast('All fields required.','error');return;}
+  if(pass!==pass2){toast('Passwords do not match.','error');return;}
+  if(pass.length<6){toast('Password must be at least 6 characters.','error');return;}
+  const users=getUsers();
+  if(users.find(u=>u.username===username)){toast('Username already taken.','error');return;}
+  users.push({id:Date.now(),name,username,email,role,createdAt:new Date().toISOString(),active:true,passwordHash:simpleHash(pass)});
+  S.set('users',users);addAudit(CU.name,'Created user: '+name+' ('+role+')');
+  closeModal();renderUserMgmt();toast('User "'+username+'" created.','success');
+}
+
+function submitEditUser(id){
+  const users=getUsers();const u=users.find(x=>x.id===id);if(!u)return;
+  u.name=document.getElementById('eu-name').value.trim()||u.name;
+  u.email=document.getElementById('eu-email').value.trim()||u.email;
+  u.role=document.getElementById('eu-role').value;
+  const newPass=document.getElementById('eu-pass').value;
+  const newPass2=document.getElementById('eu-pass2').value;
+  if(newPass){
+    if(newPass!==newPass2){toast('Passwords do not match.','error');return;}
+    if(newPass.length<6){toast('Password too short.','error');return;}
+    u.passwordHash=simpleHash(newPass);
+  }
+  S.set('users',users);addAudit(CU.name,'Edited user: '+u.name);
+  closeModal();renderUserMgmt();toast('User updated.','success');
+}
+
+// ─── CSV IMPORT ───────────────────────────────────────────────────────────────
+let parsedCSVData=null;
+
+function downloadTemplate(){
+  const headers='name,email,phone,role,dept,manager,start,status,salary,currency';
+  const example='John Smith,john@company.com,+230 5700 0000,Software Engineer,Engineering,Jane Doe,2025-01-01,active,55000,USD';
+  const csv=headers+'\n'+example;
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='employee_import_template.csv';a.click();
+}
+
+function dragOver(e){e.preventDefault();document.getElementById('upload-zone').classList.add('drag-over');}
+function dragLeave(e){document.getElementById('upload-zone').classList.remove('drag-over');}
+function dropFile(e){e.preventDefault();document.getElementById('upload-zone').classList.remove('drag-over');const f=e.dataTransfer.files[0];if(f)handleCSVFile(f);}
+
+function handleCSVFile(file){
+  if(!file||!file.name.endsWith('.csv')){toast('Please upload a .csv file.','error');return;}
+  if(file.size>5*1024*1024){toast('File too large. Max 5MB.','error');return;}
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const text=e.target.result;
+      const rows=text.trim().split(/\r?\n/);
+      const headers=rows[0].split(',').map(h=>h.trim().toLowerCase().replace(/["']/g,''));
+      const required=['name','email'];
+      const missing=required.filter(r=>!headers.includes(r));
+      if(missing.length>0){
+        document.getElementById('csv-preview-area').innerHTML=`<div class="import-result error">❌ Missing required columns: <strong>${missing.join(', ')}</strong></div>`;
+        return;
+      }
+      const data=rows.slice(1).filter(r=>r.trim()).map(row=>{
+        const vals=parseCSVRow(row);
+        const obj={};headers.forEach((h,i)=>obj[h]=(vals[i]||'').trim().replace(/^["']|["']$/g,''));
+        return obj;
+      });
+      parsedCSVData={headers,data};
+      const existing=getEmps();
+      let newCount=0,updateCount=0;
+      data.forEach(row=>{
+        if(existing.find(e=>e.email.toLowerCase()===row.email.toLowerCase()))updateCount++;
+        else newCount++;
+      });
+      const preview=data.slice(0,5);
+      const previewHTML=`<div class="csv-preview">
+        <div style="font-size:13px;font-weight:500;margin:12px 0 6px">Preview (first 5 rows of ${data.length})</div>
+        <table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+        <tbody>${preview.map(row=>`<tr>${headers.map(h=>`<td>${row[h]||'—'}</td>`).join('')}</tr>`).join('')}</tbody></table>
+      </div>
+      <div class="import-result ${updateCount>0||newCount>0?'warning':'success'}">
+        📊 <strong>${data.length} records</strong> detected: <strong>${newCount} new</strong> employees to add, <strong>${updateCount} existing</strong> to update.
+      </div>`;
+      document.getElementById('csv-preview-area').innerHTML=previewHTML;
+      document.getElementById('import-btn').style.display='inline-flex';
+    }catch(err){
+      document.getElementById('csv-preview-area').innerHTML=`<div class="import-result error">❌ Failed to parse CSV: ${err.message}</div>`;
+    }
+  };
+  reader.readAsText(file);
+}
+
+function parseCSVRow(row){
+  const vals=[];let cur='',inQ=false;
+  for(let i=0;i<row.length;i++){
+    if(row[i]==='"'){inQ=!inQ;}
+    else if(row[i]===','&&!inQ){vals.push(cur);cur='';}
+    else cur+=row[i];
+  }
+  vals.push(cur);return vals;
+}
+
+function executeImport(){
+  if(!parsedCSVData){toast('No CSV data loaded.','error');return;}
+  const {headers,data}=parsedCSVData;
+  const emps=getEmps();
+  let added=0,updated=0,errors=[];
+  data.forEach((row,i)=>{
+    if(!row.name||!row.email){errors.push(`Row ${i+2}: missing name or email`);return;}
+    const existing=emps.find(e=>e.email.toLowerCase()===row.email.toLowerCase());
+    if(existing){
+      // Update existing
+      if(row.name)existing.name=row.name;
+      if(row.phone)existing.phone=row.phone;
+      if(row.role)existing.role=row.role;
+      if(row.dept)existing.dept=row.dept;
+      if(row.manager)existing.manager=row.manager;
+      if(row.start)existing.start=row.start;
+      if(row.status&&['active','onboarding','offboarded'].includes(row.status))existing.status=row.status;
+      if(row.salary&&!isNaN(parseFloat(row.salary))){
+        const amt=parseFloat(row.salary);
+        if(!existing.salary)existing.salary={amount:amt,currency:row.currency||'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[]};
+        else{existing.salary.amount=amt;if(row.currency)existing.salary.currency=row.currency;}
+      }
+      updated++;
+    } else {
+      // Add new
+      const sal=row.salary&&!isNaN(parseFloat(row.salary))?parseFloat(row.salary):null;
+      emps.push({id:Date.now()+Math.random(),name:row.name,email:row.email,phone:row.phone||'',role:row.role||'—',dept:row.dept||'General',manager:row.manager||'—',start:row.start||td(),status:row.status||'onboarding',
+        salary:sal?{amount:sal,currency:row.currency||'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[{date:row.start||td(),amount:sal,note:'Imported from CSV'}]}:null,
+        checklist:{'Paperwork submitted':false,'System access granted':false,'IT equipment issued':false,'Benefits enrolled':false,'Manager intro done':false}});
+      added++;
+    }
+  });
+  saveEmps(emps);
+  addAudit(CU.name,`CSV import: ${added} added, ${updated} updated`);
+  const resultMsg=`✅ Import complete: ${added} added, ${updated} updated.${errors.length?` ⚠ ${errors.length} row(s) skipped.`:''}`;
+  document.getElementById('csv-preview-area').innerHTML+=`<div class="import-result success">${resultMsg}</div>`;
+  document.getElementById('import-btn').textContent='✓ Done';document.getElementById('import-btn').disabled=true;
+  addNotif(`CSV import: ${added} new, ${updated} updated`,'success');
+  toast(`Imported: ${added} new, ${updated} updated.`,'success');
+  parsedCSVData=null;
+}
+
+// ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
 function addNotif(msg,type='info'){notifs.unshift({id:Date.now(),msg,type,time:new Date().toLocaleTimeString()});renderNotifs();}
 function renderNotifs(){
   const n=notifs.length,el=document.getElementById('nc');el.textContent=n;el.className='notif-count'+(n===0?' hidden':'');
@@ -865,33 +1463,38 @@ function toggleNotif(){document.getElementById('np').classList.toggle('open');}
 function clearNotifs(){notifs=[];renderNotifs();}
 document.addEventListener('click',e=>{if(!e.target.closest('.notif-wrap'))document.getElementById('np').classList.remove('open');});
 
-// CSV EXPORT
+// ─── CSV EXPORT ───────────────────────────────────────────────────────────────
 function exportCSV(type){
+  const showSal=hasPerm('view_salary');
   let rows,fn;
   if(type==='employees'){
-    rows=[['Name','Email','Phone','Department','Role','Manager','Start Date','Status','Salary','Currency','Frequency','Next Review'],
-      ...employees.map(e=>[e.name,e.email,e.phone||'',e.dept,e.role,e.manager,e.start,e.status,e.salary?.amount||'',e.salary?.currency||'',e.salary?.frequency||'',e.salary?.nextReview||''])];fn='employees.csv';
+    rows=[['Name','Email','Phone','Department','Role','Manager','Start Date','Status',...(showSal?['Salary','Currency','Frequency','Next Review']:[])],
+      ...getEmps().map(e=>[e.name,e.email,e.phone||'',e.dept,e.role,e.manager,e.start,e.status,...(showSal?[e.salary?.amount||'',e.salary?.currency||'',e.salary?.frequency||'',e.salary?.nextReview||'']:[])])];fn='employees.csv';
   } else if(type==='events'){
     rows=[['Date','Employee','Dept','Type','Description','Logged By','Notified'],
-      ...events.map(ev=>{const emp=gE(ev.empId);return[ev.date,emp?.name||'',emp?.dept||'',ev.type,ev.desc,ev.loggedBy,ev.notified?'Yes':'No'];})];fn='events.csv';
+      ...getEvts().map(ev=>{const emp=gE(ev.empId);return[ev.date,emp?.name||'',emp?.dept||'',ev.type,ev.desc,ev.loggedBy,ev.notified?'Yes':'No'];})];fn='events.csv';
   } else if(type==='offboarded'){
-    rows=[['Name','Dept','Role','Last Day','Reason'],...employees.filter(e=>e.status==='offboarded').map(e=>[e.name,e.dept,e.role,e.lastDay||'',e.reason||''])];fn='offboarded.csv';
+    rows=[['Name','Dept','Role','Last Day','Reason'],...getEmps().filter(e=>e.status==='offboarded').map(e=>[e.name,e.dept,e.role,e.lastDay||'',e.reason||''])];fn='offboarded.csv';
   } else if(type==='training'){
     rows=[['Employee','Dept','Program','Category','Mandatory','Status','Assigned','Due','Completed','Score','Progress'],
-      ...trainingAssignments.map(a=>{const emp=gE(a.empId),prog=gP(a.programId);return[emp?.name||'',emp?.dept||'',prog?.name||'',prog?.category||'',prog?.mandatory?'Yes':'No',a.status,a.assignedDate,a.dueDate,a.completedDate||'',a.score!=null?a.score+'%':'',a.progress+'%'];})];fn='training.csv';
+      ...getTrAsgn().map(a=>{const emp=gE(a.empId),prog=gP(a.programId);return[emp?.name||'',emp?.dept||'',prog?.name||'',prog?.category||'',prog?.mandatory?'Yes':'No',a.status,a.assignedDate,a.dueDate,a.completedDate||'',a.score!=null?a.score+'%':'',a.progress+'%'];})];fn='training.csv';
   }
   const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=fn;a.click();
   toast(fn+' downloaded.','success');
 }
 
-// TOAST
+// ─── TOAST ────────────────────────────────────────────────────────────────────
 function toast(msg,type='info'){
   const t=document.createElement('div');t.className='toast '+type;t.textContent=msg;
   document.getElementById('tc').appendChild(t);setTimeout(()=>t.remove(),4000);
 }
 
-document.getElementById('lp').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+// ─── KEYBOARD ─────────────────────────────────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&document.getElementById('login-screen').style.display!=='none')doLogin();
+  if(e.key==='Escape')closeModal();
+});
 </script>
 </body>
 </html>
