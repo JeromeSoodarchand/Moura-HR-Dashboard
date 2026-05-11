@@ -720,12 +720,16 @@ function renderDashboard(){
   document.getElementById('dash-onb').innerHTML=onboarding.length===0?'<div style="padding:20px;color:var(--text3);text-align:center;font-size:13px">No active onboarding</div>':
     '<div class="tl" style="padding:0 16px">'+onboarding.map(emp=>{
       const c=aColor(emp.name),cl=emp.checklist||{},done=Object.values(cl).filter(Boolean).length,tot=Object.keys(cl).length;
+      const allDone=tot>0&&done===tot;
       return`<div class="tl-item" style="cursor:pointer" onclick="viewEmp(${emp.id})">
         <div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div>
         <div class="tl-body">
-          <div style="display:flex;justify-content:space-between"><span style="font-weight:500">${emp.name}</span><span class="txs tm">${gEE(emp.id).length} events</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:500">${emp.name}</span>
+            <span class="txs tm">${allDone?'<span style="color:var(--green);font-weight:600">✓ Ready</span>':gEE(emp.id).length+' events'}</span>
+          </div>
           <div class="tl-meta">${emp.role} · ${emp.dept}</div>
-          ${tot>0?`<div class="pt" style="margin-top:5px"><div class="pf" style="width:${Math.round(done/tot*100)}%"></div></div><div style="font-size:11px;color:var(--text3);margin-top:2px">${done}/${tot} checklist</div>`:''}
+          ${tot>0?`<div class="pt" style="margin-top:5px"><div class="pf" style="width:${Math.round(done/tot*100)}%;background:var(--green)"></div></div><div style="font-size:11px;color:${allDone?'var(--green)':'var(--text3)'};margin-top:2px;font-weight:${allDone?'600':'400'}">${done}/${tot} checklist${allDone?' — all done!':''}</div>`:''}
         </div>
       </div>`;
     }).join('')+'</div>';
@@ -759,16 +763,64 @@ function renderOnboarding(){
     const emps=onb.filter((_,j)=>j%3===i);
     return`<div class="kc"><div class="kch">${s}<span style="background:var(--bg3);padding:2px 7px;border-radius:10px;font-size:11px">${emps.length}</span></div>
       ${emps.map(emp=>{
-        const c=aColor(emp.name),cl=emp.checklist||{},done=Object.values(cl).filter(Boolean).length,tot=Object.keys(cl).length;
-        return`<div class="kcard" onclick="viewEmp(${emp.id})">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div><div><div style="font-size:13px;font-weight:500">${emp.name}</div><div class="txs tm">${emp.role}</div></div></div>
-          <div class="txs tm" style="margin-bottom:5px">Started ${fDate(emp.start)}</div>
-          ${tot>0?`<div style="display:flex;justify-content:space-between" class="txs tm"><span>Checklist</span><span>${done}/${tot}</span></div><div class="pt" style="margin-top:3px"><div class="pf" style="width:${Math.round(done/tot*100)}%"></div></div>`:''}
+        const c=aColor(emp.name),cl=emp.checklist||{};
+        const done=Object.values(cl).filter(Boolean).length,tot=Object.keys(cl).length;
+        const allDone=tot>0&&done===tot;
+        return`<div class="kcard">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer" onclick="viewEmp(${emp.id})">
+            <div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div>
+            <div style="flex:1"><div style="font-size:13px;font-weight:500">${emp.name}</div><div class="txs tm">${emp.role}</div></div>
+            ${allDone?'<span style="font-size:16px" title="Checklist complete">✅</span>':''}
+          </div>
+          <div class="txs tm" style="margin-bottom:6px">Started ${fDate(emp.start)}</div>
+          ${tot>0?`
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px" class="txs tm">
+              <span>Checklist</span>
+              <span style="color:${allDone?'var(--green)':'var(--text3)'};font-weight:${allDone?'600':'400'}">${done}/${tot} ${allDone?'✓':''}</span>
+            </div>
+            <div class="pt" style="margin-bottom:8px"><div class="pf" style="width:${Math.round(done/tot*100)}%;background:${allDone?'var(--green)':'var(--green)'}"></div></div>
+          `:''}
+          ${allDone&&canEdit()?`
+            <button class="btn btn-primary" style="width:100%;justify-content:center;font-size:12.5px" onclick="activateEmployee(${emp.id})">
+              ✓ Mark as Active
+            </button>
+          `:allDone?`
+            <div style="font-size:12px;color:var(--green);text-align:center;padding:4px 0;font-weight:500">✓ Checklist complete</div>
+          `:`
+            <div style="font-size:11.5px;color:var(--text3);text-align:center">${tot-done} item${tot-done!==1?'s':''} remaining</div>
+          `}
         </div>`;
       }).join('')}
       ${emps.length===0?'<div class="ts tm" style="text-align:center;padding:16px">No employees</div>':''}
     </div>`;
   }).join('');
+}
+
+function activateEmployee(id){
+  const emps=getEmps();
+  const emp=emps.find(e=>e.id===id);
+  if(!emp)return;
+  const cl=emp.checklist||{};
+  const done=Object.values(cl).filter(Boolean).length;
+  const tot=Object.keys(cl).length;
+  if(tot>0&&done<tot){
+    toast('Checklist is not fully complete. Please tick all items first.','error');
+    return;
+  }
+  if(!confirm(`Move ${emp.name} from Onboarding to Active?\n\nThis confirms all onboarding steps are complete.`))return;
+  emp.status='active';
+  delete emp.checklist; // archive: move to completedChecklist
+  emp.completedOnboarding=td();
+  saveEmps(emps);
+  // Log event
+  const evts=getEvts();
+  evts.push({id:Date.now(),empId:id,type:'milestone',date:td(),desc:'Onboarding completed — moved to Active',loggedBy:CU.name,notified:true});
+  saveEvts(evts);
+  addNotif(`${emp.name} onboarding complete — now Active`,'success');
+  addAudit(CU.name,`Activated employee: ${emp.name} (onboarding complete)`);
+  renderOnboarding();
+  renderDashboard();
+  toast(`${emp.name} is now Active! 🎉`,'success');
 }
 
 // ─── EVENTS ───────────────────────────────────────────────────────────────────
@@ -1012,11 +1064,31 @@ function viewEmp(id){
 
     <!-- CHECKLIST TAB -->
     ${hasCL?`<div class="tab-pane" id="et-checklist">
-      ${Object.entries(cl).map(([item,done])=>`<div class="cli"><input type="checkbox" ${done?'checked':''} onchange="togCheck(${id},'${item}',this.checked,${emp.status==='offboarded'?1:0})"><span style="${done?'text-decoration:line-through;color:var(--text3)':''}">${item}</span></div>`).join('')}
+      ${Object.entries(cl).map(([item,done])=>`<div class="cli">
+        <input type="checkbox" ${done?'checked':''} ${emp.status==='offboarded'||!canEdit()?'disabled':''} onchange="togCheck(${id},'${item}',this.checked,${emp.status==='offboarded'?1:0})">
+        <span style="${done?'text-decoration:line-through;color:var(--text3)':''}">${item}</span>
+      </div>`).join('')}
+      ${(()=>{
+        const clDone=Object.values(cl).filter(Boolean).length;
+        const clTot=Object.keys(cl).length;
+        const allDone=clTot>0&&clDone===clTot;
+        if(emp.status==='onboarding'){
+          if(allDone&&canEdit()){
+            return`<div style="margin-top:14px;padding:12px;background:var(--green-light);border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between;gap:10px">
+              <div><div style="font-size:13px;font-weight:600;color:var(--green-deep)">✅ All checklist items complete!</div><div style="font-size:12px;color:var(--green-deep);margin-top:2px">This employee is ready to be activated.</div></div>
+              <button class="btn btn-primary btn-sm" onclick="closeModal();activateEmployee(${id})">Mark as Active →</button>
+            </div>`;
+          } else {
+            return`<div style="margin-top:12px;font-size:12px;color:var(--text3)">${clDone}/${clTot} items complete — ${clTot-clDone} remaining before activation.</div>`;
+          }
+        }
+        return'';
+      })()}
     </div>`:''}
 
     <div class="mf">
-      ${canEdit()&&emp.status!=='offboarded'?`<button class="btn btn-danger btn-sm" onclick="closeModal();openModal('offboard',${id})">Offboard</button>`:''}
+      ${canEdit()&&emp.status==='onboarding'?`<button class="btn btn-danger btn-sm" onclick="closeModal();openModal('offboard',${id})">Offboard</button>`:''}
+      ${canEdit()&&emp.status==='offboarded'?`<button class="btn btn-danger btn-sm" disabled style="opacity:.4;cursor:not-allowed">Offboarded</button>`:''}
       <button class="btn btn-primary btn-sm" onclick="closeModal()">Close</button>
     </div>`;
   document.getElementById('mb').classList.add('open');
