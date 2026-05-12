@@ -243,11 +243,19 @@ tbody tr:hover td{background:var(--bg2)}
 .toast-container{position:fixed;bottom:20px;right:20px;z-index:500;display:flex;flex-direction:column;gap:8px}
 .toast{background:#1a1a18;color:#fff;padding:10px 16px;border-radius:var(--radius);font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.2);display:flex;align-items:center;gap:8px;max-width:340px;animation:sIn .2s ease}
 .toast.success{border-left:3px solid var(--gold)}.toast.error{border-left:3px solid var(--red)}.toast.info{border-left:3px solid var(--blue)}
+
+.loader-overlay{position:fixed;inset:0;background:rgba(30,20,69,.35);z-index:600;display:none;align-items:center;justify-content:center}
+.loader-overlay.active{display:flex}
+.loader-box{background:#fff;border-radius:var(--radius-lg);padding:20px 28px;display:flex;align-items:center;gap:12px;font-size:13px;box-shadow:0 8px 32px rgba(0,0,0,.2)}
+.loader-spinner{width:20px;height:20px;border:2px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
 @keyframes sIn{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
 
 @media(max-width:768px){.metrics,.g2,.kanban,.ig{grid-template-columns:1fr 1fr}.nav-tabs{display:none}}
 @media(max-width:500px){.metrics,.ig{grid-template-columns:1fr}}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -267,6 +275,11 @@ tbody tr:hover td{background:var(--bg2)}
     <div class="lf"><label>Password *</label><input type="password" id="setup-pass" placeholder="Choose a strong password"></div>
     <div class="lf"><label>Confirm password *</label><input type="password" id="setup-pass2" placeholder="Repeat password"></div>
     <div class="lf"><label>Company / Organisation name</label><input id="setup-org" placeholder="e.g. Acme Corp"></div>
+    <div style="background:var(--gold-light);border-radius:var(--radius);padding:12px;margin:14px 0;font-size:12.5px;color:var(--gold-deep)">
+      🔗 Connect your Supabase database so data is shared across all users.
+    </div>
+    <div class="lf"><label>Supabase Project URL *</label><input id="setup-sb-url" placeholder="https://xxxx.supabase.co"></div>
+    <div class="lf"><label>Supabase Anon Key *</label><input id="setup-sb-key" placeholder="eyJ..." style="font-size:11px"></div>
     <div class="login-err" id="setup-err"></div>
     <button class="login-btn" onclick="doSetup()">Create admin account →</button>
   </div>
@@ -283,6 +296,13 @@ tbody tr:hover td{background:var(--bg2)}
     <div class="lf"><label>Password</label><input type="password" id="lp" placeholder="Enter your password"></div>
     <div class="login-err" id="lerr">Incorrect username or password.</div>
     <button class="login-btn" onclick="doLogin()">Sign in</button>
+    <div id="sb-config-section" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:11.5px;color:var(--text3);margin-bottom:8px;text-align:center">Supabase database connection</div>
+      <div class="lf" style="margin-bottom:8px"><label>Project URL</label><input id="login-sb-url" placeholder="https://xxxx.supabase.co" style="font-size:12px"></div>
+      <div class="lf" style="margin-bottom:4px"><label>Anon Key</label><input id="login-sb-key" placeholder="eyJ..." style="font-size:11px"></div>
+      <button class="btn btn-sm" style="width:100%;justify-content:center;margin-top:6px" onclick="saveSbCredentials()">💾 Save connection</button>
+      <div id="sb-status" style="font-size:11.5px;margin-top:6px;text-align:center;color:var(--text3)"></div>
+    </div>
   </div>
 </div>
 
@@ -633,14 +653,251 @@ tbody tr:hover td{background:var(--bg2)}
 <div class="modal-backdrop" id="mb" onclick="if(event.target===this)closeModal()">
   <div class="modal-box" id="mbox"></div>
 </div>
+<div class="loader-overlay" id="loader-overlay">
+  <div class="loader-box"><div class="loader-spinner"></div><span id="loader-msg">Loading…</span></div>
+</div>
 <div class="toast-container" id="tc"></div>
 
 <script>
-// ─── STORAGE HELPERS ──────────────────────────────────────────────────────────
+// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
+let _sb = null;
+
+function initSupabase(){
+  const url = localStorage.getItem('sb_url') || '';
+  const key = localStorage.getItem('sb_key') || '';
+  if(url && key){
+    _sb = supabase.createClient(url, key);
+    return true;
+  }
+  return false;
+}
+
+function sbReady(){ return _sb !== null; }
+
+async function saveSbCredentials(){
+  const url = (document.getElementById('login-sb-url')||{}).value?.trim();
+  const key = (document.getElementById('login-sb-key')||{}).value?.trim();
+  if(!url||!key){ showSbStatus('Enter both URL and key.','error'); return; }
+  localStorage.setItem('sb_url', url);
+  localStorage.setItem('sb_key', key);
+  _sb = supabase.createClient(url, key);
+  // Test connection
+  showSbStatus('Testing connection…','info');
+  const {error} = await _sb.from('hr_users').select('id').limit(1);
+  if(error){ showSbStatus('❌ '+error.message,'error'); _sb=null; return; }
+  showSbStatus('✅ Connected to Supabase!','success');
+  setTimeout(()=>{ const s=document.getElementById('sb-config-section'); if(s)s.style.display='none'; },2000);
+}
+
+function showSbStatus(msg,type){
+  const el=document.getElementById('sb-status');
+  if(!el)return;
+  const colors={success:'var(--gold-deep)',error:'var(--red)',info:'var(--text2)'};
+  el.textContent=msg; el.style.color=colors[type]||'var(--text2)';
+}
+
+// ─── STORAGE HELPERS (localStorage fallback when Supabase not connected) ──────
 const S={
   get:(k,def=null)=>{try{const v=localStorage.getItem('pdhr_'+k);return v?JSON.parse(v):def;}catch{return def;}},
   set:(k,v)=>{try{localStorage.setItem('pdhr_'+k,JSON.stringify(v));}catch{}}
 };
+
+
+// ─── DATABASE LAYER (Supabase when connected, localStorage fallback) ──────────
+
+// ── EMPLOYEES ──
+async function dbGetEmployees(){
+  if(!sbReady()) return getData('employees');
+  const {data,error}=await _sb.from('employees').select('*').order('created_at',{ascending:false});
+  if(error){console.error(error);return getData('employees');}
+  return data.map(rowToEmp);
+}
+
+async function dbSaveEmployee(emp){
+  if(!sbReady()){ const e=getEmps();const i=e.findIndex(x=>x.id===emp.id);if(i>=0)e[i]=emp;else e.push(emp);saveEmps(e);return emp; }
+  const row=empToRow(emp);
+  if(emp.id && String(emp.id).length<13){ // numeric DB id
+    const {data,error}=await _sb.from('employees').update(row).eq('id',emp.id).select().single();
+    if(error)console.error(error);return data?rowToEmp(data):emp;
+  } else {
+    delete row.id;
+    const {data,error}=await _sb.from('employees').insert(row).select().single();
+    if(error)console.error(error);return data?rowToEmp(data):emp;
+  }
+}
+
+async function dbDeleteEmployee(id){
+  if(!sbReady()){ saveEmps(getEmps().filter(e=>e.id!==id));return; }
+  await _sb.from('employees').delete().eq('id',id);
+}
+
+// ── EVENTS ──
+async function dbGetEvents(){
+  if(!sbReady()) return getData('events');
+  const {data,error}=await _sb.from('events').select('*').order('event_date',{ascending:false});
+  if(error){console.error(error);return getData('events');}
+  return data.map(rowToEvt);
+}
+
+async function dbSaveEvent(evt){
+  if(!sbReady()){ const e=getEvts();e.push(evt);saveEvts(e);return evt; }
+  const row=evtToRow(evt);delete row.id;
+  const {data,error}=await _sb.from('events').insert(row).select().single();
+  if(error)console.error(error);
+  return data?rowToEvt(data):evt;
+}
+
+// ── TRAINING PROGRAMS ──
+async function dbGetPrograms(){
+  if(!sbReady()) return getData('trainingPrograms');
+  const {data,error}=await _sb.from('training_programs').select('*').order('name');
+  if(error){console.error(error);return getData('trainingPrograms');}
+  return data.map(rowToProg);
+}
+
+async function dbSaveProgram(prog){
+  if(!sbReady()){ const p=getTrProgs();const i=p.findIndex(x=>x.id===prog.id);if(i>=0)p[i]=prog;else p.push(prog);saveTrProgs(p);return prog; }
+  const row=progToRow(prog);
+  if(prog.id && String(prog.id).length<13){
+    const {data,error}=await _sb.from('training_programs').update(row).eq('id',prog.id).select().single();
+    if(error)console.error(error);return data?rowToProg(data):prog;
+  } else {
+    delete row.id;
+    const {data,error}=await _sb.from('training_programs').insert(row).select().single();
+    if(error)console.error(error);return data?rowToProg(data):prog;
+  }
+}
+
+// ── TRAINING ASSIGNMENTS ──
+async function dbGetAssignments(){
+  if(!sbReady()) return getData('trainingAssignments');
+  const {data,error}=await _sb.from('training_assignments').select('*').order('created_at',{ascending:false});
+  if(error){console.error(error);return getData('trainingAssignments');}
+  return data.map(rowToAsgn);
+}
+
+async function dbSaveAssignment(asgn){
+  if(!sbReady()){ const a=getTrAsgn();const i=a.findIndex(x=>x.id===asgn.id);if(i>=0)a[i]=asgn;else a.push(asgn);saveTrAsgn(a);return asgn; }
+  const row=asgnToRow(asgn);
+  if(asgn.id && String(asgn.id).length<13){
+    const {data,error}=await _sb.from('training_assignments').update(row).eq('id',asgn.id).select().single();
+    if(error)console.error(error);return data?rowToAsgn(data):asgn;
+  } else {
+    delete row.id;
+    const {data,error}=await _sb.from('training_assignments').insert(row).select().single();
+    if(error)console.error(error);return data?rowToAsgn(data):asgn;
+  }
+}
+
+// ── HR USERS ──
+async function dbGetUsers(){
+  if(!sbReady()) return S.get('users',[]);
+  const {data,error}=await _sb.from('hr_users').select('*').order('created_at');
+  if(error){console.error(error);return S.get('users',[]);}
+  return data.map(r=>({id:r.id,name:r.name,username:r.username,email:r.email,role:r.role,active:r.active,passwordHash:r.password_hash,createdAt:r.created_at}));
+}
+
+async function dbSaveUser(user){
+  if(!sbReady()){ const u=S.get('users',[]);const i=u.findIndex(x=>x.id===user.id);if(i>=0)u[i]=user;else u.push(user);S.set('users',u);return user; }
+  const row={name:user.name,username:user.username,email:user.email,role:user.role,active:user.active,password_hash:user.passwordHash};
+  if(user.id && String(user.id).length<13){
+    const {data,error}=await _sb.from('hr_users').update(row).eq('id',user.id).select().single();
+    if(error){console.error(error);return user;}
+    return{id:data.id,name:data.name,username:data.username,email:data.email,role:data.role,active:data.active,passwordHash:data.password_hash,createdAt:data.created_at};
+  } else {
+    const {data,error}=await _sb.from('hr_users').insert(row).select().single();
+    if(error){console.error(error);return user;}
+    return{id:data.id,name:data.name,username:data.username,email:data.email,role:data.role,active:data.active,passwordHash:data.password_hash,createdAt:data.created_at};
+  }
+}
+
+async function dbFindUser(username){
+  if(!sbReady()){ return S.get('users',[]).find(u=>u.username===username&&u.active!==false); }
+  const {data,error}=await _sb.from('hr_users').select('*').eq('username',username).eq('active',true).single();
+  if(error||!data) return null;
+  return{id:data.id,name:data.name,username:data.username,email:data.email,role:data.role,active:data.active,passwordHash:data.password_hash};
+}
+
+// ── AUDIT ──
+async function dbAddAudit(actor,action){
+  addAudit(actor,action); // always local
+  if(!sbReady()) return;
+  await _sb.from('audit_log').insert({actor,action});
+}
+
+// ── COMPANY SETTINGS ──
+async function dbGetSetting(key){
+  if(!sbReady()) return null;
+  const {data}=await _sb.from('company_settings').select('value').eq('key',key).single();
+  return data?.value||null;
+}
+
+async function dbSetSetting(key,value){
+  if(!sbReady()) return;
+  await _sb.from('company_settings').upsert({key,value,updated_at:new Date().toISOString()},{onConflict:'key'});
+}
+
+// ── ROW MAPPERS ──
+function rowToEmp(r){
+  return{id:r.id,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
+    salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:r.salary_history||[]}:null,
+    checklist:r.checklist||{},offChecklist:r.off_checklist||{},lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding};
+}
+function empToRow(e){
+  return{id:e.id,name:e.name,email:e.email,phone:e.phone,role:e.role,dept:e.dept,manager:e.manager,start_date:e.start,status:e.status,
+    salary_amount:e.salary?.amount||null,salary_currency:e.salary?.currency,salary_frequency:e.salary?.frequency,salary_last_review:e.salary?.lastReview||null,salary_next_review:e.salary?.nextReview||null,salary_history:e.salary?.history||[],
+    checklist:e.checklist||{},off_checklist:e.offChecklist||{},last_day:e.lastDay||null,reason:e.reason||null,completed_onboarding:e.completedOnboarding||null,updated_at:new Date().toISOString()};
+}
+function rowToEvt(r){ return{id:r.id,empId:r.emp_id,type:r.type,desc:r.description,date:r.event_date,loggedBy:r.logged_by,notified:r.notified}; }
+function evtToRow(e){ return{emp_id:e.empId,type:e.type,description:e.desc,event_date:e.date,logged_by:e.loggedBy,notified:e.notified}; }
+function rowToProg(r){ return{id:r.id,name:r.name,description:r.description,category:r.category,duration:r.duration,mandatory:r.mandatory}; }
+function progToRow(p){ return{id:p.id,name:p.name,description:p.description,category:p.category,duration:p.duration,mandatory:p.mandatory}; }
+function rowToAsgn(r){ return{id:r.id,empId:r.emp_id,programId:r.program_id,status:r.status,assignedDate:r.assigned_date,dueDate:r.due_date,completedDate:r.completed_date,score:r.score,progress:r.progress||0,notes:r.notes}; }
+function asgnToRow(a){ return{id:a.id,emp_id:a.empId,program_id:a.programId,status:a.status,assigned_date:a.assignedDate,due_date:a.dueDate,completed_date:a.completedDate||null,score:a.score||null,progress:a.progress||0,notes:a.notes||''}; }
+
+// ── ASYNC DATA LOADERS (used by each page render) ────────────────────────────
+async function loadAndRenderDashboard(){
+  const [emps,evts,asgn]=await Promise.all([dbGetEmployees(),dbGetEvents(),dbGetAssignments()]);
+  _cache={emps,evts,asgn,progs:_cache.progs};
+  renderDashboard();
+}
+async function loadAndRenderEmployees(){
+  _cache.emps=await dbGetEmployees();
+  renderEmployees();
+}
+async function loadAndRenderOnboarding(){
+  _cache.emps=await dbGetEmployees();
+  renderOnboarding();
+}
+async function loadAndRenderEvents(){
+  _cache.evts=await dbGetEvents();
+  renderEvents();
+}
+async function loadAndRenderTraining(){
+  const [progs,asgn]=await Promise.all([dbGetPrograms(),dbGetAssignments()]);
+  _cache.progs=progs; _cache.asgn=asgn;
+  renderTraining();
+}
+async function loadAndRenderOffboarding(){
+  _cache.emps=await dbGetEmployees();
+  renderOffboarding();
+}
+async function loadAndRenderAnalytics(){
+  const [emps,evts,asgn]=await Promise.all([dbGetEmployees(),dbGetEvents(),dbGetAssignments()]);
+  _cache={..._cache,emps,evts,asgn};
+  renderAnalytics();
+}
+async function loadAndRenderUserMgmt(){
+  if(sbReady()){
+    const users=await dbGetUsers();
+    // store in local for sync access
+    S.set('users',users);
+  }
+  renderUserMgmt();
+}
+
+// In-memory cache so renders don't need to be async themselves
+let _cache={emps:[],evts:[],progs:[],asgn:[]};
 
 // ─── ROLE PERMISSIONS ─────────────────────────────────────────────────────────
 const ROLE_PERMS={
@@ -684,7 +941,19 @@ function doSetup(){
   if(pass.length<6){err.textContent='Password must be at least 6 characters.';err.style.display='block';return;}
   if(!/^[a-z0-9_]+$/.test(username)){err.textContent='Username: only letters, numbers, underscores.';err.style.display='block';return;}
   const adminUser={id:Date.now(),name,username,email,role:'admin',createdAt:new Date().toISOString(),active:true,passwordHash:simpleHash(pass)};
-  S.set('users',[adminUser]);
+  const sbUrlSetup=(document.getElementById('setup-sb-url')||{}).value?.trim()||'';
+  const sbKeySetup=(document.getElementById('setup-sb-key')||{}).value?.trim()||'';
+  if(sbUrlSetup&&sbKeySetup){
+    localStorage.setItem('sb_url',sbUrlSetup);
+    localStorage.setItem('sb_key',sbKeySetup);
+    _sb=supabase.createClient(sbUrlSetup,sbKeySetup);
+  }
+  // Save user to DB or local
+  if(sbReady()){
+    _sb.from('hr_users').insert({name:adminUser.name,username:adminUser.username,email:adminUser.email||'',role:'admin',active:true,password_hash:adminUser.passwordHash}).then(()=>{});
+  } else {
+    S.set('users',[adminUser]);
+  }
   S.set('org',org);
   addAudit('System','Admin account created: '+name);
   document.getElementById('setup-screen').style.display='none';
@@ -701,11 +970,20 @@ function simpleHash(str){
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function doLogin(){
+async function doLogin(){
   const u=document.getElementById('lu').value.trim().toLowerCase();
   const p=document.getElementById('lp').value;
-  const users=S.get('users',[]);
-  const user=users.find(x=>x.username===u&&x.active!==false);
+  // Try Supabase first, fall back to localStorage
+  const sbUrl=localStorage.getItem('sb_url')||'';
+  const sbKey=localStorage.getItem('sb_key')||'';
+  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey); }
+  let user=null;
+  if(sbReady()){
+    user=await dbFindUser(u);
+  } else {
+    const users=S.get('users',[]);
+    user=users.find(x=>x.username===u&&x.active!==false);
+  }
   if(!user||user.passwordHash!==simpleHash(p)){
     document.getElementById('lerr').style.display='block';return;
   }
@@ -807,11 +1085,11 @@ const DEFAULT_DATA={
 };
 
 // Helper shorthands that always read/write live storage
-const getEmps=()=>getData('employees');
-const getEvts=()=>getData('events');
-const getTrProgs=()=>getData('trainingPrograms');
-const getTrAsgn=()=>getData('trainingAssignments');
-const getUsers=()=>S.get('users',[]);
+const getEmps=()=>_cache.emps.length?_cache.emps:getData('employees');
+const getEvts=()=>_cache.evts.length?_cache.evts:getData('events');
+const getTrProgs=()=>_cache.progs.length?_cache.progs:getData('trainingPrograms');
+const getTrAsgn=()=>_cache.asgn.length?_cache.asgn:getData('trainingAssignments');
+const getUsers=()=>S.get('users',[]);  // local fallback; DB users loaded async
 const getAudit=()=>S.get('audit',[]);
 
 const saveEmps=v=>saveData('employees',v);
@@ -845,7 +1123,9 @@ function showPage(id,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');el.classList.add('active');
-  ({dashboard:renderDashboard,employees:renderEmployees,onboarding:renderOnboarding,events:renderEvents,training:renderTraining,offboarding:renderOffboarding,analytics:renderAnalytics,usermgmt:renderUserMgmt,settings:renderSettings})[id]?.();
+  const loaders={dashboard:loadAndRenderDashboard,employees:loadAndRenderEmployees,onboarding:loadAndRenderOnboarding,events:loadAndRenderEvents,training:loadAndRenderTraining,offboarding:loadAndRenderOffboarding,analytics:loadAndRenderAnalytics,usermgmt:loadAndRenderUserMgmt,settings:renderSettings};
+  const loader=loaders[id];
+  if(loader) loader();
 }
 
 // ─── AUDIT LOG ────────────────────────────────────────────────────────────────
@@ -1462,8 +1742,13 @@ function submitAdd(){
   emps.push({id:Date.now(),name,email,phone:document.getElementById('fph').value,role:document.getElementById('fr2').value||'—',dept:document.getElementById('fd').value,manager:document.getElementById('fm').value||'—',start:document.getElementById('fst').value||td(),status:'onboarding',
     salary:sa?{amount:sa,currency:document.getElementById('fcur').value,frequency:document.getElementById('ffreq').value,lastReview:null,nextReview:document.getElementById('fnr').value||null,history:[{date:document.getElementById('fst').value||td(),amount:sa,note:'Starting salary'}]}:null,
     checklist:(()=>{const d=(getSettings().checklistDefaults||['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done']);return Object.fromEntries(d.map(k=>[k,false]));})()});
-  saveEmps(emps);addNotif('New hire added: '+name,'success');addAudit(CU.name,'Added employee: '+name);
-  closeModal();renderDashboard();toast(name+' added. Onboarding started.','success');
+  showLoader('Saving…');
+  dbSaveEmployee(newEmp).then(saved=>{
+    hideLoader();
+    if(!_cache.emps.find(e=>e.email===saved.email)) _cache.emps.unshift(saved);
+    addNotif('New hire added: '+name,'success');dbAddAudit(CU.name,'Added employee: '+name);
+    closeModal();renderDashboard();toast(name+' added. Onboarding started.','success');
+  });
 }
 
 function submitEdit(id){
@@ -1476,7 +1761,14 @@ function submitEdit(id){
   const sa=parseFloat(document.getElementById('fsal').value);
   if(sa){if(!emp.salary)emp.salary={amount:sa,currency:'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[]};
     emp.salary.amount=sa;emp.salary.currency=document.getElementById('fcur').value;emp.salary.frequency=document.getElementById('ffreq').value;emp.salary.nextReview=document.getElementById('fnr').value||emp.salary.nextReview;}
-  saveEmps(emps);addAudit(CU.name,'Edited employee: '+emp.name);closeModal();toast('Profile updated.','success');
+  showLoader('Saving…');
+  dbSaveEmployee(emp).then(saved=>{
+    hideLoader();
+    const idx=_cache.emps.findIndex(e=>e.id===saved.id);
+    if(idx>=0)_cache.emps[idx]=saved;
+    dbAddAudit(CU.name,'Edited employee: '+emp.name);
+    closeModal();toast('Profile updated.','success');
+  });
 }
 
 function submitSalary(id){
@@ -1494,10 +1786,16 @@ function submitEvent(){
   const empId=parseInt(document.getElementById('femp').value),desc=document.getElementById('fdes').value.trim();
   if(!desc){toast('Description required.','error');return;}
   const notify=document.getElementById('fno').checked;
-  const evts=getEvts();
-  evts.push({id:Date.now(),empId,type:document.getElementById('ftyp').value,date:document.getElementById('fdt').value||td(),desc,loggedBy:document.getElementById('flb').value||CU.name,notified:notify});
-  saveEvts(evts);addNotif('Event logged for '+(gE(empId)?.name||'employee'),'info');addAudit(CU.name,'Logged event for '+gE(empId)?.name);
-  closeModal();renderDashboard();toast('Event logged.','success');
+  const newEvt={id:Date.now(),empId,type:document.getElementById('ftyp').value,date:document.getElementById('fdt').value||td(),desc,loggedBy:document.getElementById('flb').value||CU.name,notified:notify};
+  const empName=gE(empId)?.name||'employee';
+  showLoader('Saving…');
+  dbSaveEvent(newEvt).then(saved=>{
+    hideLoader();
+    _cache.evts.unshift(saved||newEvt);
+    addNotif('Event logged for '+empName,'info');
+    dbAddAudit(CU.name,'Logged event for '+empName);
+    closeModal();renderDashboard();toast('Event logged.','success');
+  });
 }
 
 function submitProgram(){
@@ -1556,9 +1854,12 @@ function submitAddUser(){
   if(pass.length<6){toast('Password must be at least 6 characters.','error');return;}
   const users=getUsers();
   if(users.find(u=>u.username===username)){toast('Username already taken.','error');return;}
-  users.push({id:Date.now(),name,username,email,role,createdAt:new Date().toISOString(),active:true,passwordHash:simpleHash(pass)});
-  S.set('users',users);addAudit(CU.name,'Created user: '+name+' ('+role+')');
-  closeModal();renderUserMgmt();toast('User "'+username+'" created.','success');
+  const newUser={id:Date.now(),name,username,email,role,createdAt:new Date().toISOString(),active:true,passwordHash:simpleHash(pass)};
+  showLoader('Creating user…');
+  dbSaveUser(newUser).then(()=>{
+    hideLoader();dbAddAudit(CU.name,'Created user: '+name+' ('+role+')');
+    closeModal();renderUserMgmt();toast('User "'+username+'" created.','success');
+  });
 }
 
 function submitEditUser(id){
@@ -1573,8 +1874,11 @@ function submitEditUser(id){
     if(newPass.length<6){toast('Password too short.','error');return;}
     u.passwordHash=simpleHash(newPass);
   }
-  S.set('users',users);addAudit(CU.name,'Edited user: '+u.name);
-  closeModal();renderUserMgmt();toast('User updated.','success');
+  showLoader('Saving…');
+  dbSaveUser(u).then(()=>{
+    hideLoader();dbAddAudit(CU.name,'Edited user: '+u.name);
+    closeModal();renderUserMgmt();toast('User updated.','success');
+  });
 }
 
 // ─── CSV IMPORT ───────────────────────────────────────────────────────────────
@@ -1882,7 +2186,10 @@ function saveCompanySettings(){
   S.set('companySettings',cs);
   S.set('org',cs.orgName);
   applyBrandingToUI(cs);
-  addAudit(CU.name,'Updated company settings');
+  dbAddAudit(CU.name,'Updated company settings');
+  if(sbReady()){
+    Promise.all(Object.entries(cs).filter(([k,v])=>typeof v!=='object'||v===null).map(([k,v])=>dbSetSetting(k,String(v||''))));
+  }
   renderSettingsSummary(cs);
   toast('Company settings saved!','success');
 }
@@ -1965,28 +2272,30 @@ function deleteEmployee(id){
   if(!canEdit()){toast('Access denied.','error');return;}
   const confirmed=confirm(`Permanently delete ${emp.name}?\n\nThis will also remove all their events and training assignments. This cannot be undone.`);
   if(!confirmed)return;
-  // Remove employee
-  const emps=getEmps().filter(e=>e.id!==id);
-  saveEmps(emps);
-  // Remove their events
-  const evts=getEvts().filter(e=>e.empId!==id);
-  saveEvts(evts);
-  // Remove their training assignments
-  const asgn=getTrAsgn().filter(a=>a.empId!==id);
-  saveTrAsgn(asgn);
-  addAudit(CU.name,'Deleted employee record: '+emp.name);
-  addNotif('Employee record deleted: '+emp.name,'info');
-  // Refresh whichever page is active
-  renderDashboard();
-  if(document.getElementById('page-employees').classList.contains('active'))renderEmployees();
-  if(document.getElementById('page-onboarding').classList.contains('active'))renderOnboarding();
-  if(document.getElementById('page-events').classList.contains('active'))renderEvents();
-  if(document.getElementById('page-training').classList.contains('active'))renderTraining();
-  if(document.getElementById('page-offboarding').classList.contains('active'))renderOffboarding();
-  toast(emp.name+' deleted.','info');
+  showLoader('Deleting…');
+  dbDeleteEmployee(id).then(()=>{
+    _cache.emps=_cache.emps.filter(e=>e.id!==id);
+    _cache.evts=_cache.evts.filter(e=>e.empId!==id);
+    _cache.asgn=_cache.asgn.filter(a=>a.empId!==id);
+    addNotif('Employee record deleted: '+emp.name,'info');
+    hideLoader();
+    // Refresh whichever page is active
+    renderDashboard();
+    if(document.getElementById('page-employees').classList.contains('active'))renderEmployees();
+    if(document.getElementById('page-onboarding').classList.contains('active'))renderOnboarding();
+    if(document.getElementById('page-events').classList.contains('active'))renderEvents();
+    if(document.getElementById('page-training').classList.contains('active'))renderTraining();
+    if(document.getElementById('page-offboarding').classList.contains('active'))renderOffboarding();
+    toast(emp.name+' deleted.','info');
+  });
 }
 
+
+function showLoader(msg='Loading…'){const o=document.getElementById('loader-overlay');const m=document.getElementById('loader-msg');if(o)o.classList.add('active');if(m)m.textContent=msg;}
+function hideLoader(){const o=document.getElementById('loader-overlay');if(o)o.classList.remove('active');}
+
 // ─── KEYBOARD ─────────────────────────────────────────────────────────────────
+initSupabase();
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&document.getElementById('login-screen').style.display!=='none')doLogin();
   if(e.key==='Escape')closeModal();
