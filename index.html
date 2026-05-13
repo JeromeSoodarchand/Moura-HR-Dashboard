@@ -805,11 +805,11 @@ async function dbSaveAssignment(asgn){
   if(!sbReady()){ const a=getTrAsgn();const i=a.findIndex(x=>x.id===asgn.id);if(i>=0)a[i]=asgn;else a.push(asgn);saveTrAsgn(a);return asgn; }
   const row=asgnToRow(asgn);
   if(asgn.id && String(asgn.id).length<13){
-    const {data,error}=await _sb.from('training_assignments').update(row).eq('id',asgn.id).select().maybesingle();
+    const {data,error}=await _sb.from('training_assignments').update(row).eq('id',asgn.id).select().single();
     if(error)console.error(error);return data?rowToAsgn(data):asgn;
   } else {
     delete row.id;
-    const {data,error}=await _sb.from('training_assignments').insert(row).select().maybesingle();
+    const {data,error}=await _sb.from('training_assignments').insert(row).select().single();
     if(error)console.error(error);return data?rowToAsgn(data):asgn;
   }
 }
@@ -826,33 +826,22 @@ async function dbSaveUser(user){
   if(!sbReady()){ const u=S.get('users',[]);const i=u.findIndex(x=>x.id===user.id);if(i>=0)u[i]=user;else u.push(user);S.set('users',u);return user; }
   const row={name:user.name,username:user.username,email:user.email,role:user.role,active:user.active,password_hash:user.passwordHash};
   if(user.id && String(user.id).length<13){
-    const {data,error}=await _sb.from('hr_users').update(row).eq('id',user.id).select().maybesingle();
+    const {data,error}=await _sb.from('hr_users').update(row).eq('id',user.id).select().single();
     if(error){console.error(error);return user;}
     return{id:data.id,name:data.name,username:data.username,email:data.email,role:data.role,active:data.active,passwordHash:data.password_hash,createdAt:data.created_at};
   } else {
-    const {data,error}=await _sb.from('hr_users').insert(row).select().maybesingle();
+    const {data,error}=await _sb.from('hr_users').insert(row).select().single();
     if(error){console.error(error);return user;}
     return{id:data.id,name:data.name,username:data.username,email:data.email,role:data.role,active:data.active,passwordHash:data.password_hash,createdAt:data.created_at};
   }
 }
+
 async function dbFindUser(username){
-  if(!_sb) return null;
-
-  const { data, error } = await _sb
-    .from('hr_users')
-    .select('*')
-    .eq('username', username)
-    .eq('active', true)
-    .maybeSingle();
-
-  if(error){
-    console.error('Find user error:', error);
-    return null;
-  }
-
-  return data;
-
-
+  if(!sbReady()){ return S.get('users',[]).find(u=>u.username===username&&u.active!==false); }
+  const {data,error}=await _sb.from('hr_users').select('*').eq('username',username).eq('active',true).single();
+  if(error||!data) return null;
+  return{id:data.id,name:data.name,username:data.username,email:data.email,role:data.role,active:data.active,passwordHash:data.password_hash};
+}
 
 // ── AUDIT ──
 async function dbAddAudit(actor,action){
