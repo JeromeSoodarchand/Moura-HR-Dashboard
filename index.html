@@ -275,11 +275,13 @@ tbody tr:hover td{background:var(--bg2)}
     <div class="lf"><label>Password *</label><input type="password" id="setup-pass" placeholder="Choose a strong password"></div>
     <div class="lf"><label>Confirm password *</label><input type="password" id="setup-pass2" placeholder="Repeat password"></div>
     <div class="lf"><label>Company / Organisation name</label><input id="setup-org" placeholder="e.g. Acme Corp"></div>
-    <div style="background:var(--gold-light);border-radius:var(--radius);padding:12px;margin:14px 0;font-size:12.5px;color:var(--gold-deep)">
-      🔗 Connect your Supabase database so data is shared across all users.
+    <div id="setup-sb-section">
+      <div style="background:var(--gold-light);border-radius:var(--radius);padding:12px;margin:14px 0;font-size:12.5px;color:var(--gold-deep)">
+        🔗 Connect your Supabase database so data is shared across all users.
+      </div>
+      <div class="lf"><label>Supabase Project URL *</label><input id="setup-sb-url" placeholder="https://xxxx.supabase.co"></div>
+      <div class="lf"><label>Supabase Anon Key *</label><input id="setup-sb-key" placeholder="eyJ..." style="font-size:11px"></div>
     </div>
-    <div class="lf"><label>Supabase Project URL *</label><input id="setup-sb-url" placeholder="https://xxxx.supabase.co"></div>
-    <div class="lf"><label>Supabase Anon Key *</label><input id="setup-sb-key" placeholder="eyJ..." style="font-size:11px"></div>
     <div class="login-err" id="setup-err"></div>
     <button class="login-btn" onclick="doSetup()">Create admin account →</button>
   </div>
@@ -296,11 +298,15 @@ tbody tr:hover td{background:var(--bg2)}
     <div class="lf"><label>Password</label><input type="password" id="lp" placeholder="Enter your password"></div>
     <div class="login-err" id="lerr">Incorrect username or password.</div>
     <button class="login-btn" onclick="doLogin()">Sign in</button>
-    <div id="sb-config-section" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
-      <div style="font-size:11.5px;color:var(--text3);margin-bottom:8px;text-align:center">Supabase database connection</div>
+    <div style="text-align:center;margin-top:12px">
+      <span id="sb-connected-badge" style="display:none;font-size:11.5px;color:var(--muted-gold)">📡 Connected to database</span>
+      <a href="#" id="sb-reconfigure-link" style="display:none;font-size:11px;color:var(--text3);text-decoration:none" onclick="resetSbConnection();return false;">Change database connection</a>
+    </div>
+    <div id="sb-config-section" style="display:none;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:11.5px;color:var(--text3);margin-bottom:8px;text-align:center">📡 Supabase database connection</div>
       <div class="lf" style="margin-bottom:8px"><label>Project URL</label><input id="login-sb-url" placeholder="https://xxxx.supabase.co" style="font-size:12px"></div>
       <div class="lf" style="margin-bottom:4px"><label>Anon Key</label><input id="login-sb-key" placeholder="eyJ..." style="font-size:11px"></div>
-      <button class="btn btn-sm" style="width:100%;justify-content:center;margin-top:6px" onclick="saveSbCredentials()">💾 Save connection</button>
+      <button class="btn btn-sm" style="width:100%;justify-content:center;margin-top:6px" onclick="saveSbCredentials()">💾 Save &amp; connect</button>
       <div id="sb-status" style="font-size:11.5px;margin-top:6px;text-align:center;color:var(--text3)"></div>
     </div>
   </div>
@@ -667,8 +673,16 @@ function initSupabase(){
   const key = localStorage.getItem('sb_key') || '';
   if(url && key){
     _sb = supabase.createClient(url, key);
+    // Credentials already saved — hide connection UI on both screens
+    const loginSec = document.getElementById('sb-config-section');
+    if(loginSec) loginSec.style.display = 'none';
+    const setupSec = document.getElementById('setup-sb-section');
+    if(setupSec) setupSec.style.display = 'none';
     return true;
   }
+  // No credentials yet — show the connection panel on the login screen
+  const loginSec = document.getElementById('sb-config-section');
+  if(loginSec) loginSec.style.display = 'block';
   return false;
 }
 
@@ -678,15 +692,26 @@ async function saveSbCredentials(){
   const url = (document.getElementById('login-sb-url')||{}).value?.trim();
   const key = (document.getElementById('login-sb-key')||{}).value?.trim();
   if(!url||!key){ showSbStatus('Enter both URL and key.','error'); return; }
-  localStorage.setItem('sb_url', url);
-  localStorage.setItem('sb_key', key);
-  _sb = supabase.createClient(url, key);
-  // Test connection
   showSbStatus('Testing connection…','info');
-  const {error} = await _sb.from('hr_users').select('id').limit(1);
-  if(error){ showSbStatus('❌ '+error.message,'error'); _sb=null; return; }
-  showSbStatus('✅ Connected to Supabase!','success');
-  setTimeout(()=>{ const s=document.getElementById('sb-config-section'); if(s)s.style.display='none'; },2000);
+  try{
+    const testClient = supabase.createClient(url, key);
+    const {error} = await testClient.from('hr_users').select('id').limit(1);
+    if(error) throw error;
+    // Connection works — persist credentials permanently
+    localStorage.setItem('sb_url', url);
+    localStorage.setItem('sb_key', key);
+    localStorage.setItem('sb_connected','1');
+    _sb = testClient;
+    showSbStatus('✅ Connected! Credentials saved permanently.','success');
+    // Hide the connection panel permanently — never show again
+    setTimeout(()=>{
+      const s=document.getElementById('sb-config-section');
+      if(s) s.style.display='none';
+    }, 1800);
+  } catch(err){
+    showSbStatus('❌ '+(err.message||'Connection failed'),'error');
+    _sb = null;
+  }
 }
 
 function showSbStatus(msg,type){
@@ -913,17 +938,42 @@ let notifs=[], ef='all', evf='all', empSearch='', trf='all';
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 function boot(){
-  const users=S.get('users',[]);
-  if(users.length===0){
-    // No users yet — show setup
+  // Init Supabase first — this also handles showing/hiding connection UI
+  initSupabase();
+  const alreadyConnected = !!localStorage.getItem('sb_connected');
+
+  // Check if we have any users (local or remote)
+  const localUsers=S.get('users',[]);
+
+  if(localUsers.length===0 && !alreadyConnected){
+    // Fresh install — show setup with Supabase fields visible
     document.getElementById('setup-screen').style.display='flex';
-  } else {
-    // Show login
+    const setupSec=document.getElementById('setup-sb-section');
+    if(setupSec) setupSec.style.display='block';
+  } else if(localUsers.length===0 && alreadyConnected){
+    // Supabase connected but no local users — show login (users are in DB)
     document.getElementById('login-screen').style.display='flex';
     const org=S.get('org','Moura HR');
     const _oel=document.getElementById('org-name-login');
     if(_oel)_oel.textContent=org;
+    // Hide setup Supabase fields since already connected
+    const setupSec=document.getElementById('setup-sb-section');
+    if(setupSec) setupSec.style.display='none';
+  } else {
+    // Users exist — show login
+    document.getElementById('login-screen').style.display='flex';
+    const org=S.get('org','Moura HR');
+    const _oel=document.getElementById('org-name-login');
+    if(_oel)_oel.textContent=org;
+    // Hide Supabase connection panel if already configured
+    if(alreadyConnected){
+      const sbSec=document.getElementById('sb-config-section');
+      if(sbSec) sbSec.style.display='none';
+      const setupSec=document.getElementById('setup-sb-section');
+      if(setupSec) setupSec.style.display='none';
+    }
   }
+  updateSbBadge();
 }
 boot();
 
@@ -946,6 +996,7 @@ function doSetup(){
   if(sbUrlSetup&&sbKeySetup){
     localStorage.setItem('sb_url',sbUrlSetup);
     localStorage.setItem('sb_key',sbKeySetup);
+    localStorage.setItem('sb_connected','1');
     _sb=supabase.createClient(sbUrlSetup,sbKeySetup);
   }
   // Save user to DB or local
@@ -2290,6 +2341,29 @@ function deleteEmployee(id){
   });
 }
 
+
+
+function resetSbConnection(){
+  if(!confirm('Remove the current database connection?\n\nYou will need to re-enter your Supabase credentials.')) return;
+  localStorage.removeItem('sb_url');
+  localStorage.removeItem('sb_key');
+  localStorage.removeItem('sb_connected');
+  _sb = null;
+  const s=document.getElementById('sb-config-section');
+  if(s) s.style.display='block';
+  const badge=document.getElementById('sb-connected-badge');
+  if(badge) badge.style.display='none';
+  const link=document.getElementById('sb-reconfigure-link');
+  if(link) link.style.display='none';
+}
+
+function updateSbBadge(){
+  const connected=!!localStorage.getItem('sb_connected');
+  const badge=document.getElementById('sb-connected-badge');
+  const link=document.getElementById('sb-reconfigure-link');
+  if(badge) badge.style.display=connected?'inline':'none';
+  if(link) link.style.display=connected?'inline':'none';
+}
 
 function showLoader(msg='Loading…'){const o=document.getElementById('loader-overlay');const m=document.getElementById('loader-msg');if(o)o.classList.add('active');if(m)m.textContent=msg;}
 function hideLoader(){const o=document.getElementById('loader-overlay');if(o)o.classList.remove('active');}
