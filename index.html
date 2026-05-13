@@ -837,10 +837,22 @@ async function dbSaveUser(user){
 }
 
 async function dbFindUser(username){
-  if(!sbReady()){ return S.get('users',[]).find(u=>u.username===username&&u.active!==false); }
-  const {data,error}=await _sb.from('hr_users').select('*').eq('username',username).eq('active',true).maybeSingle();
-  if(error||!data) return null;
-  return{id:data.id,name:data.name,username:data.username,email:data.email,role:data.role,active:data.active,passwordHash:data.password_hash};
+  if(!_sb) return null;
+
+  const { data, error } = await _sb
+    .from('hr_users')
+    .select('*')
+    .eq('username', username)
+    .eq('active', true)
+    .maybeSingle();
+
+  if(error){
+    console.error('Find user error:', error);
+    return null;
+  }
+
+  return data;
+}
 }
 
 // ── AUDIT ──
