@@ -629,6 +629,19 @@ tbody tr:hover td{background:var(--bg2)}
             </div>
           </div>
 
+          <!-- Departments -->
+          <div class="card" style="margin-bottom:14px">
+            <div class="ch"><span class="ct">🏢 Departments</span></div>
+            <div class="cb">
+              <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px">Manage the departments available across the platform</div>
+              <div id="departments-list" style="margin-bottom:10px"></div>
+              <div style="display:flex;gap:8px">
+                <input class="fi" id="new-dept-input" placeholder="Add new department…" onkeydown="if(event.key==='Enter')addDepartment()">
+                <button class="btn btn-sm btn-primary" onclick="addDepartment()">+ Add</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Onboarding defaults -->
           <div class="card" style="margin-bottom:14px">
             <div class="ch"><span class="ct">✅ Onboarding Checklist Defaults</span></div>
@@ -1643,7 +1656,7 @@ function openModal(type,pid,pid2){
       <div class="fg"><label class="fl">Start date</label><input class="fi" id="fst" type="date" value="${emp?.start||td()}"></div></div>
       <div class="fsec">Role</div>
       <div class="fr"><div class="fg"><label class="fl">Job title / Role</label><input class="fi" id="fr2" value="${emp?.role||''}" placeholder="Software Engineer"></div>
-      <div class="fg"><label class="fl">Department</label><select class="fs" id="fd">${['Engineering','Marketing','HR','Finance','Sales','Design','Operations'].map(d=>`<option ${emp?.dept===d?'selected':''}>${d}</option>`).join('')}</select></div></div>
+      <div class="fg"><label class="fl">Department</label><select class="fs" id="fd">${getDepts().map(d=>`<option ${emp?.dept===d?'selected':''}>${d}</option>`).join('')}</select></div></div>
       <div class="fg"><label class="fl">Manager</label><input class="fi" id="fm" value="${emp?.manager||''}" placeholder="Manager name"></div>
       <div class="fsec">Compensation</div>
       <div class="fr3"><div class="fg"><label class="fl">Salary amount</label><input class="fi" id="fsal" type="number" value="${emp?.salary?.amount||''}" placeholder="50000"></div>
@@ -2126,8 +2139,13 @@ function getSettings(){
     hrEmail:'',
     hrPhone:'',
     website:'',
-    checklistDefaults:['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done']
+    checklistDefaults:['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done'],
+    departments:['Engineering','Marketing','HR','Finance','Sales','Design','Operations']
   });
+}
+
+function getDepts(){
+  return getSettings().departments || ['Engineering','Marketing','HR','Finance','Sales','Design','Operations'];
 }
 
 function renderSettings(){
@@ -2189,6 +2207,114 @@ function syncSecondaryPicker(hex){
     document.getElementById('settings-secondary-color').value=hex;
     updateColorPreview(document.getElementById('settings-primary-color').value,hex);
   }
+}
+
+
+// ─── DEPARTMENT MANAGEMENT ────────────────────────────────────────────────────
+function renderDepartments(){
+  const cs=getSettings();
+  const depts=cs.departments||['Engineering','Marketing','HR','Finance','Sales','Design','Operations'];
+  const container=document.getElementById('departments-list');
+  if(!container)return;
+  if(depts.length===0){
+    container.innerHTML='<div style="color:var(--text3);font-size:13px;padding:6px 0">No departments yet. Add one below.</div>';
+    return;
+  }
+  container.innerHTML=depts.map((dept,i)=>`
+    <div id="dept-row-${i}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="flex:1;font-size:13px;font-weight:500" id="dept-label-${i}">${dept}</span>
+      <input class="fi" id="dept-edit-${i}" value="${dept}" style="flex:1;display:none;font-size:13px">
+      <div style="display:flex;gap:4px" id="dept-btns-${i}">
+        <button class="btn btn-xs" onclick="editDeptStart(${i})" title="Rename">✏</button>
+        ${i>0?`<button class="btn btn-xs" onclick="moveDept(${i},-1)" title="Move up">↑</button>`:'<button class="btn btn-xs" disabled style="opacity:.3">↑</button>'}
+        ${i<depts.length-1?`<button class="btn btn-xs" onclick="moveDept(${i},1)" title="Move down">↓</button>`:'<button class="btn btn-xs" disabled style="opacity:.3">↓</button>'}
+        <button class="btn btn-xs btn-danger" onclick="deleteDept(${i})" title="Delete">✕</button>
+      </div>
+      <div style="display:none;gap:4px" id="dept-edit-btns-${i}">
+        <button class="btn btn-xs btn-primary" onclick="editDeptSave(${i})">✓ Save</button>
+        <button class="btn btn-xs" onclick="editDeptCancel(${i})">Cancel</button>
+      </div>
+    </div>`).join('');
+}
+
+function addDepartment(){
+  const input=document.getElementById('new-dept-input');
+  const val=input.value.trim();
+  if(!val){toast('Enter a department name.','error');return;}
+  const cs=getSettings();
+  cs.departments=cs.departments||[];
+  if(cs.departments.map(d=>d.toLowerCase()).includes(val.toLowerCase())){
+    toast('Department already exists.','error');return;
+  }
+  cs.departments.push(val);
+  S.set('companySettings',cs);
+  input.value='';
+  renderDepartments();
+  toast(val+' added.','success');
+}
+
+function deleteDept(idx){
+  const cs=getSettings();
+  const dept=cs.departments[idx];
+  // Check if any employees are in this dept
+  const inUse=getEmps().filter(e=>e.dept===dept&&e.status!=='offboarded').length;
+  if(inUse>0){
+    if(!confirm(`"${dept}" has ${inUse} active employee(s).
+
+Delete it anyway? Existing employees will keep this department name.`))return;
+  } else {
+    if(!confirm(`Delete department "${dept}"?`))return;
+  }
+  cs.departments.splice(idx,1);
+  S.set('companySettings',cs);
+  renderDepartments();
+  toast(dept+' removed.','success');
+}
+
+function moveDept(idx,dir){
+  const cs=getSettings();
+  const newIdx=idx+dir;
+  if(newIdx<0||newIdx>=cs.departments.length)return;
+  const tmp=cs.departments[idx];
+  cs.departments[idx]=cs.departments[newIdx];
+  cs.departments[newIdx]=tmp;
+  S.set('companySettings',cs);
+  renderDepartments();
+}
+
+function editDeptStart(idx){
+  document.getElementById('dept-label-'+idx).style.display='none';
+  document.getElementById('dept-btns-'+idx).style.display='none';
+  document.getElementById('dept-edit-'+idx).style.display='block';
+  document.getElementById('dept-edit-btns-'+idx).style.display='flex';
+  document.getElementById('dept-edit-'+idx).focus();
+}
+
+function editDeptSave(idx){
+  const val=document.getElementById('dept-edit-'+idx).value.trim();
+  if(!val){toast('Name cannot be empty.','error');return;}
+  const cs=getSettings();
+  const oldName=cs.departments[idx];
+  cs.departments[idx]=val;
+  S.set('companySettings',cs);
+  // Optionally update employees with old dept name to new name
+  const emps=getEmps();
+  let updated=0;
+  emps.forEach(e=>{if(e.dept===oldName){e.dept=val;updated++;}});
+  if(updated>0){
+    saveEmps(emps);
+    toast(`Renamed to "${val}" — ${updated} employee record(s) updated.`,'success');
+  } else {
+    toast(`Renamed to "${val}".`,'success');
+  }
+  renderDepartments();
+}
+
+function editDeptCancel(idx){
+  document.getElementById('dept-label-'+idx).style.display='';
+  document.getElementById('dept-btns-'+idx).style.display='flex';
+  document.getElementById('dept-edit-'+idx).style.display='none';
+  document.getElementById('dept-edit-btns-'+idx).style.display='none';
 }
 
 function renderChecklistDefaults(items){
@@ -2262,6 +2388,9 @@ function saveCompanySettings(){
   cs.hrEmail=document.getElementById('settings-hr-email').value.trim();
   cs.hrPhone=document.getElementById('settings-hr-phone').value.trim();
   cs.website=document.getElementById('settings-website').value.trim();
+  // Preserve departments (managed separately, not via the save form)
+  const existingDepts=getSettings().departments;
+  if(existingDepts)cs.departments=existingDepts;
   S.set('companySettings',cs);
   S.set('org',cs.orgName);
   applyBrandingToUI(cs);
@@ -2332,6 +2461,7 @@ function renderSettingsSummary(cs){
       <div><div style="font-size:11px;color:var(--text3);text-transform:uppercase;margin-bottom:2px">Currency</div><div>${cs.currency||'—'}</div></div>
       <div><div style="font-size:11px;color:var(--text3);text-transform:uppercase;margin-bottom:2px">HR Email</div><div style="color:var(--blue)">${cs.hrEmail||'—'}</div></div>
       <div><div style="font-size:11px;color:var(--text3);text-transform:uppercase;margin-bottom:2px">Website</div><div>${cs.website||'—'}</div></div>
+      <div><div style="font-size:11px;color:var(--text3);text-transform:uppercase;margin-bottom:2px">Departments</div><div>${(cs.departments||[]).length} configured</div></div>
       <div><div style="font-size:11px;color:var(--text3);text-transform:uppercase;margin-bottom:2px">Checklist items</div><div>${(cs.checklistDefaults||[]).length} defaults</div></div>
     </div>`;
 }
