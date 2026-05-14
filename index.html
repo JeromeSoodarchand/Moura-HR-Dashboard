@@ -469,6 +469,7 @@ tbody tr:hover td{background:var(--bg2)}
     <div class="page" id="page-usermgmt">
       <div class="ph"><div class="ph-title">User Management</div>
         <div class="ph-actions">
+          <button class="btn" onclick="generateInviteLink()">🔗 Generate Invite Link</button>
           <button class="btn btn-primary" onclick="openModal('addUser')">+ Create User</button>
         </div>
       </div>
@@ -682,6 +683,36 @@ tbody tr:hover td{background:var(--bg2)}
 let _sb = null;
 
 function initSupabase(){
+  // ── Read credentials from URL params first (shared onboarding links) ────────
+  // Supports ?sb=URL|KEY or ?sburl=URL&sbkey=KEY
+  // Once read, save to localStorage and strip from URL for security
+  try{
+    const params = new URLSearchParams(window.location.search);
+    const combined = params.get('sb');        // ?sb=URL|KEY format
+    const paramUrl = params.get('sburl');     // ?sburl=URL&sbkey=KEY format
+    const paramKey = params.get('sbkey');
+
+    let urlFromParam = '', keyFromParam = '';
+
+    if(combined && combined.includes('|')){
+      [urlFromParam, keyFromParam] = combined.split('|');
+    } else if(paramUrl && paramKey){
+      urlFromParam = paramUrl;
+      keyFromParam = paramKey;
+    }
+
+    if(urlFromParam && keyFromParam){
+      // Save credentials from URL into localStorage permanently
+      localStorage.setItem('sb_url', urlFromParam.trim());
+      localStorage.setItem('sb_key', keyFromParam.trim());
+      localStorage.setItem('sb_connected', '1');
+      // Clean URL — remove credentials from address bar for security
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+    }
+  } catch(e){ console.warn('URL param read error:', e); }
+
+  // ── Load from localStorage (may have just been written above) ───────────────
   const url = localStorage.getItem('sb_url') || '';
   const key = localStorage.getItem('sb_key') || '';
   if(url && key){
@@ -969,37 +1000,85 @@ let CU=null; // current user
 let notifs=[], ef='all', evf='all', empSearch='', trf='all';
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
-function boot(){
-  // Init Supabase first — this also handles showing/hiding connection UI
+function showLoginScreen(){
+  document.getElementById('login-screen').style.display='flex';
+  const org=S.get('org','Moura HR');
+  const _oel=document.getElementById('org-name-login');
+  if(_oel)_oel.textContent=org;
+  const sbSec=document.getElementById('sb-config-section');
+  if(sbSec) sbSec.style.display='none';
+  const setupSec=document.getElementById('setup-sb-section');
+  if(setupSec) setupSec.style.display='none';
+  updateSbBadge();
+}
+
+function showSetupScreen(){
+  document.getElementById('setup-screen').style.display='flex';
+  const setupSec=document.getElementById('setup-sb-section');
+  if(setupSec) setupSec.style.display='block';
+}
+
+async function boot(){
+  // Step 1 — init Supabase from stored credentials
   initSupabase();
   const alreadyConnected = !!localStorage.getItem('sb_connected');
 
-  // Check if we have any users (local or remote)
-  const localUsers=S.get('users',[]);
+  // Step 2 — super admin IIFE already seeded localStorage above
+  const localUsers = S.get('users',[]);
 
-  // Re-read users after IIFE may have seeded super admin
-  const freshUsers = S.get('users',[]);
-  const showSetup = freshUsers.length===0 && !alreadyConnected;
-  if(showSetup){
-    // Truly fresh install with no super admin and no Supabase — show setup
-    document.getElementById('setup-screen').style.display='flex';
-    const setupSec=document.getElementById('setup-sb-section');
-    if(setupSec) setupSec.style.display='block';
-  } else {
-    // Users exist (including seeded super admin) — show login
-    document.getElementById('login-screen').style.display='flex';
-    const org=S.get('org','Moura HR');
-    const _oel=document.getElementById('org-name-login');
-    if(_oel)_oel.textContent=org;
-    // Hide Supabase connection panel if already configured
-    if(alreadyConnected){
-      const sbSec=document.getElementById('sb-config-section');
-      if(sbSec) sbSec.style.display='none';
-      const setupSec=document.getElementById('setup-sb-section');
-      if(setupSec) setupSec.style.display='none';
+  // Step 3 — if local users exist (super admin seeded), always go to login
+  if(localUsers.length > 0){
+    showLoginScreen();
+    // Background sync: if Supabase connected, also load org name
+    if(sbReady()){
+      _sb.from('company_settings').select('key,value').then(({data})=>{
+        if(data){
+          const orgRow=data.find(r=>r.key==='orgName');
+          if(orgRow&&orgRow.value){
+            S.set('org',orgRow.value);
+            const el=document.getElementById('org-name-login');
+            if(el)el.textContent=orgRow.value;
+          }
+        }
+      });
+    }
+    return;
+  }
+
+  // Step 4 — no local users, but Supabase is connected
+  // Check Supabase for existing users — this handles new devices
+  if(alreadyConnected && sbReady()){
+    showLoader('Checking database…');
+    try{
+      const {data:dbUsers, error}=await _sb.from('hr_users').select('*').eq('active',true).limit(1);
+      hideLoader();
+      if(!error && dbUsers && dbUsers.length > 0){
+        // Users exist in DB — this is an existing system on a new device
+        // Load org name from settings
+        const {data:settings}=await _sb.from('company_settings').select('key,value');
+        if(settings){
+          const orgRow=settings.find(r=>r.key==='orgName');
+          if(orgRow&&orgRow.value) S.set('org',orgRow.value);
+        }
+        showLoginScreen();
+        return;
+      }
+    } catch(e){
+      hideLoader();
+      console.error('Boot DB check error:',e);
     }
   }
-  updateSbBadge();
+
+  // Step 5 — Supabase connected but no users found, OR not connected at all
+  // If connected but empty DB, go to login (super admin will be seeded by IIFE)
+  if(alreadyConnected){
+    showLoginScreen();
+    return;
+  }
+
+  // Step 6 — truly fresh: no local users, no Supabase connection
+  // Show setup screen so admin can configure the system
+  showSetupScreen();
 }
 boot();
 
@@ -2569,10 +2648,88 @@ function updateSbBadge(){
 function showLoader(msg='Loading…'){const o=document.getElementById('loader-overlay');const m=document.getElementById('loader-msg');if(o)o.classList.add('active');if(m)m.textContent=msg;}
 function hideLoader(){const o=document.getElementById('loader-overlay');if(o)o.classList.remove('active');}
 
-// ─── KEYBOARD ─────────────────────────────────────────────────────────────────
+
+// ─── INVITE LINK GENERATOR ────────────────────────────────────────────────────
+function generateInviteLink(){
+  const sbUrl = localStorage.getItem('sb_url')||'';
+  const sbKey = localStorage.getItem('sb_key')||'';
+
+  if(!sbUrl || !sbKey){
+    toast('No Supabase credentials found. Connect to database first.','error');
+    return;
+  }
+
+  // Build the invite URL — uses current page URL as base
+  const base = window.location.origin + window.location.pathname;
+  const inviteUrl = `${base}?sburl=${encodeURIComponent(sbUrl)}&sbkey=${encodeURIComponent(sbKey)}`;
+
+  // Show modal with the link
+  const mb = document.getElementById('mbox');
+  mb.className = 'modal-box wide';
+  mb.innerHTML = `
+    <div class="modal-title">🔗 Team Invite Link <button class="modal-close" onclick="closeModal()">✕</button></div>
+
+    <div style="background:var(--gold-light);border-radius:var(--radius);padding:12px 14px;font-size:12.5px;color:var(--gold-deep);margin-bottom:16px;line-height:1.6">
+      <strong>How it works:</strong> Anyone who opens this link will have the Supabase database automatically connected on their device. They will land on the login screen and can sign in with their username and password immediately — no manual setup needed.
+    </div>
+
+    <div class="fg">
+      <label class="fl">Invite link (share this with your team)</label>
+      <div style="display:flex;gap:8px">
+        <input class="fi" id="invite-link-input" value="${inviteUrl}" readonly style="font-size:11px;font-family:monospace;background:var(--bg2)">
+        <button class="btn btn-primary" onclick="copyInviteLink()" style="flex-shrink:0">📋 Copy</button>
+      </div>
+    </div>
+
+    <div style="background:var(--red-light);border-radius:var(--radius);padding:12px 14px;font-size:12.5px;color:var(--red-deep);margin-bottom:16px;line-height:1.6">
+      <strong>⚠ Security notice:</strong> This link contains your Supabase Anon Key. Only share it with trusted team members via a private channel (e.g. WhatsApp, email). Do not post it publicly.
+    </div>
+
+    <div class="fg">
+      <label class="fl">Pre-written message to send</label>
+      <textarea class="ft" id="invite-message" style="min-height:90px" readonly>Hi, here is your link to access the Moura HR portal. Open it on your device and sign in with the username and password I will share with you separately.
+
+${inviteUrl}
+
+This link will automatically connect you to the database. After opening it once, you can bookmark the regular URL for future visits.</textarea>
+      <button class="btn btn-sm" style="margin-top:6px" onclick="copyInviteMessage()">📋 Copy message</button>
+    </div>
+
+    <div class="mf">
+      <button class="btn btn-primary" onclick="closeModal()">Done</button>
+    </div>`;
+  document.getElementById('mb').classList.add('open');
+}
+
+function copyInviteLink(){
+  const input = document.getElementById('invite-link-input');
+  if(!input) return;
+  navigator.clipboard.writeText(input.value).then(()=>{
+    toast('Invite link copied to clipboard!','success');
+  }).catch(()=>{
+    // Fallback for browsers that block clipboard
+    input.select();
+    document.execCommand('copy');
+    toast('Link copied!','success');
+  });
+}
+
+function copyInviteMessage(){
+  const ta = document.getElementById('invite-message');
+  if(!ta) return;
+  navigator.clipboard.writeText(ta.value).then(()=>{
+    toast('Message copied to clipboard!','success');
+  }).catch(()=>{
+    ta.select();
+    document.execCommand('copy');
+    toast('Message copied!','success');
+  });
+}
+
+
 initSupabase();
 document.addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&document.getElementById('login-screen').style.display!=='none')doLogin();
+  if(e.key==='Enter'&&document.getElementById('login-screen').style.display==='flex')doLogin();
   if(e.key==='Escape')closeModal();
 });
 </script>
