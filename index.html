@@ -2819,265 +2819,309 @@ async function uploadToStorage(empId, fileKey, file){
 async function generateEmployeePDF(id){
   const emp=gE(id);
   if(!emp){toast('Employee not found.','error');return;}
+
+  // Check jsPDF is available
+  const jsPDFClass = (window.jspdf&&window.jspdf.jsPDF) || window.jsPDF;
+  if(!jsPDFClass){
+    toast('PDF library not loaded. Please refresh the page and try again.','error');
+    console.error('jsPDF not found on window.jspdf.jsPDF or window.jsPDF');
+    return;
+  }
+
+  toast('Generating PDF…','info');
+  await new Promise(r=>setTimeout(r,100)); // let toast show
+
   const evts=[...gEE(id)].sort((a,b)=>new Date(b.date)-new Date(a.date));
   const assigns=gEA(id);
   const showSal=hasPerm('view_salary');
 
-  // jsPDF is loaded from CDN
-  const {jsPDF}=window.jspdf;
-  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const W=210, M=18;
+  const doc=new jsPDFClass({orientation:'portrait',unit:'mm',format:'a4'});
+  const PW=210, M=15;
   let y=0;
 
-  // Colour helpers
-  const navyRGB=[30,20,69];
-  const goldRGB=[214,147,40];
-  const lightRGB=[248,247,244];
-  const textRGB=[58,53,96];
-  const mutedRGB=[106,100,144];
+  // ── Colour helpers ──────────────────────────────────────────────────────────
+  const NAVY=[30,20,69], GOLD=[214,147,40], LIGHT=[248,247,244];
+  const TEXT=[58,53,96], MUTED=[130,124,160], WHITE=[255,255,255];
+  const GREEN=[29,158,117], RED=[216,90,48], BLUE=[55,138,221], AMBER=[186,117,23];
 
-  function setFill(rgb){doc.setFillColor(...rgb);}
-  function setDraw(rgb){doc.setDrawColor(...rgb);}
-  function setTxt(rgb){doc.setTextColor(...rgb);}
+  const sf=(...rgb)=>doc.setFillColor(...rgb);
+  const st=(...rgb)=>doc.setTextColor(...rgb);
+  const sd=(...rgb)=>doc.setDrawColor(...rgb);
 
-  // ── COVER HEADER ──
-  setFill(navyRGB);doc.rect(0,0,W,42,'F');
-  setFill(goldRGB);doc.rect(0,0,W,3,'F');
-  setFill(goldRGB);doc.rect(0,39,W,3,'F');
+  // ── Page check / add new page ───────────────────────────────────────────────
+  function checkPage(need=20){
+    if(y+need>278){
+      doc.addPage();
+      // Top stripe
+      sf(...NAVY);doc.rect(0,0,PW,5,'F');
+      sf(...GOLD);doc.rect(0,0,PW,2,'F');
+      // Bottom footer
+      sf(...NAVY);doc.rect(0,286,PW,11,'F');
+      doc.setFont('helvetica','normal');doc.setFontSize(7);st(...[140,135,160]);
+      doc.text('Moura HR — '+emp.name+' — Confidential',M,291.5);
+      doc.text('Page '+doc.internal.getNumberOfPages(),PW-M,291.5,{align:'right'});
+      y=10;
+    }
+  }
 
-  // Avatar circle
-  const c=avatarColor(emp.name);
-  const hexToRgb=h=>{const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);return[r,g,b];};
-  setFill(hexToRgb(c));
-  doc.circle(M+8,21,8,'F');
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(11);
-  setTxt([255,255,255]);
-  doc.text(inits(emp.name),M+8,24,{align:'center'});
-
-  // Name & role
-  doc.setFontSize(16);doc.setFont('helvetica','bold');
-  setTxt([255,255,255]);
-  doc.text(emp.name,M+20,17);
-  doc.setFontSize(10);doc.setFont('helvetica','normal');
-  setTxt([200,191,168]);
-  doc.text(`${emp.role} · ${emp.dept}`,M+20,23);
-  const statusColors={active:goldRGB,onboarding:[55,138,221],offboarded:[136,135,128]};
-  const sc=statusColors[emp.status]||goldRGB;
-  setFill(sc);
-  doc.roundedRect(M+20,26,28,7,2,2,'F');
-  doc.setFontSize(8);doc.setFont('helvetica','bold');setTxt([255,255,255]);
-  doc.text(emp.status.toUpperCase(),M+34,31,{align:'center'});
-
-  // Report label top right
-  doc.setFontSize(8);doc.setFont('helvetica','normal');
-  setTxt([200,191,168]);
-  doc.text('EMPLOYEE PROFILE REPORT',W-M,10,{align:'right'});
-  doc.text('Generated: '+new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}),W-M,15,{align:'right'});
-  doc.text('Confidential — Internal use only',W-M,20,{align:'right'});
-
-  y=50;
-
-  // ── HELPER FUNCTIONS ──
-  function sectionHead(title){
-    setFill(navyRGB);doc.rect(M,y,W-2*M,7,'F');
-    doc.setFont('helvetica','bold');doc.setFontSize(10);setTxt([255,255,255]);
-    doc.text(title.toUpperCase(),M+4,y+5);
+  // ── Section heading ─────────────────────────────────────────────────────────
+  function heading(title){
+    checkPage(14);
+    sf(...NAVY);doc.rect(M,y,PW-2*M,7,'F');
+    sf(...GOLD);doc.rect(M,y,3,7,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(9);st(...WHITE);
+    doc.text(title.toUpperCase(),M+6,y+4.8);
     y+=10;
   }
 
-  function row2(label,value,y2,x=M){
-    doc.setFont('helvetica','bold');doc.setFontSize(9);setTxt(mutedRGB);
-    doc.text(label,x,y2);
-    doc.setFont('helvetica','normal');setTxt(textRGB);
-    doc.text(String(value||'—'),x+35,y2);
+  // ── Two-column info row ─────────────────────────────────────────────────────
+  function infoRow(label,value,x,y2,w=85){
+    doc.setFont('helvetica','bold');doc.setFontSize(8);st(...MUTED);
+    doc.text(label+':',x,y2);
+    doc.setFont('helvetica','normal');st(...TEXT);
+    const val=String(value||'—');
+    doc.text(val.length>35?val.slice(0,34)+'…':val, x+28, y2);
   }
 
-  function checkPage(need=20){
-    if(y+need>285){
-      doc.addPage();
-      // Page header stripe
-      setFill(navyRGB);doc.rect(0,0,W,6,'F');
-      setFill(goldRGB);doc.rect(0,0,W,2,'F');
-      // Footer
-      setFill(lightRGB);doc.rect(0,285,W,12,'F');
-      setFill(navyRGB);doc.rect(0,285,W,12,'F');
-      doc.setFont('helvetica','normal');doc.setFontSize(7);setTxt([136,135,128]);
-      doc.text('Moura HR — '+emp.name+' — Confidential',M,291);
-      doc.text('Page '+doc.getCurrentPageInfo().pageNumber,W-M,291,{align:'right'});
-      y=12;
-    }
+  // ── Table header row ────────────────────────────────────────────────────────
+  function tableHead(cols){
+    checkPage(8);
+    sf(...NAVY);doc.rect(M,y,PW-2*M,6,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(8);st(...WHITE);
+    cols.forEach(([text,x])=>doc.text(text,M+x,y+4.3));
+    y+=6;
   }
 
-  // ── PERSONAL DETAILS ──
-  sectionHead('Personal Information');
-  setFill(lightRGB);doc.rect(M,y,W-2*M,24,'F');
-  row2('Full name',emp.name,y+5);
-  row2('Email',emp.email,y+10);
-  row2('Phone',emp.phone,y+15);
-  row2('Department',emp.dept,y+20,M+(W-2*M)/2);
-  row2('Role',emp.role,y+5,M+(W-2*M)/2);
-  row2('Manager',emp.manager,y+10,M+(W-2*M)/2);
-  row2('Start date',fDate(emp.start),y+15,M+(W-2*M)/2);
-  row2('Status',emp.status,y+20,M+(W-2*M)/2);
-  y+=28;
+  // ── Alternating table row background ───────────────────────────────────────
+  let rowIdx=0;
+  function tableRow(rowFn, h=5.5){
+    checkPage(h+2);
+    sf(...(rowIdx%2===0?WHITE:LIGHT));
+    doc.rect(M,y,PW-2*M,h,'F');
+    sd(220,218,228);doc.setLineWidth(0.1);
+    doc.rect(M,y,PW-2*M,h,'S');
+    doc.setFont('helvetica','normal');doc.setFontSize(8);st(...TEXT);
+    rowFn(y);
+    y+=h;
+    rowIdx++;
+  }
 
-  // ── SALARY (if permitted) ──
+  // ── Status pill ─────────────────────────────────────────────────────────────
+  function statusPill(text, color, px, py, w=22, h=4){
+    sf(...color);doc.roundedRect(px,py,w,h,1,1,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(6.5);st(...WHITE);
+    doc.text(text.toUpperCase().slice(0,10),px+w/2,py+h-1,{align:'center'});
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // COVER HEADER
+  // ══════════════════════════════════════════════════════════════════════════
+  sf(...NAVY);doc.rect(0,0,PW,44,'F');
+  sf(...GOLD);doc.rect(0,0,PW,3,'F');
+  sf(...GOLD);doc.rect(0,41,PW,3,'F');
+
+  // Avatar
+  const hexToRgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+  const ac=avatarColor(emp.name);
+  sf(...hexToRgb(ac));
+  doc.ellipse(M+9,22,9,9,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(12);st(...WHITE);
+  doc.text(inits(emp.name),M+9,25.5,{align:'center'});
+
+  // Name block
+  doc.setFontSize(17);doc.setFont('helvetica','bold');st(...WHITE);
+  doc.text(emp.name,M+22,16);
+  doc.setFontSize(10);doc.setFont('helvetica','normal');st(200,191,168);
+  doc.text((emp.role||'')+(emp.dept?' · '+emp.dept:''),M+22,23);
+  const sCol={active:GOLD,onboarding:BLUE,offboarded:[136,135,128]};
+  statusPill(emp.status,sCol[emp.status]||GOLD,M+22,27,30,6);
+
+  // Top-right label
+  doc.setFontSize(7.5);doc.setFont('helvetica','normal');st(200,191,168);
+  doc.text('EMPLOYEE PROFILE REPORT',PW-M,9,{align:'right'});
+  doc.text('Generated: '+new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}),PW-M,14,{align:'right'});
+  doc.text('Confidential — Internal use only',PW-M,19,{align:'right'});
+
+  // Footer page 1
+  sf(...NAVY);doc.rect(0,286,PW,11,'F');
+  doc.setFont('helvetica','normal');doc.setFontSize(7);st(...[140,135,160]);
+  doc.text('Moura HR — Employee Profile Report — Confidential',M,291.5);
+  doc.text('Page 1',PW-M,291.5,{align:'right'});
+
+  y=52;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PERSONAL INFORMATION
+  // ══════════════════════════════════════════════════════════════════════════
+  heading('Personal Information');
+  const half=PW/2-M;
+  sf(...LIGHT);doc.rect(M,y,PW-2*M,26,'F');
+  sd(...[220,218,228]);doc.setLineWidth(0.2);doc.rect(M,y,PW-2*M,26,'S');
+  infoRow('Full Name',emp.name,M+3,y+6);
+  infoRow('Email',emp.email,M+3,y+12);
+  infoRow('Phone',emp.phone,M+3,y+18);
+  infoRow('Start Date',fDate(emp.start),M+3,y+24);
+  infoRow('Department',emp.dept,M+3+half,y+6);
+  infoRow('Role',emp.role,M+3+half,y+12);
+  infoRow('Manager',emp.manager,M+3+half,y+18);
+  infoRow('Status',emp.status,M+3+half,y+24);
+  y+=30;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // COMPENSATION (HR/Admin only)
+  // ══════════════════════════════════════════════════════════════════════════
   if(showSal&&emp.salary){
-    checkPage(40);
-    sectionHead('Compensation');
-    setFill(lightRGB);doc.rect(M,y,W-2*M,14,'F');
-    row2('Current salary',fCur(emp.salary.amount,emp.salary.currency)+' ('+emp.salary.frequency+')',y+5);
-    row2('Last review',fDate(emp.salary.lastReview),y+10);
-    row2('Next review',fDate(emp.salary.nextReview),y+5,M+(W-2*M)/2);
+    heading('Compensation');
+    sf(...LIGHT);doc.rect(M,y,PW-2*M,14,'F');
+    sd(...[220,218,228]);doc.rect(M,y,PW-2*M,14,'S');
+    infoRow('Current Salary',fCur(emp.salary.amount,emp.salary.currency)+' / '+emp.salary.frequency,M+3,y+5);
+    infoRow('Last Review',fDate(emp.salary.lastReview),M+3,y+11);
+    infoRow('Next Review',fDate(emp.salary.nextReview),M+3+half,y+5);
     y+=18;
-    if(emp.salary.history&&emp.salary.history.length>0){
-      checkPage(12);
-      doc.setFont('helvetica','bold');doc.setFontSize(9);setTxt(navyRGB);
+
+    if((emp.salary.history||[]).length>0){
+      checkPage(14);
+      doc.setFont('helvetica','bold');doc.setFontSize(9);st(...NAVY);
       doc.text('Salary history',M,y);y+=4;
-      doc.setFontSize(8);
-      setFill([230,230,230]);doc.rect(M,y,W-2*M,5,'F');
-      setTxt(navyRGB);doc.setFont('helvetica','bold');
-      doc.text('Date',M+2,y+3.5);doc.text('Amount',M+35,y+3.5);doc.text('Change',M+75,y+3.5);doc.text('Notes',M+95,y+3.5);
-      y+=6;
-      [...emp.salary.history].reverse().forEach((h,i)=>{
-        checkPage(6);
-        setFill(i%2===0?[255,255,255]:lightRGB);doc.rect(M,y,W-2*M,5,'F');
-        doc.setFont('helvetica','normal');setTxt(textRGB);
-        doc.text(fDate(h.date),M+2,y+3.5);
-        doc.text(fCur(h.amount,emp.salary.currency),M+35,y+3.5);
-        if(i<emp.salary.history.length-1){
-          const prev=emp.salary.history[emp.salary.history.length-2-i];
-          if(prev){const chg=Math.round((h.amount-prev.amount)/prev.amount*100);const sign=chg>0?'+':'';
-          setTxt(chg>0?[29,158,117]:[216,90,48]);doc.text(sign+chg+'%',M+75,y+3.5);}
-        }
-        setTxt(textRGB);doc.text((h.note||'').slice(0,40),M+95,y+3.5);
-        y+=5;
+      rowIdx=0;
+      tableHead([['Date',2],['Amount',30],['Change',66],['Notes',86]]);
+      const hist=[...emp.salary.history].reverse();
+      hist.forEach((h,i)=>{
+        const prev=hist[i+1];
+        const chg=prev?Math.round((h.amount-prev.amount)/prev.amount*100):null;
+        tableRow(ry=>{
+          doc.text(fDate(h.date),M+2,ry+3.8);
+          doc.text(fCur(h.amount,emp.salary.currency),M+30,ry+3.8);
+          if(chg!==null){
+            st(...(chg>=0?GREEN:RED));
+            doc.setFont('helvetica','bold');
+            doc.text((chg>=0?'+':'')+chg+'%',M+66,ry+3.8);
+            doc.setFont('helvetica','normal');st(...TEXT);
+          } else {
+            doc.text('—',M+66,ry+3.8);
+          }
+          doc.text((h.note||'').slice(0,45),M+86,ry+3.8);
+        });
       });
-      y+=4;
+      y+=3;
     }
   }
 
-  // ── TRAINING ──
+  // ══════════════════════════════════════════════════════════════════════════
+  // TRAINING ASSIGNMENTS
+  // ══════════════════════════════════════════════════════════════════════════
   if(assigns.length>0){
-    checkPage(20);
-    sectionHead('Training Assignments');
-    const statusColors2={'completed':[29,158,117],'in-progress':[55,138,221],'not-started':[136,135,128],'overdue':[186,117,23],'failed':[216,90,48]};
-    setFill([230,230,230]);doc.rect(M,y,W-2*M,5,'F');
-    doc.setFontSize(8);doc.setFont('helvetica','bold');setTxt(navyRGB);
-    doc.text('Program',M+2,y+3.5);doc.text('Status',M+80,y+3.5);doc.text('Due',M+108,y+3.5);doc.text('Score',M+130,y+3.5);doc.text('Progress',M+148,y+3.5);
-    y+=6;
-    assigns.forEach((a,i)=>{
-      checkPage(6);
+    heading('Training Assignments');
+    rowIdx=0;
+    tableHead([['Program',2],['Status',75],['Due',100],['Score',125],['Progress',142]]);
+    const trColors={'completed':GREEN,'in-progress':BLUE,'not-started':MUTED,'overdue':AMBER,'failed':RED};
+    assigns.forEach(a=>{
       const prog=gP(a.programId);
-      setFill(i%2===0?[255,255,255]:lightRGB);doc.rect(M,y,W-2*M,5,'F');
-      doc.setFont('helvetica','normal');doc.setFontSize(8);setTxt(textRGB);
-      doc.text((prog?.name||'—').slice(0,35),M+2,y+3.5);
-      const sc2=statusColors2[a.status]||[136,135,128];
-      setFill(sc2);doc.roundedRect(M+78,y+0.5,22,4,1,1,'F');
-      doc.setFont('helvetica','bold');setTxt([255,255,255]);doc.setFontSize(6.5);
-      doc.text((TRST[a.status]?.label||a.status).toUpperCase(),M+89,y+3.3,{align:'center'});
-      doc.setFont('helvetica','normal');doc.setFontSize(8);setTxt(textRGB);
-      doc.text(fDate(a.dueDate),M+108,y+3.5);
-      doc.text(a.score!=null?a.score+'%':'—',M+130,y+3.5);
       const pct=a.status==='completed'?100:(a.progress||0);
-      setFill([220,218,228]);doc.rect(M+148,y+1.5,28,2,'F');
-      setFill(sc2);doc.rect(M+148,y+1.5,28*pct/100,2,'F');
-      setTxt(textRGB);doc.text(pct+'%',M+178,y+3.5);
-      y+=5;
+      const tc=trColors[a.status]||MUTED;
+      tableRow(ry=>{
+        doc.text((prog?.name||'—').slice(0,32),M+2,ry+3.8);
+        statusPill(TRST[a.status]?.label||a.status,tc,M+73,ry+0.8,24,4.5);
+        doc.text(fDate(a.dueDate),M+100,ry+3.8);
+        doc.text(a.score!=null?a.score+'%':'—',M+125,ry+3.8);
+        // Progress bar
+        sf(220,218,228);doc.rect(M+142,ry+1.5,30,2.5,'F');
+        sf(...tc);doc.rect(M+142,ry+1.5,30*pct/100,2.5,'F');
+        st(...TEXT);doc.text(pct+'%',M+174,ry+3.8);
+      });
     });
-    y+=4;
+    y+=3;
   }
 
-  // ── EVENTS LOG ──
+  // ══════════════════════════════════════════════════════════════════════════
+  // EVENTS HISTORY
+  // ══════════════════════════════════════════════════════════════════════════
   if(evts.length>0){
-    checkPage(20);
-    sectionHead('Events History');
-    const evtColors={absence:[216,90,48],warning:[186,117,23],training:[24,95,165],milestone:[8,80,65]};
-    setFill([230,230,230]);doc.rect(M,y,W-2*M,5,'F');
-    doc.setFontSize(8);doc.setFont('helvetica','bold');setTxt(navyRGB);
-    doc.text('Date',M+2,y+3.5);doc.text('Type',M+30,y+3.5);doc.text('Description',M+60,y+3.5);doc.text('Logged by',M+145,y+3.5);
-    y+=6;
-    evts.forEach((ev,i)=>{
-      checkPage(7);
-      const cfg=evtColors[ev.type]||[136,135,128];
-      setFill(i%2===0?[255,255,255]:lightRGB);doc.rect(M,y,W-2*M,5.5,'F');
-      doc.setFont('helvetica','normal');doc.setFontSize(8);setTxt(textRGB);
-      doc.text(fDate(ev.date),M+2,y+4);
-      setFill(cfg);doc.roundedRect(M+28,y+0.5,20,4.5,1,1,'F');
-      doc.setFont('helvetica','bold');setTxt([255,255,255]);doc.setFontSize(6.5);
-      doc.text((TCFG[ev.type]?.label||ev.type).toUpperCase(),M+38,y+3.5,{align:'center'});
-      doc.setFont('helvetica','normal');doc.setFontSize(8);setTxt(textRGB);
-      const descText=(ev.desc||'').slice(0,55);
-      doc.text(descText,M+60,y+4);
-      doc.text((ev.loggedBy||'').slice(0,20),M+145,y+4);
-      y+=5.5;
+    heading('Events History ('+evts.length+')');
+    rowIdx=0;
+    tableHead([['Date',2],['Type',28],['Description',55],['Logged by',140]]);
+    const evColors={absence:RED,warning:AMBER,training:BLUE,milestone:GREEN};
+    evts.forEach(ev=>{
+      const tc=evColors[ev.type]||MUTED;
+      tableRow(ry=>{
+        doc.text(fDate(ev.date),M+2,ry+3.8);
+        statusPill(TCFG[ev.type]?.label||ev.type,tc,M+26,ry+0.8,22,4.5);
+        const desc=(ev.desc||'').slice(0,55);
+        doc.text(desc,M+55,ry+3.8);
+        doc.text((ev.loggedBy||'').slice(0,20),M+140,ry+3.8);
+      },5.5);
     });
-    y+=4;
+    y+=3;
   }
 
-  // ── CHECKLIST ──
+  // ══════════════════════════════════════════════════════════════════════════
+  // CHECKLIST
+  // ══════════════════════════════════════════════════════════════════════════
   const cl=emp.checklist||emp.offChecklist||{};
-  if(Object.keys(cl).length>0){
-    checkPage(20);
-    sectionHead(emp.status==='offboarded'?'Offboarding Checklist':'Onboarding Checklist');
-    Object.entries(cl).forEach(([item,done],i)=>{
-      checkPage(6);
-      setFill(i%2===0?[255,255,255]:lightRGB);doc.rect(M,y,W-2*M,5,'F');
-      setFill(done?[29,158,117]:[216,90,48]);
-      doc.circle(M+4,y+2.5,1.5,'F');
-      doc.setFont('helvetica',done?'normal':'normal');doc.setFontSize(9);
-      setTxt(done?[29,158,117]:textRGB);
-      doc.text(item,M+10,y+3.5);
-      setTxt(done?[29,158,117]:[216,90,48]);
-      doc.text(done?'✓ Complete':'Pending',W-M-20,y+3.5);
-      y+=5;
+  const clEntries=Object.entries(cl);
+  if(clEntries.length>0){
+    heading((emp.status==='offboarded'?'Offboarding':'Onboarding')+' Checklist');
+    rowIdx=0;
+    const done=clEntries.filter(([,v])=>v).length;
+    doc.setFont('helvetica','normal');doc.setFontSize(8);st(...MUTED);
+    doc.text(done+'/'+clEntries.length+' items complete',M,y);y+=4;
+    clEntries.forEach(([item,isDone])=>{
+      tableRow(ry=>{
+        sf(...(isDone?GREEN:RED));
+        doc.ellipse(M+4,ry+2.8,2,2,'F');
+        doc.setFont('helvetica',isDone?'normal':'normal');st(...TEXT);
+        doc.text(item,M+10,ry+3.8);
+        doc.setFont('helvetica','bold');st(...(isDone?GREEN:RED));
+        doc.text(isDone?'✓ Complete':'Pending',PW-M-22,ry+3.8);
+        doc.setFont('helvetica','normal');st(...TEXT);
+      });
     });
-    y+=4;
+    y+=3;
   }
 
-  // ── FILES LIST ──
+  // ══════════════════════════════════════════════════════════════════════════
+  // ATTACHED FILES
+  // ══════════════════════════════════════════════════════════════════════════
   const empFiles=emp.files||[];
   if(empFiles.length>0){
-    checkPage(20);
-    sectionHead('Attached Files');
-    empFiles.forEach((f,i)=>{
-      checkPage(6);
-      setFill(i%2===0?[255,255,255]:lightRGB);doc.rect(M,y,W-2*M,5,'F');
-      doc.setFont('helvetica','normal');doc.setFontSize(9);setTxt(textRGB);
-      doc.text(f.name.slice(0,50),M+8,y+3.5);
-      setTxt(mutedRGB);doc.setFontSize(8);
-      doc.text(f.size||'',M+130,y+3.5);
-      doc.text(f.uploadedAt?new Date(f.uploadedAt).toLocaleDateString('en-GB'):'',M+148,y+3.5);
-      y+=5;
+    heading('Attached Files ('+empFiles.length+')');
+    rowIdx=0;
+    tableHead([['File name',2],['Size',110],['Uploaded',135],['By',160]]);
+    empFiles.forEach(f=>{
+      tableRow(ry=>{
+        doc.text((f.name||'').slice(0,48),M+2,ry+3.8);
+        doc.text(f.size||'',M+110,ry+3.8);
+        doc.text(f.uploadedAt?new Date(f.uploadedAt).toLocaleDateString('en-GB'):'',M+135,ry+3.8);
+        doc.text((f.uploadedBy||'').slice(0,18),M+160,ry+3.8);
+      });
     });
-    y+=4;
+    y+=3;
   }
 
-  // ── FOOTER ON ALL PAGES ──
-  const totalPages=doc.getNumberOfPages();
-  for(let p=1;p<=totalPages;p++){
+  // ══════════════════════════════════════════════════════════════════════════
+  // UPDATE ALL PAGE FOOTERS
+  // ══════════════════════════════════════════════════════════════════════════
+  const totalPg=doc.internal.getNumberOfPages();
+  for(let p=2;p<=totalPg;p++){
     doc.setPage(p);
-    if(p>1){
-      setFill(navyRGB);doc.rect(0,285,W,12,'F');
-      doc.setFont('helvetica','normal');doc.setFontSize(7);setTxt([136,135,128]);
-      doc.text('Moura HR — '+emp.name+' — Confidential',M,291);
-      doc.text('Page '+p+' of '+totalPages,W-M,291,{align:'right'});
-    } else {
-      setFill(navyRGB);doc.rect(0,285,W,12,'F');
-      doc.setFont('helvetica','normal');doc.setFontSize(7);setTxt([136,135,128]);
-      doc.text('Moura HR — Employee Profile Report — Confidential',M,291);
-      doc.text('Page 1 of '+totalPages,W-M,291,{align:'right'});
-    }
+    sf(...NAVY);doc.rect(0,286,PW,11,'F');
+    doc.setFont('helvetica','normal');doc.setFontSize(7);st(140,135,160);
+    doc.text('Moura HR — '+emp.name+' — Confidential',M,291.5);
+    doc.text('Page '+p+' of '+totalPg,PW-M,291.5,{align:'right'});
   }
+  // Update page 1 footer with total
+  doc.setPage(1);
+  sf(...NAVY);doc.rect(0,286,PW,11,'F');
+  doc.setFont('helvetica','normal');doc.setFontSize(7);st(140,135,160);
+  doc.text('Moura HR — Employee Profile Report — Confidential',M,291.5);
+  doc.text('Page 1 of '+totalPg,PW-M,291.5,{align:'right'});
 
-  // Save
-  const safeName=emp.name.replace(/[^a-zA-Z0-9]/g,'_');
+  // ── Save ───────────────────────────────────────────────────────────────────
+  const safeName=(emp.name||'Employee').replace(/[^a-zA-Z0-9]/g,'_');
   doc.save('Moura_HR_'+safeName+'_Profile.pdf');
-  toast('PDF downloaded for '+emp.name,'success');
+  toast('PDF downloaded for '+emp.name+'!','success');
   addAudit(CU.name,'Downloaded PDF profile for '+emp.name);
 }
-
 
 // ─── INVITE LINK GENERATOR ────────────────────────────────────────────────────
 function generateInviteLink(){
