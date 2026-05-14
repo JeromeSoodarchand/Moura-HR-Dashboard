@@ -2829,8 +2829,9 @@ async function generateEmployeePDF(id){
   }
 
   toast('Generating PDF…','info');
-  await new Promise(r=>setTimeout(r,100)); // let toast show
+  await new Promise(r=>setTimeout(r,150)); // let toast render
 
+  try {
   const evts=[...gEE(id)].sort((a,b)=>new Date(b.date)-new Date(a.date));
   const assigns=gEA(id);
   const showSal=hasPerm('view_salary');
@@ -3116,11 +3117,43 @@ async function generateEmployeePDF(id){
   doc.text('Moura HR — Employee Profile Report — Confidential',M,291.5);
   doc.text('Page 1 of '+totalPg,PW-M,291.5,{align:'right'});
 
-  // ── Save ───────────────────────────────────────────────────────────────────
-  const safeName=(emp.name||'Employee').replace(/[^a-zA-Z0-9]/g,'_');
-  doc.save('Moura_HR_'+safeName+'_Profile.pdf');
-  toast('PDF downloaded for '+emp.name+'!','success');
-  addAudit(CU.name,'Downloaded PDF profile for '+emp.name);
+  } catch(drawErr){
+    console.error('PDF drawing error:', drawErr);
+    toast('PDF generation failed: '+(drawErr.message||drawErr)+'. Check browser console.','error');
+    hideLoader();
+    return;
+  }
+
+  // ── Save — use blob URL for reliable cross-browser download ─────────────────
+  try {
+    const safeName=(emp.name||'Employee').replace(/[^a-zA-Z0-9]/g,'_');
+    const filename='Moura_HR_'+safeName+'_Profile.pdf';
+
+    // Generate blob and create download link
+    const pdfBlob = doc.output('blob');
+    const blobUrl = URL.createObjectURL(pdfBlob);
+
+    // Create invisible anchor and trigger download
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+
+    // Clean up after short delay
+    setTimeout(()=>{
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    }, 2000);
+
+    toast('✓ PDF downloaded: '+filename,'success');
+    addAudit(CU.name,'Downloaded PDF profile for '+emp.name);
+
+  } catch(saveErr) {
+    console.error('PDF save error:', saveErr);
+    toast('PDF generated but download failed. Check browser download settings.','error');
+  }
 }
 
 // ─── INVITE LINK GENERATOR ────────────────────────────────────────────────────
