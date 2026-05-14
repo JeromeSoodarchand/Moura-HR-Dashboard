@@ -3124,35 +3124,35 @@ async function generateEmployeePDF(id){
     return;
   }
 
-  // ── Save — use blob URL for reliable cross-browser download ─────────────────
+  // ── Save — base64 data URI (works on GitHub Pages, no CSP issues) ────────────
   try {
     const safeName=(emp.name||'Employee').replace(/[^a-zA-Z0-9]/g,'_');
     const filename='Moura_HR_'+safeName+'_Profile.pdf';
 
-    // Generate blob and create download link
-    const pdfBlob = doc.output('blob');
-    const blobUrl = URL.createObjectURL(pdfBlob);
+    // Use base64 data URI — bypasses Content Security Policy on GitHub Pages
+    const pdfBase64 = doc.output('datauristring');
 
-    // Create invisible anchor and trigger download
     const link = document.createElement('a');
-    link.href = blobUrl;
+    link.href = pdfBase64;
     link.download = filename;
     link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
-
-    // Clean up after short delay
-    setTimeout(()=>{
-      document.body.removeChild(link);
-      URL.revokeObjectURL(blobUrl);
-    }, 2000);
+    document.body.removeChild(link);
 
     toast('✓ PDF downloaded: '+filename,'success');
     addAudit(CU.name,'Downloaded PDF profile for '+emp.name);
 
   } catch(saveErr) {
     console.error('PDF save error:', saveErr);
-    toast('PDF generated but download failed. Check browser download settings.','error');
+    // Final fallback — open PDF in new tab
+    try {
+      const pdfBase64 = doc.output('datauristring');
+      window.open(pdfBase64,'_blank');
+      toast('PDF opened in new tab — use browser Save As to download.','info');
+    } catch(e2){
+      toast('PDF generation failed. Please try again.','error');
+    }
   }
 }
 
