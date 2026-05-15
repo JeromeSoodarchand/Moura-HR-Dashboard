@@ -1724,6 +1724,7 @@ function renderOnboarding(){
 function activateEmployee(id){
   const emps=getEmps();
   const emp=emps.find(e=>String(e.id)===String(id));
+  if(!emp){toast('Employee not found.','error');return;}
   const cl=emp.checklist||{};
   const done=Object.values(cl).filter(Boolean).length;
   const tot=Object.keys(cl).length;
@@ -1732,23 +1733,50 @@ function activateEmployee(id){
     return;
   }
   if(!confirm(`Move ${emp.name} from Onboarding to Active?\n\nThis confirms all onboarding steps are complete.`))return;
+
+  // Update the employee object
   emp.status='active';
-  delete emp.checklist; // archive: move to completedChecklist
   emp.completedOnboarding=td();
-  saveEmps(emps);
-  // Log event
-  const evts=getEvts();
-  evts.push({id:Date.now(),empId:id,type:'milestone',date:td(),desc:'Onboarding completed — moved to Active',loggedBy:CU.name,notified:true});
-  saveEvts(evts);
-  addNotif(`${emp.name} onboarding complete — now Active`,'success');
-  addAudit(CU.name,`Activated employee: ${emp.name} (onboarding complete)`);
-  sendHRAlert('onboarding_complete', getHREmails(), {
-    employeeName:emp.name, dept:emp.dept, role:emp.role,
-    startDate:fDate(emp.start), completedDate:fDate(td())
+  emp.checklist={}; // clear checklist after activation
+
+  showLoader('Activating…');
+
+  // Save to Supabase first, then update cache + localStorage
+  dbSaveEmployee(emp).then(saved=>{
+    hideLoader();
+    const updated=saved||emp;
+
+    // Update cache
+    const idx=_cache.emps.findIndex(e=>String(e.id)===String(emp.id));
+    if(idx>=0)_cache.emps[idx]=updated;
+    // Update localStorage
+    saveEmps(_cache.emps);
+
+    // Log milestone event to DB
+    const newEvt={id:Date.now(),empId:emp.id,type:'milestone',date:td(),
+      desc:'Onboarding completed — moved to Active',loggedBy:CU.name,notified:true};
+    dbSaveEvent(newEvt).then(ev=>{
+      _cache.evts.unshift(ev||newEvt);
+      saveEvts(_cache.evts);
+    }).catch(()=>{
+      _cache.evts.unshift(newEvt);
+      saveEvts(_cache.evts);
+    });
+
+    addNotif(`${emp.name} onboarding complete — now Active`,'success');
+    dbAddAudit(CU.name,`Activated employee: ${emp.name} (onboarding complete)`);
+    sendHRAlert('onboarding_complete', getHREmails(), {
+      employeeName:emp.name, dept:emp.dept, role:emp.role,
+      startDate:fDate(emp.start), completedDate:fDate(td())
+    });
+    renderOnboarding();
+    renderDashboard();
+    toast(`${emp.name} is now Active!`,'success');
+  }).catch(err=>{
+    hideLoader();
+    console.error('Activate employee error:',err);
+    toast('Activation failed: '+(err.message||err),'error');
   });
-  renderOnboarding();
-  renderDashboard();
-  toast(`${emp.name} is now Active!`,'success');
 }
 
 // ─── EVENTS ───────────────────────────────────────────────────────────────────
@@ -2090,10 +2118,29 @@ function swETab(tab,el){
   el.classList.add('active');const pane=document.getElementById('et-'+tab);if(pane)pane.classList.add('active');
 }
 function togCheck(id,item,val,isOff){
-  const emps=getEmps();const emp=emps.find(e=>String(e.id)===String(id));if(!emp)return;
-  if(isOff){if(!emp.offChecklist)emp.offChecklist={};emp.offChecklist[item]=val;}
-  else{if(!emp.checklist)emp.checklist={};emp.checklist[item]=val;}
-  saveEmps(emps);
+  const emp=gE(id);
+  if(!emp) return;
+  if(isOff){
+    if(!emp.offChecklist)emp.offChecklist={};
+    emp.offChecklist[item]=val;
+  } else {
+    if(!emp.checklist)emp.checklist={};
+    emp.checklist[item]=val;
+  }
+  // Update cache immediately so UI stays responsive
+  const idx=_cache.emps.findIndex(e=>String(e.id)===String(id));
+  if(idx>=0)_cache.emps[idx]=emp;
+  saveEmps(_cache.emps);
+  // Persist to Supabase in background (no loader — silent save)
+  dbSaveEmployee(emp).then(saved=>{
+    if(saved&&saved.id){
+      const i=_cache.emps.findIndex(e=>String(e.id)===String(saved.id));
+      if(i>=0)_cache.emps[i]=saved;
+      saveEmps(_cache.emps);
+    }
+  }).catch(err=>{
+    console.warn('Checklist save error (will retry on next save):',err);
+  });
 }
 
 // ─── MODALS ───────────────────────────────────────────────────────────────────
