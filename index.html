@@ -992,8 +992,17 @@ async function dbSaveEmployee(emp){
 }
 
 async function dbDeleteEmployee(id){
-  if(!sbReady()){ saveEmps(getEmps().filter(e=>e.id!==id));return; }
-  await _sb.from('employees').delete().eq('id',id);
+  if(!sbReady()){
+    saveEmps(getEmps().filter(e=>String(e.id)!==String(id)));
+    return;
+  }
+  const {error}=await _sb.from('employees').delete().eq('id',id);
+  if(error){
+    console.error('Delete employee DB error:',error);
+    throw error; // propagate so .catch() in deleteEmployee fires
+  }
+  // Also clean localStorage so refresh doesn't restore it
+  saveEmps(getEmps().filter(e=>String(e.id)!==String(id)));
 }
 
 // ── EVENTS ──
@@ -1027,15 +1036,20 @@ async function dbGetPrograms(){
 
 async function dbSaveProgram(prog){
   if(!sbReady()){ const p=getTrProgs();const i=p.findIndex(x=>x.id===prog.id);if(i>=0)p[i]=prog;else p.push(prog);saveTrProgs(p);return prog; }
-  const row=progToRow(prog);
-  if(prog.id && String(prog.id).length<13){
-    const {data,error}=await _sb.from('training_programs').update(row).eq('id',prog.id).select().single();
-    if(error)console.error(error);return data?rowToProg(data):prog;
-  } else {
-    delete row.id;
-    const {data,error}=await _sb.from('training_programs').insert(row).select().single();
-    if(error)console.error(error);return data?rowToProg(data):prog;
-  }
+  try{
+    const row=progToRow(prog);
+    Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
+    if(prog.id && String(prog.id).length<13){
+      const {data,error}=await _sb.from('training_programs').update(row).eq('id',prog.id).select().single();
+      if(error){console.error('Update program error:',error);throw error;}
+      return data?rowToProg(data):prog;
+    } else {
+      delete row.id;
+      const {data,error}=await _sb.from('training_programs').insert(row).select().single();
+      if(error){console.error('Insert program error:',error);throw error;}
+      return data?rowToProg(data):prog;
+    }
+  } catch(err){ console.error('dbSaveProgram exception:',err); return prog; }
 }
 
 // ── TRAINING ASSIGNMENTS ──
@@ -1048,15 +1062,20 @@ async function dbGetAssignments(){
 
 async function dbSaveAssignment(asgn){
   if(!sbReady()){ const a=getTrAsgn();const i=a.findIndex(x=>x.id===asgn.id);if(i>=0)a[i]=asgn;else a.push(asgn);saveTrAsgn(a);return asgn; }
-  const row=asgnToRow(asgn);
-  if(asgn.id && String(asgn.id).length<13){
-    const {data,error}=await _sb.from('training_assignments').update(row).eq('id',asgn.id).select().single();
-    if(error)console.error(error);return data?rowToAsgn(data):asgn;
-  } else {
-    delete row.id;
-    const {data,error}=await _sb.from('training_assignments').insert(row).select().single();
-    if(error)console.error(error);return data?rowToAsgn(data):asgn;
-  }
+  try{
+    const row=asgnToRow(asgn);
+    Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
+    if(asgn.id && String(asgn.id).length<13){
+      const {data,error}=await _sb.from('training_assignments').update(row).eq('id',asgn.id).select().single();
+      if(error){console.error('Update assignment error:',error);throw error;}
+      return data?rowToAsgn(data):asgn;
+    } else {
+      delete row.id;
+      const {data,error}=await _sb.from('training_assignments').insert(row).select().single();
+      if(error){console.error('Insert assignment error:',error);throw error;}
+      return data?rowToAsgn(data):asgn;
+    }
+  } catch(err){ console.error('dbSaveAssignment exception:',err); return asgn; }
 }
 
 // ── HR USERS ──
@@ -1069,15 +1088,21 @@ async function dbGetUsers(){
 
 async function dbSaveUser(user){
   if(!sbReady()){ const u=S.get('users',[]);const i=u.findIndex(x=>x.id===user.id);if(i>=0)u[i]=user;else u.push(user);S.set('users',u);return user; }
-  const row={name:user.name,username:user.username,email:user.email,role:user.role,active:user.active,password_hash:user.passwordHash};
-  if(user.id && String(user.id).length<13){
-    const {data,error}=await _sb.from('hr_users').update(row).eq('id',user.id).select().single();
-    if(error){console.error(error);return user;}
-    return{id:data.id,name:data.name,username:data.username,email:data.email,role:data.role,active:data.active,passwordHash:data.password_hash,createdAt:data.created_at};
-  } else {
-    const {data,error}=await _sb.from('hr_users').insert(row).select().single();
-    if(error){console.error(error);return user;}
-    return{id:data.id,name:data.name,username:data.username,email:data.email,role:data.role,active:data.active,passwordHash:data.password_hash,createdAt:data.created_at};
+  const row={name:user.name,username:user.username,email:user.email||'',role:user.role,active:user.active,password_hash:user.passwordHash};
+  Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
+  try{
+    if(user.id && String(user.id).length<13){
+      const {data,error}=await _sb.from('hr_users').update(row).eq('id',user.id).select().single();
+      if(error){console.error('Update user error:',error);throw error;}
+      return{id:data.id,name:data.name,username:data.username,email:data.email,role:data.role,active:data.active,passwordHash:data.password_hash,createdAt:data.created_at};
+    } else {
+      const {data,error}=await _sb.from('hr_users').insert(row).select().single();
+      if(error){console.error('Insert user error:',error);throw error;}
+      return{id:data.id,name:data.name,username:data.username,email:data.email,role:data.role,active:data.active,passwordHash:data.password_hash,createdAt:data.created_at};
+    }
+  } catch(err){
+    console.error('dbSaveUser exception:',err);
+    return user;
   }
 }
 
@@ -1098,7 +1123,8 @@ async function dbFindUser(username){
 async function dbAddAudit(actor,action){
   addAudit(actor,action); // always local
   if(!sbReady()) return;
-  await _sb.from('audit_log').insert({actor,action});
+  try{ await _sb.from('audit_log').insert({actor,action}); }
+  catch(e){ console.warn('Audit log error:',e); }
 }
 
 // ── COMPANY SETTINGS ──
@@ -1110,7 +1136,8 @@ async function dbGetSetting(key){
 
 async function dbSetSetting(key,value){
   if(!sbReady()) return;
-  await _sb.from('company_settings').upsert({key,value,updated_at:new Date().toISOString()},{onConflict:'key'});
+  try{ await _sb.from('company_settings').upsert({key,value,updated_at:new Date().toISOString()},{onConflict:'key'}); }
+  catch(e){ console.warn('Setting save error:',e); }
 }
 
 // ── ROW MAPPERS ──
@@ -1516,9 +1543,9 @@ const aColor=n=>{let h=0;for(let c of n)h=(h<<5)-h+c.charCodeAt(0);return COLS[M
 const fDate=d=>d?new Date(d+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}):'—';
 const fCur=(n,c='USD')=>new Intl.NumberFormat('en-US',{style:'currency',currency:c,maximumFractionDigits:0}).format(n);
 const td=()=>new Date().toISOString().slice(0,10);
-const gE=id=>getEmps().find(e=>e.id===id);
-const gEE=id=>getEvts().filter(e=>e.empId===id);
-const gEA=id=>getTrAsgn().filter(a=>a.empId===id);
+const gE=id=>getEmps().find(e=>String(e.id)===String(id));
+const gEE=id=>getEvts().filter(e=>String(e.empId)===String(id));
+const gEA=id=>getTrAsgn().filter(a=>String(a.empId)===String(id));
 const gP=id=>getTrProgs().find(p=>p.id===id);
 
 const TCFG={
@@ -1751,15 +1778,29 @@ function renderTrPrograms(){
 function setTrTab(tab,el){document.querySelectorAll('.tbb').forEach(b=>b.classList.remove('active'));document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));el.classList.add('active');document.getElementById('tab-'+tab).classList.add('active');}
 function setTRF(f,el){trf=f;document.querySelectorAll('#trf .fb').forEach(b=>b.classList.remove('active'));el.classList.add('active');renderTrAssignments();}
 function quickComplete(id){
-  const asgn=getTrAsgn();const a=asgn.find(x=>x.id===id);if(!a)return;
+  const asgn=getTrAsgn();
+  const a=asgn.find(x=>String(x.id)===String(id));
+  if(!a)return;
   const s=prompt('Enter score (0-100):','100');if(s===null)return;
   a.status='completed';a.completedDate=td();a.score=parseInt(s)||100;a.progress=100;
-  saveTrAsgn(asgn);
   const emp=gE(a.empId),prog=gP(a.programId);
-  const evts=getEvts();evts.push({id:Date.now(),empId:a.empId,type:'training',date:td(),desc:`Completed: ${prog?.name} — Score: ${a.score}%`,loggedBy:CU.name,notified:false});saveEvts(evts);
-  addNotif(`${emp?.name} completed "${prog?.name}" — ${a.score}%`,'success');
-  addAudit(CU.name,`Marked training complete: ${prog?.name} for ${emp?.name}`);
-  renderTraining();toast('Marked as completed.','success');
+  showLoader('Saving…');
+  dbSaveAssignment(a).then(saved=>{
+    hideLoader();
+    const idx=_cache.asgn.findIndex(x=>String(x.id)===String(a.id));
+    if(idx>=0)_cache.asgn[idx]=saved||a;
+    saveTrAsgn(_cache.asgn);
+    const newEvt={id:Date.now(),empId:a.empId,type:'training',date:td(),desc:`Completed: ${prog?.name} - Score: ${a.score}%`,loggedBy:CU.name,notified:false};
+    dbSaveEvent(newEvt).then(ev=>{ _cache.evts.unshift(ev||newEvt);saveEvts(_cache.evts); }).catch(()=>{});
+    addNotif(`${emp?.name} completed "${prog?.name}" - ${a.score}%`,'success');
+    dbAddAudit(CU.name,`Marked training complete: ${prog?.name} for ${emp?.name}`);
+    renderTraining();toast('Marked as completed.','success');
+  }).catch(err=>{
+    hideLoader();
+    saveTrAsgn(asgn); // local fallback
+    toast('Saved locally (DB error: '+(err.message||err)+')','error');
+    renderTraining();
+  });
 }
 
 // ─── OFFBOARDING ─────────────────────────────────────────────────────────────
@@ -2277,8 +2318,22 @@ function submitSalary(id){
   if(!emp.salary)emp.salary={amount:na,currency:cur,frequency:'Annual',history:[],lastReview:null,nextReview:null};
   emp.salary.amount=na;emp.salary.currency=cur;emp.salary.lastReview=date;emp.salary.nextReview=document.getElementById('fnrd').value||emp.salary.nextReview;
   emp.salary.history.push({date,amount:na,note});
-  saveEmps(emps);addNotif('Salary updated for '+emp.name+': '+fCur(na,cur),'info');addAudit(CU.name,'Updated salary for '+emp.name);
-  closeModal();toast('Salary updated.','success');
+  // Save to Supabase and localStorage
+  showLoader('Saving salary…');
+  dbSaveEmployee(emp).then(saved=>{
+    hideLoader();
+    const idx=_cache.emps.findIndex(e=>String(e.id)===String(saved.id||emp.id));
+    if(idx>=0)_cache.emps[idx]=saved||emp;
+    saveEmps(_cache.emps);
+    addNotif('Salary updated for '+emp.name+': '+fCur(na,cur),'info');
+    dbAddAudit(CU.name,'Updated salary for '+emp.name);
+    closeModal();toast('Salary updated.','success');
+  }).catch(err=>{
+    hideLoader();
+    saveEmps(emps); // local fallback
+    toast('Salary saved locally (DB error: '+(err.message||err)+')','error');
+    closeModal();
+  });
 }
 
 function submitEvent(){
@@ -2313,15 +2368,28 @@ function submitEvent(){
 
 function submitProgram(){
   const name=document.getElementById('fpn').value.trim();if(!name){toast('Name required.','error');return;}
-  const progs=getTrProgs();
-  progs.push({id:Date.now(),name,description:document.getElementById('fpd').value,category:document.getElementById('fpc').value,duration:document.getElementById('fpdu').value||'—',mandatory:document.getElementById('fpm').checked});
-  saveTrProgs(progs);closeModal();renderTraining();toast('Program added.','success');
+  const newProg={id:Date.now(),name,description:document.getElementById('fpd').value,category:document.getElementById('fpc').value,duration:document.getElementById('fpdu').value||'—',mandatory:document.getElementById('fpm').checked};
+  showLoader('Saving…');
+  dbSaveProgram(newProg).then(saved=>{
+    hideLoader();
+    const s=saved||newProg;
+    if(!_cache.progs.find(p=>String(p.id)===String(s.id))) _cache.progs.push(s);
+    saveTrProgs(_cache.progs);
+    closeModal();renderTraining();toast('Program added.','success');
+  }).catch(err=>{ hideLoader();toast('DB error: '+(err.message||err),'error'); });
 }
 
 function submitEditProgram(id){
   const progs=getTrProgs();const prog=progs.find(p=>p.id===id);if(!prog)return;
   prog.name=document.getElementById('fpn').value.trim()||prog.name;prog.description=document.getElementById('fpd').value;prog.category=document.getElementById('fpc').value;prog.duration=document.getElementById('fpdu').value||prog.duration;prog.mandatory=document.getElementById('fpm').checked;
-  saveTrProgs(progs);closeModal();renderTraining();toast('Program updated.','success');
+  showLoader('Saving…');
+  dbSaveProgram(prog).then(saved=>{
+    hideLoader();
+    const idx=_cache.progs.findIndex(p=>String(p.id)===String(prog.id));
+    if(idx>=0)_cache.progs[idx]=saved||prog;
+    saveTrProgs(_cache.progs);
+    closeModal();renderTraining();toast('Program updated.','success');
+  }).catch(err=>{ hideLoader();toast('DB error: '+(err.message||err),'error'); });
 }
 
 function submitAssign(){
@@ -2329,19 +2397,38 @@ function submitAssign(){
   if(!due){toast('Due date required.','error');return;}
   const asgn=getTrAsgn();
   if(asgn.find(a=>a.empId===empId&&a.programId===progId&&a.status!=='completed')){toast('Already assigned.','error');return;}
-  asgn.push({id:Date.now(),empId,programId:progId,status:'not-started',assignedDate:document.getElementById('ftra').value||td(),dueDate:due,completedDate:null,score:null,notes:document.getElementById('ftrn').value,progress:0});
-  saveTrAsgn(asgn);addNotif('"'+gP(progId)?.name+'" assigned to '+gE(empId)?.name,'info');addAudit(CU.name,'Assigned training "'+gP(progId)?.name+'" to '+gE(empId)?.name);
-  closeModal();renderTraining();toast('Training assigned.','success');
+  const newAsgn={id:Date.now(),empId,programId:progId,status:'not-started',assignedDate:document.getElementById('ftra').value||td(),dueDate:due,completedDate:null,score:null,notes:document.getElementById('ftrn').value,progress:0};
+  showLoader('Saving…');
+  dbSaveAssignment(newAsgn).then(saved=>{
+    hideLoader();
+    const s=saved||newAsgn;
+    _cache.asgn.push(s);
+    saveTrAsgn(_cache.asgn);
+    addNotif('"'+gP(progId)?.name+'" assigned to '+gE(empId)?.name,'info');
+    dbAddAudit(CU.name,'Assigned training to '+gE(empId)?.name);
+    closeModal();renderTraining();toast('Training assigned.','success');
+  }).catch(err=>{ hideLoader();toast('DB error: '+(err.message||err),'error'); });
 }
 
 function submitUpdateTr(id){
-  const asgn=getTrAsgn();const a=asgn.find(x=>x.id===id);if(!a)return;
-  a.status=document.getElementById('ftrs').value;a.progress=parseInt(document.getElementById('ftrpg').value)||a.progress;
-  const sc=document.getElementById('ftrsc').value;if(sc)a.score=parseInt(sc);
-  const cd=document.getElementById('ftrcd').value;if(cd)a.completedDate=cd;
-  a.dueDate=document.getElementById('ftrdupd').value||a.dueDate;a.notes=document.getElementById('ftrnu').value;
-  if(a.status==='completed'){if(!a.completedDate)a.completedDate=td();a.progress=100;}
-  saveTrAsgn(asgn);closeModal();renderTraining();toast('Training updated.','success');
+  const asgn=getTrAsgn();
+  const assignment=asgn.find(x=>String(x.id)===String(id));
+  if(!assignment)return;
+  assignment.status=document.getElementById('ftrs').value;
+  assignment.progress=parseInt(document.getElementById('ftrpg').value)||assignment.progress;
+  const sc=document.getElementById('ftrsc').value;if(sc)assignment.score=parseInt(sc);
+  const cd=document.getElementById('ftrcd').value;if(cd)assignment.completedDate=cd;
+  assignment.dueDate=document.getElementById('ftrdupd').value||assignment.dueDate;
+  assignment.notes=document.getElementById('ftrnu').value;
+  if(assignment.status==='completed'){if(!assignment.completedDate)assignment.completedDate=td();assignment.progress=100;}
+  showLoader('Saving…');
+  dbSaveAssignment(assignment).then(saved=>{
+    hideLoader();
+    const idx=_cache.asgn.findIndex(x=>String(x.id)===String(assignment.id));
+    if(idx>=0)_cache.asgn[idx]=saved||assignment;
+    saveTrAsgn(_cache.asgn);
+    closeModal();renderTraining();toast('Training updated.','success');
+  }).catch(err=>{ hideLoader();saveTrAsgn(asgn);toast('DB error: '+(err.message||err),'error');closeModal();renderTraining(); });
 }
 
 function submitOffboard(){
@@ -2350,16 +2437,26 @@ function submitOffboard(){
   emp.offChecklist={'Exit interview done':false,'Equipment returned':false,'System access revoked':false,'Final payroll processed':false};
   saveEmps(emps);
   const evts=getEvts();evts.push({id:Date.now(),empId,type:'milestone',date:emp.lastDay||td(),desc:'Offboarding initiated — '+emp.reason,loggedBy:CU.name,notified:true});saveEvts(evts);
-  addNotif(emp.name+' offboarded. Exit checklist created.','info');
-  addAudit(CU.name,'Offboarded: '+emp.name+' ('+emp.reason+')');
-  sendHRAlert('offboarding', getHREmails(), {
-    employeeName:emp.name, dept:emp.dept,
-    lastDay:fDate(emp.lastDay), reason:emp.reason, initiatedBy:CU.name
+  showLoader('Saving…');
+  dbSaveEmployee(emp).then(saved=>{
+    hideLoader();
+    const idx=_cache.emps.findIndex(e=>String(e.id)===String(emp.id));
+    if(idx>=0)_cache.emps[idx]=saved||emp;
+    saveEmps(_cache.emps);
+    addNotif(emp.name+' offboarded. Exit checklist created.','info');
+    dbAddAudit(CU.name,'Offboarded: '+emp.name+' ('+emp.reason+')');
+    sendHRAlert('offboarding', getHREmails(), {
+      employeeName:emp.name, dept:emp.dept,
+      lastDay:fDate(emp.lastDay), reason:emp.reason, initiatedBy:CU.name
+    });
+    closeModal();renderDashboard();toast(emp.name+' offboarded.','success');
+  }).catch(err=>{
+    hideLoader();
+    saveEmps(getEmps());
+    toast('Offboarding saved locally (DB error: '+(err.message||err)+')','error');
+    closeModal();renderDashboard();
   });
-  closeModal();renderDashboard();toast(emp.name+' offboarded.','success');
 }
-
-// ─── USER CRUD ────────────────────────────────────────────────────────────────
 function submitAddUser(){
   const name=document.getElementById('un-name').value.trim();
   const username=document.getElementById('un-user').value.trim().toLowerCase();
@@ -2934,13 +3031,18 @@ function deleteEmployee(id){
   const confirmed=confirm(`Permanently delete ${emp.name}?\n\nThis will also remove all their events and training assignments. This cannot be undone.`);
   if(!confirmed)return;
   showLoader('Deleting…');
-  dbDeleteEmployee(id).then(()=>{
-    _cache.emps=_cache.emps.filter(e=>e.id!==id);
-    _cache.evts=_cache.evts.filter(e=>e.empId!==id);
-    _cache.asgn=_cache.asgn.filter(a=>a.empId!==id);
+  dbDeleteEmployee(emp.id).then(()=>{
+    // Use loose == to match string vs number id
+    _cache.emps=_cache.emps.filter(e=>String(e.id)!==String(emp.id));
+    _cache.evts=_cache.evts.filter(e=>String(e.empId)!==String(emp.id));
+    _cache.asgn=_cache.asgn.filter(a=>String(a.empId)!==String(emp.id));
+    // Also update localStorage so refresh doesn't bring it back
+    saveEmps(_cache.emps);
+    saveEvts(_cache.evts);
+    saveTrAsgn(_cache.asgn);
     addNotif('Employee record deleted: '+emp.name,'info');
+    dbAddAudit(CU.name,'Deleted employee: '+emp.name);
     hideLoader();
-    // Refresh whichever page is active
     renderDashboard();
     if(document.getElementById('page-employees').classList.contains('active'))renderEmployees();
     if(document.getElementById('page-onboarding').classList.contains('active'))renderOnboarding();
@@ -2948,6 +3050,10 @@ function deleteEmployee(id){
     if(document.getElementById('page-training').classList.contains('active'))renderTraining();
     if(document.getElementById('page-offboarding').classList.contains('active'))renderOffboarding();
     toast(emp.name+' deleted.','info');
+  }).catch(err=>{
+    hideLoader();
+    console.error('Delete employee error:',err);
+    toast('Delete failed: '+(err.message||err),'error');
   });
 }
 
