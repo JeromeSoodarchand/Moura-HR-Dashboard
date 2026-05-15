@@ -1121,10 +1121,36 @@ function rowToEmp(r){
     photoUrl:r.photo_url||null,files:r.files||[]};
 }
 function empToRow(e){
-  return{id:e.id,name:e.name,email:e.email,phone:e.phone,role:e.role,dept:e.dept,manager:e.manager,start_date:e.start,status:e.status,
-    salary_amount:e.salary?.amount||null,salary_currency:e.salary?.currency,salary_frequency:e.salary?.frequency,salary_last_review:e.salary?.lastReview||null,salary_next_review:e.salary?.nextReview||null,salary_history:e.salary?.history||[],
-    checklist:e.checklist||{},off_checklist:e.offChecklist||{},last_day:e.lastDay||null,reason:e.reason||null,completed_onboarding:e.completedOnboarding||null,
-    photo_url:e.photoUrl||null,files:e.files||[],updated_at:new Date().toISOString()};
+  const row={
+    name:       e.name||'',
+    email:      e.email||'',
+    phone:      e.phone||null,
+    role:       e.role||null,
+    dept:       e.dept||null,
+    manager:    e.manager||null,
+    start_date: e.start||null,
+    status:     e.status||'onboarding',
+    // Salary — all null if no salary object
+    salary_amount:    e.salary?.amount    ?? null,
+    salary_currency:  e.salary?.currency  || null,
+    salary_frequency: e.salary?.frequency || null,
+    salary_last_review:  e.salary?.lastReview  || null,
+    salary_next_review:  e.salary?.nextReview   || null,
+    salary_history:  Array.isArray(e.salary?.history) ? e.salary.history : [],
+    // JSON columns
+    checklist:     e.checklist      || {},
+    off_checklist: e.offChecklist   || {},
+    files:         Array.isArray(e.files) ? e.files : [],
+    // Other
+    last_day:             e.lastDay             || null,
+    reason:               e.reason              || null,
+    completed_onboarding: e.completedOnboarding || null,
+    photo_url:            e.photoUrl            || null,
+    updated_at:           new Date().toISOString(),
+  };
+  // Remove any remaining undefined values
+  Object.keys(row).forEach(k=>{ if(row[k]===undefined) delete row[k]; });
+  return row;
 }
 function rowToEvt(r){ return{id:r.id,empId:r.emp_id,type:r.type,desc:r.description,date:r.event_date,loggedBy:r.logged_by,notified:r.notified}; }
 function evtToRow(e){ return{emp_id:e.empId,type:e.type,description:e.desc,event_date:e.date,logged_by:e.loggedBy,notified:e.notified}; }
