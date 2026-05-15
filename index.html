@@ -948,20 +948,22 @@ const saveTrAsgn=v=>saveData('trainingAssignments',v);
 // ── EMPLOYEES ──
 async function dbGetEmployees(){
   if(!sbReady()) return getData('employees');
-  const {data,error}=await _sb.from('employees').select('*').order('created_at',{ascending:false});
-  if(error){console.error(error);return getData('employees');}
-  return data.map(rowToEmp);
+  try{
+    const {data,error}=await _sb.from('employees').select('*').order('created_at',{ascending:false});
+    if(error){console.error('dbGetEmployees error:',error);return getData('employees');}
+    return data.map(rowToEmp);
+  } catch(err){ console.error('dbGetEmployees exception:',err);return getData('employees'); }
 }
 
 async function dbSaveEmployee(emp){
   if(!sbReady()){
-    const e=getEmps();const i=e.findIndex(x=>x.id===emp.id);
+    const e=getEmps();const i=e.findIndex(x=>String(x.id)===String(emp.id));
     if(i>=0)e[i]=emp;else e.push(emp);
     saveEmps(e);return emp;
   }
   try{
     const row=empToRow(emp);
-    if(emp.id && String(emp.id).length<13){ // numeric DB id = update
+    if(emp.id && String(emp.id).length<13){ // numeric DB id = update (shorter than JS timestamp)
       const {data,error}=await _sb.from('employees').update(row).eq('id',emp.id).select().single();
       if(error){
         console.error('Update employee error:',error);
@@ -992,25 +994,37 @@ async function dbSaveEmployee(emp){
 }
 
 async function dbDeleteEmployee(id){
+  // SAFETY: never proceed if id is falsy — would delete ALL rows
+  if(!id && id !== 0){
+    console.error('dbDeleteEmployee called with invalid id:', id);
+    throw new Error('Invalid employee ID — delete aborted for safety');
+  }
   if(!sbReady()){
     saveEmps(getEmps().filter(e=>String(e.id)!==String(id)));
     return;
   }
-  const {error}=await _sb.from('employees').delete().eq('id',id);
-  if(error){
-    console.error('Delete employee DB error:',error);
-    throw error; // propagate so .catch() in deleteEmployee fires
+  try{
+    // Double-check the employee exists before deleting
+    const {data:check,error:checkErr}=await _sb.from('employees').select('id').eq('id',id).single();
+    if(checkErr||!check) throw new Error('Employee not found in database');
+    const {error}=await _sb.from('employees').delete().eq('id',id);
+    if(error) throw error;
+    // Clean localStorage after confirmed DB delete
+    saveEmps(getEmps().filter(e=>String(e.id)!==String(id)));
+  } catch(err){
+    console.error('dbDeleteEmployee error:',err);
+    throw err; // re-throw so deleteEmployee .catch() fires
   }
-  // Also clean localStorage so refresh doesn't restore it
-  saveEmps(getEmps().filter(e=>String(e.id)!==String(id)));
 }
 
 // ── EVENTS ──
 async function dbGetEvents(){
   if(!sbReady()) return getData('events');
-  const {data,error}=await _sb.from('events').select('*').order('event_date',{ascending:false});
-  if(error){console.error(error);return getData('events');}
-  return data.map(rowToEvt);
+  try{
+    const {data,error}=await _sb.from('events').select('*').order('event_date',{ascending:false});
+    if(error){console.error('dbGetEvents error:',error);return getData('events');}
+    return data.map(rowToEvt);
+  } catch(err){ console.error('dbGetEvents exception:',err);return getData('events'); }
 }
 
 async function dbSaveEvent(evt){
@@ -1029,13 +1043,15 @@ async function dbSaveEvent(evt){
 // ── TRAINING PROGRAMS ──
 async function dbGetPrograms(){
   if(!sbReady()) return getData('trainingPrograms');
-  const {data,error}=await _sb.from('training_programs').select('*').order('name');
-  if(error){console.error(error);return getData('trainingPrograms');}
-  return data.map(rowToProg);
+  try{
+    const {data,error}=await _sb.from('training_programs').select('*').order('name');
+    if(error){console.error('dbGetPrograms error:',error);return getData('trainingPrograms');}
+    return data.map(rowToProg);
+  } catch(err){ console.error('dbGetPrograms exception:',err);return getData('trainingPrograms'); }
 }
 
 async function dbSaveProgram(prog){
-  if(!sbReady()){ const p=getTrProgs();const i=p.findIndex(x=>x.id===prog.id);if(i>=0)p[i]=prog;else p.push(prog);saveTrProgs(p);return prog; }
+  if(!sbReady()){ const p=getTrProgs();const i=p.findIndex(x=>String(x.id)===String(prog.id));if(i>=0)p[i]=prog;else p.push(prog);saveTrProgs(p);return prog; }
   try{
     const row=progToRow(prog);
     Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
@@ -1055,13 +1071,15 @@ async function dbSaveProgram(prog){
 // ── TRAINING ASSIGNMENTS ──
 async function dbGetAssignments(){
   if(!sbReady()) return getData('trainingAssignments');
-  const {data,error}=await _sb.from('training_assignments').select('*').order('created_at',{ascending:false});
-  if(error){console.error(error);return getData('trainingAssignments');}
-  return data.map(rowToAsgn);
+  try{
+    const {data,error}=await _sb.from('training_assignments').select('*').order('created_at',{ascending:false});
+    if(error){console.error('dbGetAssignments error:',error);return getData('trainingAssignments');}
+    return data.map(rowToAsgn);
+  } catch(err){ console.error('dbGetAssignments exception:',err);return getData('trainingAssignments'); }
 }
 
 async function dbSaveAssignment(asgn){
-  if(!sbReady()){ const a=getTrAsgn();const i=a.findIndex(x=>x.id===asgn.id);if(i>=0)a[i]=asgn;else a.push(asgn);saveTrAsgn(a);return asgn; }
+  if(!sbReady()){ const a=getTrAsgn();const i=a.findIndex(x=>String(x.id)===String(asgn.id));if(i>=0)a[i]=asgn;else a.push(asgn);saveTrAsgn(a);return asgn; }
   try{
     const row=asgnToRow(asgn);
     Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
@@ -1087,7 +1105,7 @@ async function dbGetUsers(){
 }
 
 async function dbSaveUser(user){
-  if(!sbReady()){ const u=S.get('users',[]);const i=u.findIndex(x=>x.id===user.id);if(i>=0)u[i]=user;else u.push(user);S.set('users',u);return user; }
+  if(!sbReady()){ const u=S.get('users',[]);const i=u.findIndex(x=>String(x.id)===String(user.id));if(i>=0)u[i]=user;else u.push(user);S.set('users',u);return user; }
   const row={name:user.name,username:user.username,email:user.email||'',role:user.role,active:user.active,password_hash:user.passwordHash};
   Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
   try{
@@ -1150,7 +1168,7 @@ function rowToEmp(r){
 function empToRow(e){
   const row={
     name:       e.name||'',
-    email:      e.email||'',
+    email:      (e.email||'').trim()||'',
     phone:      e.phone||null,
     role:       e.role||null,
     dept:       e.dept||null,
@@ -1180,11 +1198,28 @@ function empToRow(e){
   return row;
 }
 function rowToEvt(r){ return{id:r.id,empId:r.emp_id,type:r.type,desc:r.description,date:r.event_date,loggedBy:r.logged_by,notified:r.notified}; }
-function evtToRow(e){ return{emp_id:e.empId,type:e.type,description:e.desc,event_date:e.date,logged_by:e.loggedBy,notified:e.notified}; }
+function evtToRow(e){
+  const row={emp_id:e.empId,type:e.type||'milestone',description:e.desc||'',
+    event_date:e.date||null,logged_by:e.loggedBy||'',notified:e.notified===true};
+  Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
+  return row;
+}
 function rowToProg(r){ return{id:r.id,name:r.name,description:r.description,category:r.category,duration:r.duration,mandatory:r.mandatory}; }
-function progToRow(p){ return{id:p.id,name:p.name,description:p.description,category:p.category,duration:p.duration,mandatory:p.mandatory}; }
+function progToRow(p){
+  const row={id:p.id,name:p.name||'',description:p.description||'',
+    category:p.category||'',duration:p.duration||'',mandatory:p.mandatory===true};
+  Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
+  return row;
+}
 function rowToAsgn(r){ return{id:r.id,empId:r.emp_id,programId:r.program_id,status:r.status,assignedDate:r.assigned_date,dueDate:r.due_date,completedDate:r.completed_date,score:r.score,progress:r.progress||0,notes:r.notes}; }
-function asgnToRow(a){ return{id:a.id,emp_id:a.empId,program_id:a.programId,status:a.status,assigned_date:a.assignedDate,due_date:a.dueDate,completed_date:a.completedDate||null,score:a.score||null,progress:a.progress||0,notes:a.notes||''}; }
+function asgnToRow(a){
+  const row={id:a.id,emp_id:a.empId,program_id:a.programId,status:a.status||'not-started',
+    assigned_date:a.assignedDate||null,due_date:a.dueDate||null,
+    completed_date:a.completedDate||null,score:a.score??null,
+    progress:a.progress||0,notes:a.notes||''};
+  Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
+  return row;
+}
 
 // ── ASYNC DATA LOADERS (used by each page render) ────────────────────────────
 async function loadAndRenderDashboard(){
@@ -1546,7 +1581,7 @@ const td=()=>new Date().toISOString().slice(0,10);
 const gE=id=>getEmps().find(e=>String(e.id)===String(id));
 const gEE=id=>getEvts().filter(e=>String(e.empId)===String(id));
 const gEA=id=>getTrAsgn().filter(a=>String(a.empId)===String(id));
-const gP=id=>getTrProgs().find(p=>p.id===id);
+const gP=id=>getTrProgs().find(p=>String(p.id)===String(id));
 
 const TCFG={
   absence:{label:'Absence',color:'#D85A30',bg:'#FAECE7'},
@@ -1682,8 +1717,7 @@ function renderOnboarding(){
 
 function activateEmployee(id){
   const emps=getEmps();
-  const emp=emps.find(e=>e.id===id);
-  if(!emp)return;
+  const emp=emps.find(e=>String(e.id)===String(id));
   const cl=emp.checklist||{};
   const done=Object.values(cl).filter(Boolean).length;
   const tot=Object.keys(cl).length;
@@ -2050,7 +2084,7 @@ function swETab(tab,el){
   el.classList.add('active');const pane=document.getElementById('et-'+tab);if(pane)pane.classList.add('active');
 }
 function togCheck(id,item,val,isOff){
-  const emps=getEmps();const emp=emps.find(e=>e.id===id);if(!emp)return;
+  const emps=getEmps();const emp=emps.find(e=>String(e.id)===String(id));if(!emp)return;
   if(isOff){if(!emp.offChecklist)emp.offChecklist={};emp.offChecklist[item]=val;}
   else{if(!emp.checklist)emp.checklist={};emp.checklist[item]=val;}
   saveEmps(emps);
@@ -2100,7 +2134,7 @@ function openModal(type,pid,pid2){
     if(!hasPerm('log_events')){toast('Access denied.','error');return;}
     const ae=getEmps().filter(e=>e.status!=='offboarded');
     mb.innerHTML=`<div class="modal-title">Log Event <button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div class="fg"><label class="fl">Employee *</label><select class="fs" id="femp">${ae.map(e=>`<option value="${e.id}"${e.id===pid?' selected':''}>${e.name} — ${e.dept}</option>`).join('')}</select></div>
+      <div class="fg"><label class="fl">Employee *</label><select class="fs" id="femp">${ae.map(e=>`<option value="${e.id}"${String(e.id)===String(pid)?' selected':''}>${e.name} — ${e.dept}</option>`).join('')}</select></div>
       <div class="fr"><div class="fg"><label class="fl">Type</label><select class="fs" id="ftyp"><option value="absence">Absence</option><option value="warning">Warning</option><option value="training">Training</option><option value="milestone">Milestone</option></select></div>
       <div class="fg"><label class="fl">Date</label><input class="fi" id="fdt" type="date" value="${td()}"></div></div>
       <div class="fg"><label class="fl">Description *</label><textarea class="ft" id="fdes" placeholder="Describe the event…"></textarea></div>
@@ -2135,8 +2169,8 @@ function openModal(type,pid,pid2){
     if(!hasPerm('manage_training')){toast('Access denied.','error');return;}
     const ae=getEmps().filter(e=>e.status!=='offboarded');
     mb.innerHTML=`<div class="modal-title">Assign Training <button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div class="fg"><label class="fl">Employee *</label><select class="fs" id="ftre">${ae.map(e=>`<option value="${e.id}"${e.id===pid?' selected':''}>${e.name} — ${e.dept}</option>`).join('')}</select></div>
-      <div class="fg"><label class="fl">Training program *</label><select class="fs" id="ftrp">${getTrProgs().map(p=>`<option value="${p.id}"${p.id===pid2?' selected':''}>${p.name} (${p.category} · ${p.duration})</option>`).join('')}</select></div>
+      <div class="fg"><label class="fl">Employee *</label><select class="fs" id="ftre">${ae.map(e=>`<option value="${e.id}"${String(e.id)===String(pid)?' selected':''}>${e.name} — ${e.dept}</option>`).join('')}</select></div>
+      <div class="fg"><label class="fl">Training program *</label><select class="fs" id="ftrp">${getTrProgs().map(p=>`<option value="${p.id}"${String(p.id)===String(pid2)?' selected':''}>${p.name} (${p.category} · ${p.duration})</option>`).join('')}</select></div>
       <div class="fr"><div class="fg"><label class="fl">Assigned date</label><input class="fi" id="ftra" type="date" value="${td()}"></div>
       <div class="fg"><label class="fl">Due date *</label><input class="fi" id="ftrd" type="date"></div></div>
       <div class="fg"><label class="fl">Notes</label><input class="fi" id="ftrn" placeholder="Optional…"></div>
@@ -2144,7 +2178,7 @@ function openModal(type,pid,pid2){
 
   // ── UPDATE TRAINING ──
   } else if(type==='updateTraining'){
-    const a=getTrAsgn().find(x=>x.id===pid),prog=a?gP(a.programId):null;
+    const a=getTrAsgn().find(x=>String(x.id)===String(pid)),prog=a?gP(a.programId):null;
     mb.innerHTML=`<div class="modal-title">Update: ${prog?.name||''} <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="fg"><label class="fl">Status</label><select class="fs" id="ftrs">${Object.entries(TRST).map(([k,v])=>`<option value="${k}"${a?.status===k?' selected':''}>${v.label}</option>`).join('')}</select></div>
       <div class="fr"><div class="fg"><label class="fl">Progress %</label><input class="fi" id="ftrpg" type="number" min="0" max="100" value="${a?.progress||0}"></div>
@@ -2159,7 +2193,7 @@ function openModal(type,pid,pid2){
     if(!hasPerm('manage_offboarding')){toast('Access denied.','error');return;}
     const ae=getEmps().filter(e=>e.status!=='offboarded');
     mb.innerHTML=`<div class="modal-title">Offboard Employee <button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div class="fg"><label class="fl">Employee *</label><select class="fs" id="foe">${ae.map(e=>`<option value="${e.id}"${e.id===pid?' selected':''}>${e.name} — ${e.dept}</option>`).join('')}</select></div>
+      <div class="fg"><label class="fl">Employee *</label><select class="fs" id="foe">${ae.map(e=>`<option value="${e.id}"${String(e.id)===String(pid)?' selected':''}>${e.name} — ${e.dept}</option>`).join('')}</select></div>
       <div class="fr"><div class="fg"><label class="fl">Last working day</label><input class="fi" id="fold" type="date" value="${td()}"></div>
       <div class="fg"><label class="fl">Reason</label><select class="fs" id="forr"><option>Resigned</option><option>Terminated</option><option>Retired</option><option>Contract ended</option><option>Redundancy</option></select></div></div>
       <div style="background:var(--red-light);border-radius:var(--radius);padding:10px 12px;font-size:12.5px;color:var(--red-deep);margin:6px 0">⚠ This will mark the employee as offboarded and generate an exit checklist.</div>
@@ -2284,7 +2318,7 @@ function submitAdd(){
 }
 
 function submitEdit(id){
-  const emps=getEmps();const emp=emps.find(e=>e.id===id);if(!emp)return;
+  const emps=getEmps();const emp=emps.find(e=>String(e.id)===String(id));if(!emp)return;
   emp.name=document.getElementById('fn').value.trim()||emp.name;
   emp.email=document.getElementById('fe').value.trim()||emp.email;
   emp.phone=document.getElementById('fph').value;
@@ -2297,14 +2331,14 @@ function submitEdit(id){
   dbSaveEmployee(emp).then(saved=>{
     hideLoader();
     const s=saved||emp;
-    const idx=_cache.emps.findIndex(e=>e.id===s.id);
+    const idx=_cache.emps.findIndex(e=>String(e.id)===String(s.id));
     if(idx>=0)_cache.emps[idx]=s;
     dbAddAudit(CU.name,'Edited employee: '+emp.name);
     closeModal();toast('Profile updated.','success');
   }).catch(err=>{
     hideLoader();
     console.error('Edit employee error:',err);
-    const idx=_cache.emps.findIndex(e=>e.id===emp.id);
+    const idx=_cache.emps.findIndex(e=>String(e.id)===String(emp.id));
     if(idx>=0)_cache.emps[idx]=emp;
     saveEmps(_cache.emps);
     closeModal();toast('Profile updated (saved locally).','success');
@@ -2312,7 +2346,7 @@ function submitEdit(id){
 }
 
 function submitSalary(id){
-  const emps=getEmps();const emp=emps.find(e=>e.id===id);if(!emp)return;
+  const emps=getEmps();const emp=emps.find(e=>String(e.id)===String(id));if(!emp)return;
   const na=parseFloat(document.getElementById('fns').value);if(!na){toast('Enter a valid salary.','error');return;}
   const cur=document.getElementById('fnc').value,note=document.getElementById('fsn').value||'Salary update',date=document.getElementById('fed').value||td();
   if(!emp.salary)emp.salary={amount:na,currency:cur,frequency:'Annual',history:[],lastReview:null,nextReview:null};
@@ -2380,7 +2414,7 @@ function submitProgram(){
 }
 
 function submitEditProgram(id){
-  const progs=getTrProgs();const prog=progs.find(p=>p.id===id);if(!prog)return;
+  const progs=getTrProgs();const prog=progs.find(p=>String(p.id)===String(id));if(!prog)return;
   prog.name=document.getElementById('fpn').value.trim()||prog.name;prog.description=document.getElementById('fpd').value;prog.category=document.getElementById('fpc').value;prog.duration=document.getElementById('fpdu').value||prog.duration;prog.mandatory=document.getElementById('fpm').checked;
   showLoader('Saving…');
   dbSaveProgram(prog).then(saved=>{
@@ -2432,7 +2466,7 @@ function submitUpdateTr(id){
 }
 
 function submitOffboard(){
-  const emps=getEmps();const empId=parseInt(document.getElementById('foe').value);const emp=emps.find(e=>e.id===empId);if(!emp)return;
+  const emps=getEmps();const empId=parseInt(document.getElementById('foe').value);const emp=emps.find(e=>String(e.id)===String(empId));if(!emp)return;
   emp.status='offboarded';emp.lastDay=document.getElementById('fold').value;emp.reason=document.getElementById('forr').value;
   emp.offChecklist={'Exit interview done':false,'Equipment returned':false,'System access revoked':false,'Final payroll processed':false};
   saveEmps(emps);
@@ -3026,17 +3060,21 @@ function applyStoredBranding(){
 // ─── DELETE EMPLOYEE ──────────────────────────────────────────────────────────
 function deleteEmployee(id){
   const emp=gE(id);
-  if(!emp)return;
+  if(!emp){toast('Employee not found.','error');return;}
   if(!canEdit()){toast('Access denied.','error');return;}
-  const confirmed=confirm(`Permanently delete ${emp.name}?\n\nThis will also remove all their events and training assignments. This cannot be undone.`);
+  // SAFETY: must have a valid ID — falsy id would delete ALL rows in Supabase
+  if(!emp.id && emp.id!==0){
+    toast('Cannot delete — employee has no valid database ID.','error');
+    console.error('deleteEmployee: invalid emp.id:', emp.id);
+    return;
+  }
+  const confirmed=confirm('Permanently delete '+emp.name+'?\n\nThis will also remove all their events and training assignments. This cannot be undone.');
   if(!confirmed)return;
   showLoader('Deleting…');
   dbDeleteEmployee(emp.id).then(()=>{
-    // Use loose == to match string vs number id
     _cache.emps=_cache.emps.filter(e=>String(e.id)!==String(emp.id));
     _cache.evts=_cache.evts.filter(e=>String(e.empId)!==String(emp.id));
     _cache.asgn=_cache.asgn.filter(a=>String(a.empId)!==String(emp.id));
-    // Also update localStorage so refresh doesn't bring it back
     saveEmps(_cache.emps);
     saveEvts(_cache.evts);
     saveTrAsgn(_cache.asgn);
@@ -3204,6 +3242,7 @@ async function deleteEmpFile(empId, fileIdx){
 function refreshFilesList(empId, files){
   const listEl=document.getElementById('files-list-'+empId);
   if(!listEl) return;
+  if(!Array.isArray(files)) files=[];
   if(!files||files.length===0){
     listEl.innerHTML='<div style="color:var(--text3);font-size:13px;padding:20px;text-align:center">No files uploaded yet.</div>';
     return;
