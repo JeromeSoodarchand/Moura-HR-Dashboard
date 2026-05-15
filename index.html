@@ -23,10 +23,12 @@
   --radius:8px;--radius-lg:12px;
   --sb-width:220px;
 }
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg3);color:var(--text);min-height:100vh;font-size:14px}
+.sidebar{width:var(--sb-width);background:var(--navy);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;flex-shrink:0;overflow-y:auto}
+.app-body{margin-left:var(--sb-width);flex:1;display:flex;flex-direction:column;min-height:100vh;min-width:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg2);color:var(--text);min-height:100vh;font-size:14px}
 
 /* ── LOGIN ── */
-#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#0A0820 0%,#1E1445 55%,#2C2070 100%)}
+#login-screen{display:none;align-items:center;justify-content:center;min-height:100vh;position:fixed;inset:0;z-index:500;background:linear-gradient(135deg,#0A0820 0%,#1E1445 55%,#2C2070 100%)}
 .login-card{background:#fff;border-radius:14px;padding:36px 32px;width:380px;box-shadow:0 24px 64px rgba(10,8,32,.32);border-top:4px solid var(--gold)}
 .login-logo{display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:18px;font-weight:600}
 .login-sub{font-size:13px;color:var(--text3);margin-bottom:24px}
@@ -39,8 +41,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .setup-notice{font-size:12px;color:var(--blue-deep);margin-top:12px;padding:10px 12px;background:var(--blue-light);border-radius:var(--radius);line-height:1.5}
 
 /* ── APP ── */
-#app{display:none;min-height:100vh;flex-direction:column}
-.topnav{background:#fff;border-bottom:2px solid var(--gold);padding:0 24px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+#app{display:none;min-height:100vh;flex-direction:row}
+.topnav{background:var(--bg);border-bottom:1px solid var(--border);padding:0 22px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
 .nav-logo{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
 .nav-tabs{display:flex;gap:2px;margin-left:16px;flex-wrap:wrap}
 .nav-tab{padding:6px 12px;border-radius:var(--radius);font-size:13px;color:var(--text2);cursor:pointer;border:none;background:transparent;font-family:inherit;transition:all .12s}
@@ -68,7 +70,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .notif-empty{padding:20px;text-align:center;color:var(--text3);font-size:13px}
 
 /* ── LAYOUT ── */
-.main-content{padding:18px 22px;width:100%;max-width:1280px}
+.main-content{padding:18px 22px;width:100%;max-width:1280px;flex:1;overflow-y:auto}
 .page{display:none}.page.active{display:block}
 .ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:10px;flex-wrap:wrap}
 .ph-title{font-size:17px;font-weight:600;color:var(--text)}
@@ -257,7 +259,7 @@ tbody tr:hover td{background:var(--bg2)}
 
 @keyframes sIn{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
 
-@media(max-width:1024px){.sidebar{width:52px}.sidebar .sb-logo-text,.sidebar .sb-logo-sub,.sidebar .sb-section,.sb-user-info,.sb-user-name,.sb-user-role,.nav-tab span{display:none}.nav-tab{justify-content:center;padding:10px}.app-body{margin-left:52px}}
+@media(max-width:1024px){.sidebar{width:52px!important}.sidebar .sb-logo-text,.sidebar .sb-logo-sub,.sidebar .sb-section,.sidebar .sb-user-info,.sidebar .sb-user-name,.sidebar .sb-user-role{display:none!important}.nav-tab{justify-content:center;padding:10px}.app-body{margin-left:52px!important}}
 @media(max-width:768px){.metrics,.g2,.kanban,.ig{grid-template-columns:1fr 1fr}}
 @media(max-width:500px){.metrics,.ig{grid-template-columns:1fr}}
 </style>
@@ -1239,7 +1241,7 @@ async function doLogin(){
   S.set('session',{userId:user.id,loginAt:new Date().toISOString()});
   addAudit(user.name,'Logged in');
   document.getElementById('login-screen').style.display='none';
-  const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='column';
+  const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
   const org=S.get('org','Moura HR');
   const _nel=document.getElementById('org-name-nav');
   if(_nel)_nel.textContent=org;
