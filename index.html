@@ -875,6 +875,73 @@ const S={
   set:(k,v)=>{try{localStorage.setItem('pdhr_'+k,JSON.stringify(v));}catch{}}
 };
 
+// ─── DATA ACCESS ─────────────────────────────────────────────────────────────
+const DEFAULT_DATA={
+  employees:[
+    {id:1,name:'Amara Diallo',dept:'Engineering',role:'Senior Engineer',manager:'Clara Smith',start:'2022-03-15',status:'active',email:'a.diallo@company.com',phone:'+230 5700 1234',
+     salary:{amount:85000,currency:'USD',frequency:'Annual',lastReview:'2024-09-01',nextReview:'2025-09-01',history:[{date:'2022-03-15',amount:72000,note:'Starting salary'},{date:'2023-04-01',amount:78000,note:'Performance review +8%'},{date:'2024-09-01',amount:85000,note:'Promotion to Senior'}]}},
+    {id:2,name:'Lucas Moraes',dept:'Marketing',role:'Brand Manager',manager:'Tom Reid',start:'2023-07-01',status:'active',email:'l.moraes@company.com',phone:'+230 5700 2345',
+     salary:{amount:62000,currency:'USD',frequency:'Annual',lastReview:'2024-07-01',nextReview:'2025-07-01',history:[{date:'2023-07-01',amount:58000,note:'Starting salary'},{date:'2024-07-01',amount:62000,note:'Annual review +7%'}]}},
+    {id:3,name:'Sophie Nguyen',dept:'HR',role:'HR Specialist',manager:'Jane Doe',start:'2025-01-15',status:'onboarding',email:'s.nguyen@company.com',phone:'+230 5700 3456',
+     salary:{amount:48000,currency:'USD',frequency:'Annual',lastReview:null,nextReview:'2026-01-15',history:[{date:'2025-01-15',amount:48000,note:'Starting salary'}]},
+     checklist:{'Paperwork submitted':true,'System access granted':false,'IT equipment issued':false,'Benefits enrolled':false,'Manager intro done':true}},
+    {id:4,name:'Kwame Asante',dept:'Finance',role:'Financial Analyst',manager:'Mark Black',start:'2025-01-20',status:'onboarding',email:'k.asante@company.com',phone:'+230 5700 4567',
+     salary:{amount:55000,currency:'USD',frequency:'Annual',lastReview:null,nextReview:'2026-01-20',history:[{date:'2025-01-20',amount:55000,note:'Starting salary'}]},
+     checklist:{'Paperwork submitted':true,'System access granted':true,'IT equipment issued':true,'Benefits enrolled':false,'Manager intro done':true}},
+    {id:5,name:'Priya Patel',dept:'Engineering',role:'DevOps Engineer',manager:'Clara Smith',start:'2021-06-10',status:'active',email:'p.patel@company.com',phone:'+230 5700 5678',
+     salary:{amount:91000,currency:'USD',frequency:'Annual',lastReview:'2024-06-10',nextReview:'2025-06-10',history:[{date:'2021-06-10',amount:70000,note:'Starting salary'},{date:'2024-06-10',amount:91000,note:'Promotion + review'}]}},
+    {id:6,name:'James Osei',dept:'Sales',role:'Account Executive',manager:'Tom Reid',start:'2023-01-18',status:'active',email:'j.osei@company.com',phone:'+230 5700 6789',
+     salary:{amount:58000,currency:'USD',frequency:'Annual',lastReview:'2024-01-18',nextReview:'2025-01-18',history:[{date:'2023-01-18',amount:52000,note:'Starting salary'},{date:'2024-01-18',amount:58000,note:'Annual review +12%'}]}},
+    {id:7,name:'Marie Fontaine',dept:'Design',role:'UX Designer',manager:'Jane Doe',start:'2020-09-05',status:'offboarded',email:'m.fontaine@company.com',phone:'+230 5700 7890',lastDay:'2024-12-15',reason:'Resigned',
+     salary:{amount:67000,currency:'USD',frequency:'Annual',lastReview:'2024-09-05',nextReview:null,history:[{date:'2020-09-05',amount:52000,note:'Starting salary'},{date:'2024-09-05',amount:67000,note:'Final review'}]},
+     offChecklist:{'Exit interview done':true,'Equipment returned':true,'System access revoked':true,'Final payroll processed':false}},
+  ],
+  events:[
+    {id:1,date:'2025-01-20',empId:3,type:'training',desc:'Onboarding orientation completed',loggedBy:'Jane Doe',notified:true},
+    {id:2,date:'2025-01-18',empId:1,type:'training',desc:'AWS Solution Architect certification passed',loggedBy:'Clara Smith',notified:true},
+    {id:3,date:'2025-01-12',empId:6,type:'absence',desc:'Sick leave — 2 days',loggedBy:'Tom Reid',notified:true},
+    {id:4,date:'2025-01-05',empId:2,type:'warning',desc:'Verbal warning — missed campaign deadline',loggedBy:'Tom Reid',notified:true},
+    {id:5,date:'2024-12-20',empId:5,type:'milestone',desc:'3-year work anniversary',loggedBy:'System',notified:false},
+    {id:6,date:'2024-12-18',empId:7,type:'milestone',desc:'Offboarding completed',loggedBy:'Jane Doe',notified:true},
+    {id:7,date:'2024-12-10',empId:4,type:'training',desc:'GDPR compliance training passed',loggedBy:'Jane Doe',notified:false},
+  ],
+  trainingPrograms:[
+    {id:1,name:'GDPR & Data Compliance',category:'Compliance',duration:'4h',mandatory:true,description:'EU data protection regulations'},
+    {id:2,name:'AWS Cloud Fundamentals',category:'Technical',duration:'16h',mandatory:false,description:'Introduction to AWS services'},
+    {id:3,name:'Health & Safety Induction',category:'Safety',duration:'2h',mandatory:true,description:'Workplace health & safety'},
+    {id:4,name:'Leadership Essentials',category:'Management',duration:'8h',mandatory:false,description:'Core leadership skills'},
+    {id:5,name:'Cybersecurity Awareness',category:'Security',duration:'3h',mandatory:true,description:'Phishing, passwords, data handling'},
+    {id:6,name:'Company Onboarding Program',category:'Onboarding',duration:'8h',mandatory:true,description:'Company culture, policies, tools'},
+  ],
+  trainingAssignments:[
+    {id:1,empId:1,programId:2,status:'completed',assignedDate:'2024-11-01',dueDate:'2025-01-31',completedDate:'2025-01-18',score:92,notes:'Passed with distinction',progress:100},
+    {id:2,empId:2,programId:5,status:'in-progress',assignedDate:'2025-01-05',dueDate:'2025-02-28',completedDate:null,score:null,notes:'',progress:40},
+    {id:3,empId:3,programId:6,status:'completed',assignedDate:'2025-01-15',dueDate:'2025-01-31',completedDate:'2025-01-20',score:100,notes:'Orientation complete',progress:100},
+    {id:4,empId:3,programId:1,status:'not-started',assignedDate:'2025-01-20',dueDate:'2025-02-15',completedDate:null,score:null,notes:'',progress:0},
+    {id:5,empId:4,programId:1,status:'completed',assignedDate:'2024-12-02',dueDate:'2024-12-31',completedDate:'2024-12-10',score:85,notes:'',progress:100},
+    {id:6,empId:4,programId:6,status:'in-progress',assignedDate:'2025-01-20',dueDate:'2025-02-10',completedDate:null,score:null,notes:'',progress:65},
+    {id:7,empId:6,programId:5,status:'overdue',assignedDate:'2024-11-01',dueDate:'2024-12-31',completedDate:null,score:null,notes:'',progress:20},
+  ],
+  audit:[]
+};
+
+const getData=k=>S.get(k,DEFAULT_DATA[k]);
+const saveData=(k,v)=>S.set(k,v);
+
+// Helper shorthands that always read/write live storage
+const getEmps=()=>_cache.emps.length?_cache.emps:getData('employees');
+const getEvts=()=>_cache.evts.length?_cache.evts:getData('events');
+const getTrProgs=()=>_cache.progs.length?_cache.progs:getData('trainingPrograms');
+const getTrAsgn=()=>_cache.asgn.length?_cache.asgn:getData('trainingAssignments');
+const getUsers=()=>_userCache.length?_userCache:S.get('users',[]);
+const getAudit=()=>S.get('audit',[]);
+
+const saveEmps=v=>saveData('employees',v);
+const saveEvts=v=>saveData('events',v);
+const saveTrProgs=v=>saveData('trainingPrograms',v);
+const saveTrAsgn=v=>saveData('trainingAssignments',v);
+
+
 
 // ─── DATABASE LAYER (Supabase when connected, localStorage fallback) ──────────
 
@@ -887,15 +954,26 @@ async function dbGetEmployees(){
 }
 
 async function dbSaveEmployee(emp){
-  if(!sbReady()){ const e=getEmps();const i=e.findIndex(x=>x.id===emp.id);if(i>=0)e[i]=emp;else e.push(emp);saveEmps(e);return emp; }
-  const row=empToRow(emp);
-  if(emp.id && String(emp.id).length<13){ // numeric DB id
-    const {data,error}=await _sb.from('employees').update(row).eq('id',emp.id).select().single();
-    if(error)console.error(error);return data?rowToEmp(data):emp;
-  } else {
-    delete row.id;
-    const {data,error}=await _sb.from('employees').insert(row).select().single();
-    if(error)console.error(error);return data?rowToEmp(data):emp;
+  if(!sbReady()){
+    const e=getEmps();const i=e.findIndex(x=>x.id===emp.id);
+    if(i>=0)e[i]=emp;else e.push(emp);
+    saveEmps(e);return emp;
+  }
+  try{
+    const row=empToRow(emp);
+    if(emp.id && String(emp.id).length<13){ // numeric DB id = update
+      const {data,error}=await _sb.from('employees').update(row).eq('id',emp.id).select().single();
+      if(error){console.error('Update employee error:',error);return emp;}
+      return data?rowToEmp(data):emp;
+    } else { // new employee = insert
+      delete row.id;
+      const {data,error}=await _sb.from('employees').insert(row).select().single();
+      if(error){console.error('Insert employee error:',error);return emp;}
+      return data?rowToEmp(data):emp;
+    }
+  } catch(err){
+    console.error('dbSaveEmployee exception:',err);
+    return emp; // always return something so .then() fires
   }
 }
 
@@ -913,11 +991,16 @@ async function dbGetEvents(){
 }
 
 async function dbSaveEvent(evt){
-  if(!sbReady()){ const e=getEvts();e.push(evt);saveEvts(e);return evt; }
-  const row=evtToRow(evt);delete row.id;
-  const {data,error}=await _sb.from('events').insert(row).select().single();
-  if(error)console.error(error);
-  return data?rowToEvt(data):evt;
+  if(!sbReady()){const e=getEvts();e.push(evt);saveEvts(e);return evt;}
+  try{
+    const row=evtToRow(evt);delete row.id;
+    const {data,error}=await _sb.from('events').insert(row).select().single();
+    if(error){console.error('Insert event error:',error);return evt;}
+    return data?rowToEvt(data):evt;
+  } catch(err){
+    console.error('dbSaveEvent exception:',err);
+    return evt;
+  }
 }
 
 // ── TRAINING PROGRAMS ──
@@ -1132,6 +1215,62 @@ async function boot(){
   // Step 2 — super admin IIFE already seeded localStorage above
   const localUsers = S.get('users',[]);
 
+  // Step 2b — check for saved session and auto-restore it
+  const savedSession = S.get('session', null);
+  if(savedSession && savedSession.userId){
+    // Find the user from local cache or Supabase
+    const allUsers = localUsers.length ? localUsers : [];
+    let sessionUser = allUsers.find(u =>
+      String(u.id) === String(savedSession.userId) ||
+      u.username === savedSession.username
+    );
+    // If not found locally and Supabase is ready, try DB
+    if(!sessionUser && sbReady()){
+      try{
+        const {data} = await _sb.from('hr_users').select('*')
+          .eq('id', savedSession.userId).eq('active',true).single();
+        if(data) sessionUser = {
+          id:data.id, name:data.name, username:data.username,
+          email:data.email, role:data.role, active:data.active,
+          passwordHash:data.password_hash
+        };
+      } catch(e){ /* session lookup failed, fall through to login */ }
+    }
+    if(sessionUser && sessionUser.active !== false){
+      // Valid session — restore login state silently
+      CU = sessionUser;
+      document.getElementById('login-screen').style.display='none';
+      const app=document.getElementById('app');
+      app.style.display='flex';app.style.flexDirection='row';
+      applyPermissions();
+      applyStoredBranding();
+      // Init Supabase if not already
+      const sbUrl=localStorage.getItem('sb_url')||'';
+      const sbKey=localStorage.getItem('sb_key')||'';
+      if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey); }
+      // Load data in background
+      showLoader('Loading…');
+      Promise.all([dbGetEmployees(),dbGetEvents(),dbGetPrograms(),dbGetAssignments(),dbGetUsers()])
+        .then(([emps,evts,progs,asgn,users])=>{
+          _cache={emps,evts,progs,asgn};
+          const merged=[...users];
+          localUsers.forEach(lu=>{if(!merged.find(u=>u.username===lu.username))merged.unshift(lu);});
+          _userCache=merged;
+          S.set('users',merged);
+          hideLoader();
+          renderDashboard();
+        }).catch(err=>{
+          hideLoader();
+          console.error('Session restore data load error:',err);
+          _userCache=localUsers;
+          renderDashboard();
+        });
+      return; // skip login screen entirely
+    }
+    // Session invalid — clear it and show login
+    S.set('session',null);
+  }
+
   // Step 3 — if local users exist (super admin seeded), always go to login
   if(localUsers.length > 0){
     showLoginScreen();
@@ -1279,7 +1418,7 @@ async function doLogin(){
   }
   document.getElementById('lerr').style.display='none';
   CU=user;
-  S.set('session',{userId:user.id,loginAt:new Date().toISOString()});
+  S.set('session',{userId:user.id, username:user.username, loginAt:new Date().toISOString()});
   addAudit(user.name,'Logged in');
   document.getElementById('login-screen').style.display='none';
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
@@ -1329,72 +1468,6 @@ function applyPermissions(){
     sec.style.display=visible?'':'none';
   });
 }
-
-// ─── DATA ACCESS ─────────────────────────────────────────────────────────────
-const getData=k=>S.get(k,DEFAULT_DATA[k]);
-const saveData=(k,v)=>S.set(k,v);
-
-const DEFAULT_DATA={
-  employees:[
-    {id:1,name:'Amara Diallo',dept:'Engineering',role:'Senior Engineer',manager:'Clara Smith',start:'2022-03-15',status:'active',email:'a.diallo@company.com',phone:'+230 5700 1234',
-     salary:{amount:85000,currency:'USD',frequency:'Annual',lastReview:'2024-09-01',nextReview:'2025-09-01',history:[{date:'2022-03-15',amount:72000,note:'Starting salary'},{date:'2023-04-01',amount:78000,note:'Performance review +8%'},{date:'2024-09-01',amount:85000,note:'Promotion to Senior'}]}},
-    {id:2,name:'Lucas Moraes',dept:'Marketing',role:'Brand Manager',manager:'Tom Reid',start:'2023-07-01',status:'active',email:'l.moraes@company.com',phone:'+230 5700 2345',
-     salary:{amount:62000,currency:'USD',frequency:'Annual',lastReview:'2024-07-01',nextReview:'2025-07-01',history:[{date:'2023-07-01',amount:58000,note:'Starting salary'},{date:'2024-07-01',amount:62000,note:'Annual review +7%'}]}},
-    {id:3,name:'Sophie Nguyen',dept:'HR',role:'HR Specialist',manager:'Jane Doe',start:'2025-01-15',status:'onboarding',email:'s.nguyen@company.com',phone:'+230 5700 3456',
-     salary:{amount:48000,currency:'USD',frequency:'Annual',lastReview:null,nextReview:'2026-01-15',history:[{date:'2025-01-15',amount:48000,note:'Starting salary'}]},
-     checklist:{'Paperwork submitted':true,'System access granted':false,'IT equipment issued':false,'Benefits enrolled':false,'Manager intro done':true}},
-    {id:4,name:'Kwame Asante',dept:'Finance',role:'Financial Analyst',manager:'Mark Black',start:'2025-01-20',status:'onboarding',email:'k.asante@company.com',phone:'+230 5700 4567',
-     salary:{amount:55000,currency:'USD',frequency:'Annual',lastReview:null,nextReview:'2026-01-20',history:[{date:'2025-01-20',amount:55000,note:'Starting salary'}]},
-     checklist:{'Paperwork submitted':true,'System access granted':true,'IT equipment issued':true,'Benefits enrolled':false,'Manager intro done':true}},
-    {id:5,name:'Priya Patel',dept:'Engineering',role:'DevOps Engineer',manager:'Clara Smith',start:'2021-06-10',status:'active',email:'p.patel@company.com',phone:'+230 5700 5678',
-     salary:{amount:91000,currency:'USD',frequency:'Annual',lastReview:'2024-06-10',nextReview:'2025-06-10',history:[{date:'2021-06-10',amount:70000,note:'Starting salary'},{date:'2024-06-10',amount:91000,note:'Promotion + review'}]}},
-    {id:6,name:'James Osei',dept:'Sales',role:'Account Executive',manager:'Tom Reid',start:'2023-01-18',status:'active',email:'j.osei@company.com',phone:'+230 5700 6789',
-     salary:{amount:58000,currency:'USD',frequency:'Annual',lastReview:'2024-01-18',nextReview:'2025-01-18',history:[{date:'2023-01-18',amount:52000,note:'Starting salary'},{date:'2024-01-18',amount:58000,note:'Annual review +12%'}]}},
-    {id:7,name:'Marie Fontaine',dept:'Design',role:'UX Designer',manager:'Jane Doe',start:'2020-09-05',status:'offboarded',email:'m.fontaine@company.com',phone:'+230 5700 7890',lastDay:'2024-12-15',reason:'Resigned',
-     salary:{amount:67000,currency:'USD',frequency:'Annual',lastReview:'2024-09-05',nextReview:null,history:[{date:'2020-09-05',amount:52000,note:'Starting salary'},{date:'2024-09-05',amount:67000,note:'Final review'}]},
-     offChecklist:{'Exit interview done':true,'Equipment returned':true,'System access revoked':true,'Final payroll processed':false}},
-  ],
-  events:[
-    {id:1,date:'2025-01-20',empId:3,type:'training',desc:'Onboarding orientation completed',loggedBy:'Jane Doe',notified:true},
-    {id:2,date:'2025-01-18',empId:1,type:'training',desc:'AWS Solution Architect certification passed',loggedBy:'Clara Smith',notified:true},
-    {id:3,date:'2025-01-12',empId:6,type:'absence',desc:'Sick leave — 2 days',loggedBy:'Tom Reid',notified:true},
-    {id:4,date:'2025-01-05',empId:2,type:'warning',desc:'Verbal warning — missed campaign deadline',loggedBy:'Tom Reid',notified:true},
-    {id:5,date:'2024-12-20',empId:5,type:'milestone',desc:'3-year work anniversary',loggedBy:'System',notified:false},
-    {id:6,date:'2024-12-18',empId:7,type:'milestone',desc:'Offboarding completed',loggedBy:'Jane Doe',notified:true},
-    {id:7,date:'2024-12-10',empId:4,type:'training',desc:'GDPR compliance training passed',loggedBy:'Jane Doe',notified:false},
-  ],
-  trainingPrograms:[
-    {id:1,name:'GDPR & Data Compliance',category:'Compliance',duration:'4h',mandatory:true,description:'EU data protection regulations'},
-    {id:2,name:'AWS Cloud Fundamentals',category:'Technical',duration:'16h',mandatory:false,description:'Introduction to AWS services'},
-    {id:3,name:'Health & Safety Induction',category:'Safety',duration:'2h',mandatory:true,description:'Workplace health & safety'},
-    {id:4,name:'Leadership Essentials',category:'Management',duration:'8h',mandatory:false,description:'Core leadership skills'},
-    {id:5,name:'Cybersecurity Awareness',category:'Security',duration:'3h',mandatory:true,description:'Phishing, passwords, data handling'},
-    {id:6,name:'Company Onboarding Program',category:'Onboarding',duration:'8h',mandatory:true,description:'Company culture, policies, tools'},
-  ],
-  trainingAssignments:[
-    {id:1,empId:1,programId:2,status:'completed',assignedDate:'2024-11-01',dueDate:'2025-01-31',completedDate:'2025-01-18',score:92,notes:'Passed with distinction',progress:100},
-    {id:2,empId:2,programId:5,status:'in-progress',assignedDate:'2025-01-05',dueDate:'2025-02-28',completedDate:null,score:null,notes:'',progress:40},
-    {id:3,empId:3,programId:6,status:'completed',assignedDate:'2025-01-15',dueDate:'2025-01-31',completedDate:'2025-01-20',score:100,notes:'Orientation complete',progress:100},
-    {id:4,empId:3,programId:1,status:'not-started',assignedDate:'2025-01-20',dueDate:'2025-02-15',completedDate:null,score:null,notes:'',progress:0},
-    {id:5,empId:4,programId:1,status:'completed',assignedDate:'2024-12-02',dueDate:'2024-12-31',completedDate:'2024-12-10',score:85,notes:'',progress:100},
-    {id:6,empId:4,programId:6,status:'in-progress',assignedDate:'2025-01-20',dueDate:'2025-02-10',completedDate:null,score:null,notes:'',progress:65},
-    {id:7,empId:6,programId:5,status:'overdue',assignedDate:'2024-11-01',dueDate:'2024-12-31',completedDate:null,score:null,notes:'',progress:20},
-  ],
-  audit:[]
-};
-
-// Helper shorthands that always read/write live storage
-const getEmps=()=>_cache.emps.length?_cache.emps:getData('employees');
-const getEvts=()=>_cache.evts.length?_cache.evts:getData('events');
-const getTrProgs=()=>_cache.progs.length?_cache.progs:getData('trainingPrograms');
-const getTrAsgn=()=>_cache.asgn.length?_cache.asgn:getData('trainingAssignments');
-const getUsers=()=>_userCache.length?_userCache:S.get('users',[]);
-const getAudit=()=>S.get('audit',[]);
-
-const saveEmps=v=>saveData('employees',v);
-const saveEvts=v=>saveData('events',v);
-const saveTrProgs=v=>saveData('trainingPrograms',v);
-const saveTrAsgn=v=>saveData('trainingAssignments',v);
 
 // ─── UTILS ────────────────────────────────────────────────────────────────────
 const COLS=['#1D9E75','#378ADD','#BA7517','#D85A30','#D4537E','#7F77DD','#888780'];
@@ -2094,22 +2167,38 @@ function submitAdd(){
   const name=document.getElementById('fn').value.trim(),email=document.getElementById('fe').value.trim();
   if(!name||!email){toast('Name and email required.','error');return;}
   const sa=parseFloat(document.getElementById('fsal').value);
-  const emps=getEmps();
-  emps.push({id:Date.now(),name,email,phone:document.getElementById('fph').value,role:document.getElementById('fr2').value||'—',dept:document.getElementById('fd').value,manager:document.getElementById('fm').value||'—',start:document.getElementById('fst').value||td(),status:'onboarding',
+  const newEmp={
+    id:Date.now(),name,email,
+    phone:document.getElementById('fph').value,
+    role:document.getElementById('fr2').value||'—',
+    dept:document.getElementById('fd').value,
+    manager:document.getElementById('fm').value||'—',
+    start:document.getElementById('fst').value||td(),
+    status:'onboarding',
     salary:sa?{amount:sa,currency:document.getElementById('fcur').value,frequency:document.getElementById('ffreq').value,lastReview:null,nextReview:document.getElementById('fnr').value||null,history:[{date:document.getElementById('fst').value||td(),amount:sa,note:'Starting salary'}]}:null,
-    checklist:(()=>{const d=(getSettings().checklistDefaults||['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done']);return Object.fromEntries(d.map(k=>[k,false]));})()});
+    checklist:(()=>{const d=(getSettings().checklistDefaults||['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done']);return Object.fromEntries(d.map(k=>[k,false]));})(),
+    files:[],photoUrl:null
+  };
   showLoader('Saving…');
   dbSaveEmployee(newEmp).then(saved=>{
     hideLoader();
-    if(!_cache.emps.find(e=>e.email===saved.email)) _cache.emps.unshift(saved);
+    const s=saved||newEmp;
+    if(!_cache.emps.find(e=>e.email===s.email)) _cache.emps.unshift(s);
     addNotif('New hire added: '+name,'success');
     dbAddAudit(CU.name,'Added employee: '+name);
-    // Email HR team
     sendHRAlert('new_employee', getHREmails(), {
       employeeName:name, role:newEmp.role, dept:newEmp.dept,
       startDate:newEmp.start, manager:newEmp.manager, addedBy:CU.name
     });
     closeModal();renderDashboard();toast(name+' added. Onboarding started.','success');
+  }).catch(err=>{
+    hideLoader();
+    console.error('Save employee error:',err);
+    // Save locally as fallback
+    _cache.emps.unshift(newEmp);
+    saveEmps(_cache.emps);
+    addNotif('New hire added locally: '+name,'success');
+    closeModal();renderDashboard();toast(name+' added (saved locally).','success');
   });
 }
 
@@ -2126,10 +2215,18 @@ function submitEdit(id){
   showLoader('Saving…');
   dbSaveEmployee(emp).then(saved=>{
     hideLoader();
-    const idx=_cache.emps.findIndex(e=>e.id===saved.id);
-    if(idx>=0)_cache.emps[idx]=saved;
+    const s=saved||emp;
+    const idx=_cache.emps.findIndex(e=>e.id===s.id);
+    if(idx>=0)_cache.emps[idx]=s;
     dbAddAudit(CU.name,'Edited employee: '+emp.name);
     closeModal();toast('Profile updated.','success');
+  }).catch(err=>{
+    hideLoader();
+    console.error('Edit employee error:',err);
+    const idx=_cache.emps.findIndex(e=>e.id===emp.id);
+    if(idx>=0)_cache.emps[idx]=emp;
+    saveEmps(_cache.emps);
+    closeModal();toast('Profile updated (saved locally).','success');
   });
 }
 
@@ -2156,9 +2253,7 @@ function submitEvent(){
     _cache.evts.unshift(saved||newEvt);
     addNotif('Event logged for '+empName,'info');
     dbAddAudit(CU.name,'Logged event for '+empName);
-    // Email HR for warnings and absences
     if(notify && (newEvt.type==='warning'||newEvt.type==='absence')){
-      const empObj=gE(empId);
       sendHRAlert('event_logged', getHREmails(), {
         employeeName:empName, eventType:newEvt.type,
         eventDate:fDate(newEvt.date), description:newEvt.desc,
@@ -2166,6 +2261,13 @@ function submitEvent(){
       });
     }
     closeModal();renderDashboard();toast('Event logged.','success');
+  }).catch(err=>{
+    hideLoader();
+    console.error('Save event error:',err);
+    _cache.evts.unshift(newEvt);
+    saveEvts(_cache.evts);
+    addNotif('Event logged for '+empName,'info');
+    closeModal();renderDashboard();toast('Event logged (saved locally).','success');
   });
 }
 
