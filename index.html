@@ -4,27 +4,42 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Moura HR — Management Portal</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --navy:#1E1445;--navy-dark:#120D2E;--navy-mid:#2C2070;
-  --navy-light:#EBE9F5;--navy-deep:#0A0820;
-  --gold:#D69328;--gold-dark:#A87020;--gold-light:#FDF3E0;--gold-deep:#7A510E;
-  --muted:#9D915D;--muted-light:#F5F2E8;
-  --bg:#ffffff;--bg2:#F8F7F4;--bg3:#F2F0EB;
-  --text:#1A1433;--text2:#4E4870;--text3:#9590B0;
-  --border:rgba(30,20,69,0.08);--border2:rgba(30,20,69,0.16);
-  --green:#1D9E75;--green-dark:#0F6E56;--green-light:#E1F5EE;--green-deep:#085041;
-  --blue:#1E1445;--blue-light:#EBE9F5;--blue-deep:#0A0820;
-  --amber:#BA7517;--amber-light:#FAEEDA;--amber-deep:#633806;
-  --red:#C0392B;--red-light:#FBEAE9;--red-deep:#7B241C;
-  --purple:#7F77DD;--purple-light:#EEEDFE;--purple-deep:#3C3489;
-  --gray-light:#EDEAE3;--gray-deep:#3A3560;
-  --radius:8px;--radius-lg:12px;
-  --sb-width:220px;
-}
-.sidebar{width:var(--sb-width);background:var(--navy);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;flex-shrink:0;overflow-y:auto}
+<style>:root{--sb-width:196px}
+.sidebar{width:var(--sb-width);background:linear-gradient(180deg,#1A1040 0%,#1E1445 100%);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;flex-shrink:0;border-right:1px solid rgba(255,255,255,0.05)}
 .app-body{margin-left:var(--sb-width);flex:1;display:flex;flex-direction:column;min-height:100vh;min-width:0}
+.nav-logo{display:none}
+.sb-logo{display:flex;align-items:center;gap:10px;padding:16px 14px 14px;border-bottom:1px solid rgba(255,255,255,0.05)}
+.sb-logo-mark{width:30px;height:30px;border-radius:8px;background:var(--gold);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 8px rgba(214,147,40,0.4)}
+.sb-logo-mark svg{width:15px;height:15px;color:var(--navy);stroke-width:2.2}
+.sb-logo-text{font-size:13px;font-weight:600;color:#fff;line-height:1.2;letter-spacing:.01em}
+.sb-logo-sub{font-size:9px;color:rgba(255,255,255,0.28);margin-top:1px;letter-spacing:.03em}
+.sb-section{padding:16px 14px 4px;font-size:8.5px;font-weight:700;letter-spacing:.1em;color:rgba(255,255,255,0.22);text-transform:uppercase}
+.nav-tab{display:flex;align-items:center;gap:9px;padding:4px 8px 4px 6px;margin:1px 8px;border-radius:8px;cursor:pointer;color:rgba(255,255,255,0.45);font-size:12px;font-weight:400;border:none;background:transparent;font-family:inherit;text-align:left;transition:background .15s,color .15s;width:calc(100% - 16px);line-height:1;position:relative}
+.tab-icon{width:28px;height:28px;border-radius:7px;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s}
+.tab-icon svg{width:14px;height:14px}
+.tab-label{font-size:12px;letter-spacing:.01em}
+.nav-tab:hover{color:rgba(255,255,255,0.85)}
+.nav-tab:hover .tab-icon{background:rgba(255,255,255,0.09)}
+.nav-tab.active{color:#fff;font-weight:500;background:rgba(255,255,255,0.06)}
+.nav-tab.active .tab-icon{background:var(--gold);box-shadow:0 2px 8px rgba(214,147,40,0.4)}
+.nav-tab.active .tab-icon svg{color:var(--navy)}
+.nav-tab.active::before{content:'';position:absolute;left:-8px;top:50%;transform:translateY(-50%);width:3px;height:16px;background:var(--gold);border-radius:0 3px 3px 0}
+.sb-bottom{margin-top:auto;padding:8px;border-top:1px solid rgba(255,255,255,0.05)}
+.sb-user{display:flex;align-items:center;gap:9px;padding:8px;border-radius:8px;cursor:pointer;transition:background .15s}
+.sb-user:hover{background:rgba(255,255,255,0.05)}
+.sb-user-av{width:28px;height:28px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--navy);flex-shrink:0}
+.sb-user-info{flex:1;min-width:0}
+.sb-user-name{font-size:11.5px;font-weight:500;color:rgba(255,255,255,0.78);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-user-role{font-size:9.5px;color:rgba(255,255,255,0.28);margin-top:1px}
+.sb-logout{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;padding:6px;margin-top:4px;border-radius:7px;border:1px solid rgba(255,255,255,0.07);background:transparent;color:rgba(255,255,255,0.3);font-size:11px;font-family:inherit;cursor:pointer;transition:all .15s}
+.sb-logout:hover{background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.6);border-color:rgba(255,255,255,0.12)}
+.sb-logout svg{width:12px;height:12px}
+@media(max-width:900px){:root{--sb-width:52px}.sb-logo-text,.sb-logo-sub,.sb-section,.sb-user-info,.tab-label{display:none!important}.sb-logo{justify-content:center;padding:14px 0}.nav-tab{justify-content:center;margin:2px 6px;width:calc(100% - 12px);padding:7px 0}.tab-icon{width:32px;height:32px}.sb-user{justify-content:center}.sb-logout .sb-logout-text{display:none}}
+
+
+
+
+
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg2);color:var(--text);min-height:100vh;font-size:14px}
 
 /* ── LOGIN ── */
@@ -43,10 +58,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* ── APP ── */
 #app{display:none;min-height:100vh;flex-direction:row}
 .topnav{background:var(--bg);border-bottom:1px solid var(--border);padding:0 22px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
-.nav-logo{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
-.nav-tabs{display:flex;gap:2px;margin-left:16px;flex-wrap:wrap}
-.nav-tab{padding:6px 12px;border-radius:var(--radius);font-size:13px;color:var(--text2);cursor:pointer;border:none;background:transparent;font-family:inherit;transition:all .12s}
-.nav-tab:hover{background:var(--bg2);color:var(--text)}.nav-tab.active{background:var(--navy-light);color:var(--navy);font-weight:600;border-bottom:2px solid var(--gold)}
+
+
+
+
 .topnav-right{display:flex;align-items:center;gap:8px}
 .role-badge{padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:500}
 .role-admin{background:var(--purple-light);color:var(--purple-deep)}
@@ -259,8 +274,9 @@ tbody tr:hover td{background:var(--bg2)}
 
 @keyframes sIn{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
 
-@media(max-width:1024px){.sidebar{width:52px!important}.sidebar .sb-logo-text,.sidebar .sb-logo-sub,.sidebar .sb-section,.sidebar .sb-user-info,.sidebar .sb-user-name,.sidebar .sb-user-role{display:none!important}.nav-tab{justify-content:center;padding:10px}.app-body{margin-left:52px!important}}
+@media(max-width:1024px){.sidebar .sb-logo-text,.sidebar .sb-logo-sub,.sidebar .sb-section,.sidebar .sb-user-info,.sidebar .sb-user-name,.sidebar .nav-tab{justify-content:center;padding:10px}}
 @media(max-width:768px){.metrics,.g2,.kanban,.ig{grid-template-columns:1fr 1fr}}
+@media(max-width:900px){.sidebar{width:48px}.sb-logo-text,.sb-logo-sub,.sb-section,.sb-user-info,.sb-user-name,.sb-user-role{display:none!important}.nav-tab{justify-content:center;padding:7px;margin:1px 4px;width:calc(100% - 8px)}.app-body{margin-left:48px}}
 @media(max-width:500px){.metrics,.ig{grid-template-columns:1fr}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -324,48 +340,52 @@ tbody tr:hover td{background:var(--bg2)}
 <!-- ── MAIN APP ── -->
 <div id="app">
   <!-- SIDEBAR -->
-  <nav class="sidebar" id="sidebar">
+    <nav class="sidebar" id="sidebar">
     <div class="sb-logo">
-      <div class="sb-logo-mark">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      </div>
-      <div>
-        <div class="sb-logo-text" id="org-name-nav">Moura HR</div>
-        <div class="sb-logo-sub">Management Portal</div>
-      </div>
+      <div class="sb-logo-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+      <div><div class="sb-logo-text" id="org-name-nav">Moura HR</div><div class="sb-logo-sub">Management Portal</div></div>
     </div>
 
     <div class="sb-section" id="sb-sec-overview">Overview</div>
     <button class="nav-tab active" onclick="showPage('dashboard',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Dashboard
+      <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></div>
+      <span class="tab-label">Dashboard</span>
     </button>
     <button class="nav-tab" data-perm="view_employees" onclick="showPage('employees',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Employees
+      <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+      <span class="tab-label">Employees</span>
     </button>
 
     <div class="sb-section" id="sb-sec-hr">HR Management</div>
     <button class="nav-tab" data-perm="manage_onboarding" onclick="showPage('onboarding',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>Onboarding
+      <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg></div>
+      <span class="tab-label">Onboarding</span>
     </button>
     <button class="nav-tab" data-perm="view_events" onclick="showPage('events',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Events log
+      <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+      <span class="tab-label">Events log</span>
     </button>
     <button class="nav-tab" data-perm="view_training" onclick="showPage('training',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055"/></svg>Training
+      <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
+      <span class="tab-label">Training</span>
     </button>
     <button class="nav-tab" data-perm="manage_offboarding" onclick="showPage('offboarding',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="18" y1="11" x2="23" y2="11"/></svg>Offboarding
+      <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
+      <span class="tab-label">Offboarding</span>
     </button>
 
     <div class="sb-section" id="sb-sec-reports">Reports</div>
     <button class="nav-tab" data-perm="view_analytics" onclick="showPage('analytics',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Analytics
+      <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
+      <span class="tab-label">Analytics</span>
     </button>
     <button class="nav-tab" data-perm="admin" onclick="showPage('usermgmt',this)" id="tab-usermgmt">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Users
+      <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/><line x1="19" y1="11" x2="19" y2="17"/><line x1="16" y1="14" x2="22" y2="14"/></svg></div>
+      <span class="tab-label">Users</span>
     </button>
     <button class="nav-tab" data-perm="admin" onclick="showPage('settings',this)" id="tab-settings">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings
+      <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+      <span class="tab-label">Settings</span>
     </button>
 
     <div class="sb-bottom">
@@ -373,14 +393,16 @@ tbody tr:hover td{background:var(--bg2)}
         <div class="sb-user-av" id="sb-user-av">JM</div>
         <div class="sb-user-info">
           <div class="sb-user-name" id="ud"></div>
-          <div class="sb-user-role" id="rd"></div>
+          <div class="sb-user-role"><span id="rd"></span></div>
         </div>
       </div>
-      <button class="btn btn-sm" onclick="doLogout()" style="width:100%;justify-content:center;margin-top:6px;color:rgba(255,255,255,0.5);border-color:rgba(255,255,255,0.1);background:transparent">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Sign out
+      <button class="sb-logout" onclick="doLogout()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span class="sb-logout-text">Sign out</span>
       </button>
     </div>
   </nav>
+
 
   <!-- MAIN BODY -->
   <div class="app-body">
@@ -400,8 +422,7 @@ tbody tr:hover td{background:var(--bg2)}
           <div id="nl"><div class="notif-empty">No notifications</div></div>
         </div>
       </div>
-      <span class="role-badge" id="rd" style="display:none"></span>
-      <div id="ud" style="display:none"></div>
+      <!-- user info in sidebar -->
     </div>
   
   </nav>
@@ -1266,9 +1287,8 @@ function canEdit(){return hasPerm('edit_employees')||hasPerm('add_employees');}
 
 function applyPermissions(){
   const r=CU.role;
-  document.getElementById('rd').textContent=r[0].toUpperCase()+r.slice(1);
-  document.getElementById('rd').className='role-badge role-'+r;
-  document.getElementById('ud').textContent=CU.name;
+  const _rd=document.getElementById('rd');if(_rd){_rd.textContent=r[0].toUpperCase()+r.slice(1);_rd.className='role-badge role-'+r;}
+  const _ud=document.getElementById('ud');if(_ud)_ud.textContent=CU.name;
   // Sidebar nav items
   document.querySelectorAll('.nav-tab[data-perm]').forEach(tab=>{
     const perm=tab.dataset.perm;
