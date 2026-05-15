@@ -3109,88 +3109,142 @@ async function uploadPhotoFile(empId, input){
   const file=input.files[0];
   if(!file) return;
   if(file.size>3*1024*1024){toast('Photo too large. Max 3MB.','error');return;}
-  toast('Uploading photo…','info');
-  const url=await uploadToStorage(empId,'photo',file);
-  if(!url){toast('Upload failed.','error');return;}
-  const emps=getEmps();
-  const emp=emps.find(e=>e.id===empId);
-  if(emp){emp.photoUrl=url;}
-  dbSaveEmployee(emp).then(()=>{
-    const idx=_cache.emps.findIndex(e=>e.id===empId);
-    if(idx>=0)_cache.emps[idx]=emp;
+  showLoader('Uploading photo…');
+  try{
+    const url=await uploadToStorage(empId,'photo',file);
+    if(!url){hideLoader();toast('Upload failed — storage error.','error');return;}
+    // Find emp using loose comparison
+    const emp=getEmps().find(e=>String(e.id)===String(empId));
+    if(!emp){hideLoader();toast('Employee not found.','error');return;}
+    emp.photoUrl=url;
+    const saved=await dbSaveEmployee(emp);
+    const idx=_cache.emps.findIndex(e=>String(e.id)===String(empId));
+    if(idx>=0)_cache.emps[idx]=saved||emp;
+    saveEmps(_cache.emps);
+    hideLoader();
     toast('Photo updated!','success');
     closeModal();
     viewEmp(empId);
-  });
+  } catch(err){
+    hideLoader();
+    console.error('uploadPhotoFile error:',err);
+    toast('Photo upload failed: '+(err.message||err),'error');
+  }
 }
 
 async function uploadEmpFile(empId, input){
   const files=Array.from(input.files);
   if(!files.length) return;
   showLoader('Uploading '+files.length+' file(s)…');
-  const emps=getEmps();
-  const emp=emps.find(e=>e.id===empId);
-  if(!emp){hideLoader();return;}
-  if(!emp.files) emp.files=[];
-  let uploaded=0;
-  for(const file of files){
-    if(file.size>10*1024*1024){toast(file.name+' too large (max 10MB).','error');continue;}
-    const url=await uploadToStorage(empId,'doc_'+Date.now(),file);
-    if(url){
-      emp.files.push({name:file.name,url,type:file.type,size:fmtFileSize(file.size),uploadedAt:new Date().toISOString(),uploadedBy:CU.name});
-      uploaded++;
+  try{
+    // Find emp using loose comparison
+    const emp=getEmps().find(e=>String(e.id)===String(empId));
+    if(!emp){hideLoader();toast('Employee not found.','error');return;}
+    if(!Array.isArray(emp.files)) emp.files=[];
+    let uploaded=0;
+    for(const file of files){
+      if(file.size>10*1024*1024){toast(file.name+' too large (max 10MB).','error');continue;}
+      const url=await uploadToStorage(empId,'doc_'+Date.now(),file);
+      if(url){
+        // Only store persistent URLs — skip blob:// URLs (no Supabase)
+        emp.files.push({
+          name:file.name,
+          url,
+          type:file.type,
+          size:fmtFileSize(file.size),
+          uploadedAt:new Date().toISOString(),
+          uploadedBy:CU.name
+        });
+        uploaded++;
+      } else {
+        toast('Failed to upload: '+file.name,'error');
+      }
     }
-  }
-  await dbSaveEmployee(emp);
-  const idx=_cache.emps.findIndex(e=>e.id===empId);
-  if(idx>=0)_cache.emps[idx]=emp;
-  hideLoader();
-  if(uploaded>0){
+    if(uploaded===0){hideLoader();return;}
+    const saved=await dbSaveEmployee(emp);
+    const idx=_cache.emps.findIndex(e=>String(e.id)===String(empId));
+    if(idx>=0)_cache.emps[idx]=saved||emp;
+    saveEmps(_cache.emps);
+    hideLoader();
     toast(uploaded+' file(s) uploaded.','success');
-    addAudit(CU.name,'Uploaded '+uploaded+' file(s) for '+emp.name);
-  }
-  // Refresh files list in open modal
-  const listEl=document.getElementById('files-list-'+empId);
-  if(listEl){
-    const f=emp.files||[];
-    listEl.innerHTML=f.length===0?'<div style="color:var(--text3);font-size:13px;padding:20px;text-align:center">No files uploaded yet.</div>':
-      f.map((fi,idx)=>`<div class="file-item">
-        <span class="file-item-icon">${fileIcon(fi.name)}</span>
-        <span class="file-item-name" title="${fi.name}">${fi.name}</span>
-        <span class="txs tm">${fi.size||''}</span>
-        <div class="file-item-actions">
-          <a href="${fi.url}" target="_blank" class="btn btn-xs">View</a>
-          <a href="${fi.url}" download="${fi.name}" class="btn btn-xs">⬇</a>
-          ${canEdit()?`<button class="btn btn-xs btn-danger" onclick="deleteEmpFile(${empId},${idx})">✕</button>`:''}
-        </div>
-      </div>`).join('');
+    dbAddAudit(CU.name,'Uploaded '+uploaded+' file(s) for '+emp.name);
+    // Refresh files list in open modal
+    refreshFilesList(empId, emp.files);
+  } catch(err){
+    hideLoader();
+    console.error('uploadEmpFile error:',err);
+    toast('File upload failed: '+(err.message||err),'error');
   }
 }
 
 async function deleteEmpFile(empId, fileIdx){
-  const emps=getEmps();
-  const emp=emps.find(e=>e.id===empId);
-  if(!emp||!emp.files[fileIdx]) return;
+  // Find emp using loose comparison
+  const emp=getEmps().find(e=>String(e.id)===String(empId));
+  if(!emp||!Array.isArray(emp.files)||!emp.files[fileIdx]) return;
   const fname=emp.files[fileIdx].name;
   if(!confirm('Remove "'+fname+'" from this employee record?')) return;
-  emp.files.splice(fileIdx,1);
-  await dbSaveEmployee(emp);
-  const idx=_cache.emps.findIndex(e=>e.id===empId);
-  if(idx>=0)_cache.emps[idx]=emp;
-  toast(fname+' removed.','success');
-  closeModal();viewEmp(empId);
+  showLoader('Removing file…');
+  try{
+    emp.files.splice(fileIdx,1);
+    const saved=await dbSaveEmployee(emp);
+    const idx=_cache.emps.findIndex(e=>String(e.id)===String(empId));
+    if(idx>=0)_cache.emps[idx]=saved||emp;
+    saveEmps(_cache.emps);
+    hideLoader();
+    toast(fname+' removed.','success');
+    closeModal();
+    viewEmp(empId);
+  } catch(err){
+    hideLoader();
+    console.error('deleteEmpFile error:',err);
+    toast('Remove failed: '+(err.message||err),'error');
+  }
+}
+
+function refreshFilesList(empId, files){
+  const listEl=document.getElementById('files-list-'+empId);
+  if(!listEl) return;
+  if(!files||files.length===0){
+    listEl.innerHTML='<div style="color:var(--text3);font-size:13px;padding:20px;text-align:center">No files uploaded yet.</div>';
+    return;
+  }
+  listEl.innerHTML=files.map((fi,idx)=>`
+    <div class="file-item">
+      <span class="file-item-icon">${fileIcon(fi.name)}</span>
+      <span class="file-item-name" title="${fi.name}">${fi.name}</span>
+      <span class="txs tm">${fi.size||''}</span>
+      <div class="file-item-actions">
+        <a href="${fi.url}" target="_blank" class="btn btn-xs">View</a>
+        <a href="${fi.url}" download="${fi.name}" class="btn btn-xs">⬇</a>
+        ${canEdit()?`<button class="btn btn-xs btn-danger" onclick="deleteEmpFile(${empId},${idx})">✕</button>`:''}
+      </div>
+    </div>`).join('');
 }
 
 async function uploadToStorage(empId, fileKey, file){
   if(!sbReady()){
-    // Fallback: return object URL (local only, not persistent)
-    return URL.createObjectURL(file);
+    toast('Supabase not connected — file not saved permanently.','error');
+    return null; // don't return blob URL — it won't survive refresh
   }
-  const path=`employee-${empId}/${fileKey}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
-  const {data,error}=await _sb.storage.from('employee-files').upload(path,file,{upsert:true,contentType:file.type});
-  if(error){console.error('Storage upload error:',error);return null;}
-  const {data:urlData}=_sb.storage.from('employee-files').getPublicUrl(path);
-  return urlData?.publicUrl||null;
+  try{
+    // Sanitise the path
+    const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,100);
+    const path=`employee-${empId}/${fileKey}_${safeName}`;
+    const {data,error}=await _sb.storage.from('employee-files').upload(
+      path, file, {upsert:true, contentType:file.type}
+    );
+    if(error){
+      console.error('Storage upload error:',error);
+      toast('Storage error: '+error.message,'error');
+      return null;
+    }
+    const {data:urlData}=_sb.storage.from('employee-files').getPublicUrl(path);
+    return urlData?.publicUrl||null;
+  } catch(err){
+    console.error('uploadToStorage exception:',err);
+    toast('Upload exception: '+err.message,'error');
+    return null;
+  }
 }
 
 // ─── EMPLOYEE PDF REPORT ──────────────────────────────────────────────────────
