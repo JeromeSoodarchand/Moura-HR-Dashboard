@@ -963,17 +963,31 @@ async function dbSaveEmployee(emp){
     const row=empToRow(emp);
     if(emp.id && String(emp.id).length<13){ // numeric DB id = update
       const {data,error}=await _sb.from('employees').update(row).eq('id',emp.id).select().single();
-      if(error){console.error('Update employee error:',error);return emp;}
+      if(error){
+        console.error('Update employee error:',error);
+        toast('DB update failed: '+error.message,'error');
+        return emp;
+      }
       return data?rowToEmp(data):emp;
     } else { // new employee = insert
       delete row.id;
+      // Remove undefined values that Supabase may reject
+      Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
       const {data,error}=await _sb.from('employees').insert(row).select().single();
-      if(error){console.error('Insert employee error:',error);return emp;}
+      if(error){
+        console.error('Insert employee error:',error);
+        toast('DB save failed: '+error.message,'error');
+        // Still save locally so data isn't lost
+        const e=getEmps();e.push(emp);saveEmps(e);
+        _cache.emps.unshift(emp);
+        return emp;
+      }
       return data?rowToEmp(data):emp;
     }
   } catch(err){
     console.error('dbSaveEmployee exception:',err);
-    return emp; // always return something so .then() fires
+    toast('Save error: '+err.message,'error');
+    return emp;
   }
 }
 
