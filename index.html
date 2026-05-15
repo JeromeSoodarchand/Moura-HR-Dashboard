@@ -2817,344 +2817,359 @@ async function uploadToStorage(empId, fileKey, file){
 
 // ─── EMPLOYEE PDF REPORT ──────────────────────────────────────────────────────
 async function generateEmployeePDF(id){
-  const emp=gE(id);
-  if(!emp){toast('Employee not found.','error');return;}
+  const emp = gE(id);
+  if(!emp){ toast('Employee not found.','error'); return; }
 
-  // Check jsPDF is available
-  const jsPDFClass = (window.jspdf&&window.jspdf.jsPDF) || window.jsPDF;
+  // Check jsPDF loaded
+  const jsPDFClass = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
   if(!jsPDFClass){
-    toast('PDF library not loaded. Please refresh the page and try again.','error');
-    console.error('jsPDF not found on window.jspdf.jsPDF or window.jsPDF');
+    toast('PDF library not loaded. Please refresh the page.','error');
     return;
   }
 
   toast('Generating PDF…','info');
-  await new Promise(r=>setTimeout(r,150)); // let toast render
+  await new Promise(r => setTimeout(r, 200));
 
   try {
-  const evts=[...gEE(id)].sort((a,b)=>new Date(b.date)-new Date(a.date));
-  const assigns=gEA(id);
-  const showSal=hasPerm('view_salary');
+    const evts   = [...gEE(id)].sort((a,b) => new Date(b.date) - new Date(a.date));
+    const asgns  = gEA(id);
+    const showSal = hasPerm('view_salary');
 
-  const doc=new jsPDFClass({orientation:'portrait',unit:'mm',format:'a4'});
-  const PW=210, M=15;
-  let y=0;
+    const doc = new jsPDFClass({ orientation:'portrait', unit:'mm', format:'a4' });
+    const PW = 210, PH = 297, LM = 15, RM = 15, TW = PW - LM - RM;
+    let y = 0;
 
-  // ── Colour helpers ──────────────────────────────────────────────────────────
-  const NAVY=[30,20,69], GOLD=[214,147,40], LIGHT=[248,247,244];
-  const TEXT=[58,53,96], MUTED=[130,124,160], WHITE=[255,255,255];
-  const GREEN=[29,158,117], RED=[216,90,48], BLUE=[55,138,221], AMBER=[186,117,23];
+    // ── Tiny helpers ──────────────────────────────────────────────────────────
+    const rgb = (r,g,b) => { doc.setFillColor(r,g,b); };
+    const txt = (r,g,b) => { doc.setTextColor(r,g,b); };
+    const drw = (r,g,b) => { doc.setDrawColor(r,g,b); };
+    const box = (x,yy,w,h,fill) => { doc.rect(x,yy,w,h,fill||'F'); };
+    const ln  = (x1,y1,x2,y2) => { doc.line(x1,y1,x2,y2); };
 
-  const sf=(...rgb)=>doc.setFillColor(...rgb);
-  const st=(...rgb)=>doc.setTextColor(...rgb);
-  const sd=(...rgb)=>doc.setDrawColor(...rgb);
+    // Colours as flat args
+    const NAVY  = [30,20,69];
+    const GOLD  = [214,147,40];
+    const LIGHT = [248,247,244];
+    const LTXT  = [58,53,96];
+    const MTXT  = [130,124,160];
+    const WHT   = [255,255,255];
+    const GRN   = [29,158,117];
+    const RED   = [216,90,48];
+    const BLU   = [55,138,221];
+    const AMB   = [186,117,23];
 
-  // ── Page check / add new page ───────────────────────────────────────────────
-  function checkPage(need=20){
-    if(y+need>278){
+    // ── Page overflow guard ───────────────────────────────────────────────────
+    function np(need){
+      need = need || 16;
+      if(y + need < 278) return;
       doc.addPage();
-      // Top stripe
-      sf(...NAVY);doc.rect(0,0,PW,5,'F');
-      sf(...GOLD);doc.rect(0,0,PW,2,'F');
-      // Bottom footer
-      sf(...NAVY);doc.rect(0,286,PW,11,'F');
-      doc.setFont('helvetica','normal');doc.setFontSize(7);st(...[140,135,160]);
-      doc.text('Moura HR — '+emp.name+' — Confidential',M,291.5);
-      doc.text('Page '+doc.internal.getNumberOfPages(),PW-M,291.5,{align:'right'});
-      y=10;
+      // header stripe
+      rgb(...NAVY); box(0,0,PW,4);
+      rgb(...GOLD); box(0,0,PW,2);
+      // footer stripe
+      rgb(...NAVY); box(0,285,PW,12);
+      txt(150,145,170); doc.setFontSize(7); doc.setFont('helvetica','normal');
+      doc.text('Moura HR  -  '+emp.name+'  -  Confidential', LM, 290);
+      doc.text('Page '+doc.internal.getNumberOfPages(), PW-RM, 290, {align:'right'});
+      y = 10;
     }
-  }
 
-  // ── Section heading ─────────────────────────────────────────────────────────
-  function heading(title){
-    checkPage(14);
-    sf(...NAVY);doc.rect(M,y,PW-2*M,7,'F');
-    sf(...GOLD);doc.rect(M,y,3,7,'F');
-    doc.setFont('helvetica','bold');doc.setFontSize(9);st(...WHITE);
-    doc.text(title.toUpperCase(),M+6,y+4.8);
-    y+=10;
-  }
+    // ── Section heading ───────────────────────────────────────────────────────
+    function sec(title){
+      np(14);
+      rgb(...NAVY); box(LM, y, TW, 7);
+      rgb(...GOLD); box(LM, y, 3,  7);
+      txt(...WHT); doc.setFontSize(9); doc.setFont('helvetica','bold');
+      doc.text(title.toUpperCase(), LM+7, y+5);
+      y += 10;
+    }
 
-  // ── Two-column info row ─────────────────────────────────────────────────────
-  function infoRow(label,value,x,y2,w=85){
-    doc.setFont('helvetica','bold');doc.setFontSize(8);st(...MUTED);
-    doc.text(label+':',x,y2);
-    doc.setFont('helvetica','normal');st(...TEXT);
-    const val=String(value||'—');
-    doc.text(val.length>35?val.slice(0,34)+'…':val, x+28, y2);
-  }
+    // ── Info pair ─────────────────────────────────────────────────────────────
+    function kv(label, value, x, yy){
+      doc.setFontSize(8); doc.setFont('helvetica','bold'); txt(...MTXT);
+      doc.text(label+':', x, yy);
+      doc.setFont('helvetica','normal'); txt(...LTXT);
+      const v = String(value||' - ');
+      doc.text(v.length > 38 ? v.slice(0,37)+'...' : v, x+30, yy);
+    }
 
-  // ── Table header row ────────────────────────────────────────────────────────
-  function tableHead(cols){
-    checkPage(8);
-    sf(...NAVY);doc.rect(M,y,PW-2*M,6,'F');
-    doc.setFont('helvetica','bold');doc.setFontSize(8);st(...WHITE);
-    cols.forEach(([text,x])=>doc.text(text,M+x,y+4.3));
-    y+=6;
-  }
+    // ── Table row ─────────────────────────────────────────────────────────────
+    let ri = 0;
+    function tr(fn, h){
+      h = h || 6;
+      np(h+2);
+      rgb(...(ri%2===0 ? WHT : LIGHT)); box(LM, y, TW, h);
+      drw(220,218,228); doc.setLineWidth(0.1); doc.setDrawColor(220,218,228);
+      box(LM, y, TW, h, 'S');
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); txt(...LTXT);
+      fn(y + h*0.65);
+      y += h; ri++;
+    }
 
-  // ── Alternating table row background ───────────────────────────────────────
-  let rowIdx=0;
-  function tableRow(rowFn, h=5.5){
-    checkPage(h+2);
-    sf(...(rowIdx%2===0?WHITE:LIGHT));
-    doc.rect(M,y,PW-2*M,h,'F');
-    sd(220,218,228);doc.setLineWidth(0.1);
-    doc.rect(M,y,PW-2*M,h,'S');
-    doc.setFont('helvetica','normal');doc.setFontSize(8);st(...TEXT);
-    rowFn(y);
-    y+=h;
-    rowIdx++;
-  }
+    // ── Colour pill ───────────────────────────────────────────────────────────
+    function pill(text, color, px, py, pw, ph){
+      pw = pw||22; ph = ph||4.5;
+      rgb(...color); box(px, py, pw, ph);
+      txt(...WHT); doc.setFontSize(6); doc.setFont('helvetica','bold');
+      doc.text(text.toUpperCase().slice(0,12), px+pw/2, py+ph-1.2, {align:'center'});
+    }
 
-  // ── Status pill ─────────────────────────────────────────────────────────────
-  function statusPill(text, color, px, py, w=22, h=4){
-    sf(...color);doc.roundedRect(px,py,w,h,1,1,'F');
-    doc.setFont('helvetica','bold');doc.setFontSize(6.5);st(...WHITE);
-    doc.text(text.toUpperCase().slice(0,10),px+w/2,py+h-1,{align:'center'});
-  }
+    // ══════════════════════════════════════════════════════════════════════════
+    // COVER HEADER
+    // ══════════════════════════════════════════════════════════════════════════
+    rgb(...NAVY); box(0,0,PW,46);
+    rgb(...GOLD); box(0,0,PW,2.5);
+    rgb(...GOLD); box(0,43.5,PW,2.5);
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // COVER HEADER
-  // ══════════════════════════════════════════════════════════════════════════
-  sf(...NAVY);doc.rect(0,0,PW,44,'F');
-  sf(...GOLD);doc.rect(0,0,PW,3,'F');
-  sf(...GOLD);doc.rect(0,41,PW,3,'F');
+    // Initials circle (drawn as a filled square with rounded look via text)
+    const hx = s => [parseInt(s.slice(1,3),16), parseInt(s.slice(3,5),16), parseInt(s.slice(5,7),16)];
+    rgb(...hx(aColor(emp.name)));
+    box(LM, 12, 18, 18); // simple square avatar
+    txt(...WHT); doc.setFontSize(13); doc.setFont('helvetica','bold');
+    doc.text(inits(emp.name), LM+9, 23.5, {align:'center'});
 
-  // Avatar
-  const hexToRgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
-  const ac=aColor(emp.name);
-  sf(...hexToRgb(ac));
-  doc.ellipse(M+9,22,9,9,'F');
-  doc.setFont('helvetica','bold');doc.setFontSize(12);st(...WHITE);
-  doc.text(inits(emp.name),M+9,25.5,{align:'center'});
+    // Name + role
+    doc.setFontSize(16); doc.setFont('helvetica','bold'); txt(...WHT);
+    doc.text(emp.name, LM+22, 19);
+    doc.setFontSize(10); doc.setFont('helvetica','normal'); txt(200,191,168);
+    doc.text((emp.role||'') + (emp.dept?' . '+emp.dept:''), LM+22, 26);
 
-  // Name block
-  doc.setFontSize(17);doc.setFont('helvetica','bold');st(...WHITE);
-  doc.text(emp.name,M+22,16);
-  doc.setFontSize(10);doc.setFont('helvetica','normal');st(200,191,168);
-  doc.text((emp.role||'')+(emp.dept?' · '+emp.dept:''),M+22,23);
-  const sCol={active:GOLD,onboarding:BLUE,offboarded:[136,135,128]};
-  statusPill(emp.status,sCol[emp.status]||GOLD,M+22,27,30,6);
+    // Status pill
+    const stC = {active:GOLD, onboarding:BLU, offboarded:[136,135,128]};
+    pill(emp.status, stC[emp.status]||GOLD, LM+22, 30, 28, 5.5);
 
-  // Top-right label
-  doc.setFontSize(7.5);doc.setFont('helvetica','normal');st(200,191,168);
-  doc.text('EMPLOYEE PROFILE REPORT',PW-M,9,{align:'right'});
-  doc.text('Generated: '+new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}),PW-M,14,{align:'right'});
-  doc.text('Confidential — Internal use only',PW-M,19,{align:'right'});
+    // Top-right meta
+    doc.setFontSize(7.5); doc.setFont('helvetica','normal'); txt(200,191,168);
+    doc.text('EMPLOYEE PROFILE REPORT', PW-RM, 10, {align:'right'});
+    doc.text('Generated: '+fDate(new Date().toISOString().slice(0,10)), PW-RM, 16, {align:'right'});
+    doc.text('Confidential  -  Internal use only', PW-RM, 22, {align:'right'});
 
-  // Footer page 1
-  sf(...NAVY);doc.rect(0,286,PW,11,'F');
-  doc.setFont('helvetica','normal');doc.setFontSize(7);st(...[140,135,160]);
-  doc.text('Moura HR — Employee Profile Report — Confidential',M,291.5);
-  doc.text('Page 1',PW-M,291.5,{align:'right'});
+    // Page 1 footer
+    rgb(...NAVY); box(0,285,PW,12);
+    txt(150,145,170); doc.setFontSize(7); doc.setFont('helvetica','normal');
+    doc.text('Moura HR  -  Employee Profile Report  -  Confidential', LM, 290);
+    doc.text('Page 1', PW-RM, 290, {align:'right'});
 
-  y=52;
+    y = 54;
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // PERSONAL INFORMATION
-  // ══════════════════════════════════════════════════════════════════════════
-  heading('Personal Information');
-  const half=PW/2-M;
-  sf(...LIGHT);doc.rect(M,y,PW-2*M,26,'F');
-  sd(...[220,218,228]);doc.setLineWidth(0.2);doc.rect(M,y,PW-2*M,26,'S');
-  infoRow('Full Name',emp.name,M+3,y+6);
-  infoRow('Email',emp.email,M+3,y+12);
-  infoRow('Phone',emp.phone,M+3,y+18);
-  infoRow('Start Date',fDate(emp.start),M+3,y+24);
-  infoRow('Department',emp.dept,M+3+half,y+6);
-  infoRow('Role',emp.role,M+3+half,y+12);
-  infoRow('Manager',emp.manager,M+3+half,y+18);
-  infoRow('Status',emp.status,M+3+half,y+24);
-  y+=30;
+    // ══════════════════════════════════════════════════════════════════════════
+    // PERSONAL INFORMATION
+    // ══════════════════════════════════════════════════════════════════════════
+    sec('Personal Information');
+    rgb(...LIGHT); box(LM, y, TW, 28);
+    drw(220,218,228); box(LM, y, TW, 28, 'S');
+    const half = TW/2;
+    kv('Full Name',  emp.name,    LM+3,      y+6);
+    kv('Email',      emp.email,   LM+3,      y+12);
+    kv('Phone',      emp.phone,   LM+3,      y+18);
+    kv('Start Date', fDate(emp.start), LM+3, y+24);
+    kv('Department', emp.dept,    LM+3+half, y+6);
+    kv('Role',       emp.role,    LM+3+half, y+12);
+    kv('Manager',    emp.manager, LM+3+half, y+18);
+    kv('Status',     emp.status,  LM+3+half, y+24);
+    y += 32;
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // COMPENSATION (HR/Admin only)
-  // ══════════════════════════════════════════════════════════════════════════
-  if(showSal&&emp.salary){
-    heading('Compensation');
-    sf(...LIGHT);doc.rect(M,y,PW-2*M,14,'F');
-    sd(...[220,218,228]);doc.rect(M,y,PW-2*M,14,'S');
-    infoRow('Current Salary',fCur(emp.salary.amount,emp.salary.currency)+' / '+emp.salary.frequency,M+3,y+5);
-    infoRow('Last Review',fDate(emp.salary.lastReview),M+3,y+11);
-    infoRow('Next Review',fDate(emp.salary.nextReview),M+3+half,y+5);
-    y+=18;
+    // ══════════════════════════════════════════════════════════════════════════
+    // COMPENSATION
+    // ══════════════════════════════════════════════════════════════════════════
+    if(showSal && emp.salary){
+      sec('Compensation');
+      rgb(...LIGHT); box(LM, y, TW, 14);
+      drw(220,218,228); box(LM, y, TW, 14, 'S');
+      kv('Current Salary', fCur(emp.salary.amount, emp.salary.currency)+' / '+emp.salary.frequency, LM+3, y+5);
+      kv('Last Review',    fDate(emp.salary.lastReview), LM+3,      y+11);
+      kv('Next Review',    fDate(emp.salary.nextReview), LM+3+half, y+5);
+      y += 18;
 
-    if((emp.salary.history||[]).length>0){
-      checkPage(14);
-      doc.setFont('helvetica','bold');doc.setFontSize(9);st(...NAVY);
-      doc.text('Salary history',M,y);y+=4;
-      rowIdx=0;
-      tableHead([['Date',2],['Amount',30],['Change',66],['Notes',86]]);
-      const hist=[...emp.salary.history].reverse();
-      hist.forEach((h,i)=>{
-        const prev=hist[i+1];
-        const chg=prev?Math.round((h.amount-prev.amount)/prev.amount*100):null;
-        tableRow(ry=>{
-          doc.text(fDate(h.date),M+2,ry+3.8);
-          doc.text(fCur(h.amount,emp.salary.currency),M+30,ry+3.8);
-          if(chg!==null){
-            st(...(chg>=0?GREEN:RED));
-            doc.setFont('helvetica','bold');
-            doc.text((chg>=0?'+':'')+chg+'%',M+66,ry+3.8);
-            doc.setFont('helvetica','normal');st(...TEXT);
-          } else {
-            doc.text('—',M+66,ry+3.8);
-          }
-          doc.text((h.note||'').slice(0,45),M+86,ry+3.8);
+      const hist = (emp.salary.history||[]).slice().reverse();
+      if(hist.length > 0){
+        np(12);
+        doc.setFont('helvetica','bold'); doc.setFontSize(9); txt(...NAVY);
+        doc.text('Salary History', LM, y); y += 5;
+        ri = 0;
+        // header
+        rgb(...NAVY); box(LM,y,TW,6);
+        txt(...WHT); doc.setFontSize(8); doc.setFont('helvetica','bold');
+        doc.text('Date',   LM+2,  y+4);
+        doc.text('Amount', LM+35, y+4);
+        doc.text('Change', LM+72, y+4);
+        doc.text('Notes',  LM+92, y+4);
+        y += 6;
+        hist.forEach((h,i) => {
+          const prev = hist[i+1];
+          const chg  = prev ? Math.round((h.amount-prev.amount)/prev.amount*100) : null;
+          tr(ty => {
+            doc.text(fDate(h.date), LM+2, ty);
+            doc.text(fCur(h.amount, emp.salary.currency), LM+35, ty);
+            if(chg !== null){
+              txt(...(chg >= 0 ? GRN : RED));
+              doc.setFont('helvetica','bold');
+              doc.text((chg>=0?'+':'')+chg+'%', LM+72, ty);
+              doc.setFont('helvetica','normal'); txt(...LTXT);
+            } else {
+              doc.text(' - ', LM+72, ty);
+            }
+            doc.text((h.note||'').slice(0,45), LM+92, ty);
+          });
+        });
+        y += 3;
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // TRAINING
+    // ══════════════════════════════════════════════════════════════════════════
+    if(asgns.length > 0){
+      sec('Training Assignments ('+asgns.length+')');
+      ri = 0;
+      // header
+      rgb(...NAVY); box(LM,y,TW,6);
+      txt(...WHT); doc.setFontSize(8); doc.setFont('helvetica','bold');
+      doc.text('Program', LM+2,   y+4);
+      doc.text('Status',  LM+75,  y+4);
+      doc.text('Due',     LM+100, y+4);
+      doc.text('Score',   LM+128, y+4);
+      doc.text('%',       LM+148, y+4);
+      y += 6;
+      const trc = {'completed':GRN,'in-progress':BLU,'not-started':MTXT,'overdue':AMB,'failed':RED};
+      asgns.forEach(a => {
+        const prog = gP(a.programId);
+        const pct  = a.status==='completed' ? 100 : (a.progress||0);
+        const tc   = trc[a.status] || MTXT;
+        tr(ty => {
+          doc.text((prog&&prog.name||' - ').slice(0,34), LM+2, ty);
+          pill(TRST[a.status]&&TRST[a.status].label||a.status, tc, LM+73, ty-3.5, 24, 5);
+          doc.text(fDate(a.dueDate), LM+100, ty);
+          doc.text(a.score!=null ? a.score+'%' : ' - ', LM+128, ty);
+          rgb(220,218,228); box(LM+145, ty-3, 28, 2.5);
+          rgb(...tc); box(LM+145, ty-3, 28*pct/100, 2.5);
+          txt(...LTXT); doc.text(pct+'%', LM+175, ty);
         });
       });
-      y+=3;
+      y += 3;
     }
-  }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // TRAINING ASSIGNMENTS
-  // ══════════════════════════════════════════════════════════════════════════
-  if(assigns.length>0){
-    heading('Training Assignments');
-    rowIdx=0;
-    tableHead([['Program',2],['Status',75],['Due',100],['Score',125],['Progress',142]]);
-    const trColors={'completed':GREEN,'in-progress':BLUE,'not-started':MUTED,'overdue':AMBER,'failed':RED};
-    assigns.forEach(a=>{
-      const prog=gP(a.programId);
-      const pct=a.status==='completed'?100:(a.progress||0);
-      const tc=trColors[a.status]||MUTED;
-      tableRow(ry=>{
-        doc.text((prog?.name||'—').slice(0,32),M+2,ry+3.8);
-        statusPill(TRST[a.status]?.label||a.status,tc,M+73,ry+0.8,24,4.5);
-        doc.text(fDate(a.dueDate),M+100,ry+3.8);
-        doc.text(a.score!=null?a.score+'%':'—',M+125,ry+3.8);
-        // Progress bar
-        sf(220,218,228);doc.rect(M+142,ry+1.5,30,2.5,'F');
-        sf(...tc);doc.rect(M+142,ry+1.5,30*pct/100,2.5,'F');
-        st(...TEXT);doc.text(pct+'%',M+174,ry+3.8);
+    // ══════════════════════════════════════════════════════════════════════════
+    // EVENTS
+    // ══════════════════════════════════════════════════════════════════════════
+    if(evts.length > 0){
+      sec('Events History ('+evts.length+')');
+      ri = 0;
+      rgb(...NAVY); box(LM,y,TW,6);
+      txt(...WHT); doc.setFontSize(8); doc.setFont('helvetica','bold');
+      doc.text('Date',      LM+2,   y+4);
+      doc.text('Type',      LM+28,  y+4);
+      doc.text('Description', LM+55, y+4);
+      doc.text('Logged by', LM+142, y+4);
+      y += 6;
+      const evc = {absence:RED, warning:AMB, training:BLU, milestone:GRN};
+      evts.forEach(ev => {
+        const tc = evc[ev.type] || MTXT;
+        tr(ty => {
+          doc.text(fDate(ev.date), LM+2, ty);
+          pill(TCFG[ev.type]&&TCFG[ev.type].label||ev.type, tc, LM+26, ty-3.5, 22, 5);
+          doc.text((ev.desc||'').slice(0,55), LM+55, ty);
+          doc.text((ev.loggedBy||'').slice(0,20), LM+142, ty);
+        }, 6);
       });
-    });
-    y+=3;
-  }
+      y += 3;
+    }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // EVENTS HISTORY
-  // ══════════════════════════════════════════════════════════════════════════
-  if(evts.length>0){
-    heading('Events History ('+evts.length+')');
-    rowIdx=0;
-    tableHead([['Date',2],['Type',28],['Description',55],['Logged by',140]]);
-    const evColors={absence:RED,warning:AMBER,training:BLUE,milestone:GREEN};
-    evts.forEach(ev=>{
-      const tc=evColors[ev.type]||MUTED;
-      tableRow(ry=>{
-        doc.text(fDate(ev.date),M+2,ry+3.8);
-        statusPill(TCFG[ev.type]?.label||ev.type,tc,M+26,ry+0.8,22,4.5);
-        const desc=(ev.desc||'').slice(0,55);
-        doc.text(desc,M+55,ry+3.8);
-        doc.text((ev.loggedBy||'').slice(0,20),M+140,ry+3.8);
-      },5.5);
-    });
-    y+=3;
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // CHECKLIST
-  // ══════════════════════════════════════════════════════════════════════════
-  const cl=emp.checklist||emp.offChecklist||{};
-  const clEntries=Object.entries(cl);
-  if(clEntries.length>0){
-    heading((emp.status==='offboarded'?'Offboarding':'Onboarding')+' Checklist');
-    rowIdx=0;
-    const done=clEntries.filter(([,v])=>v).length;
-    doc.setFont('helvetica','normal');doc.setFontSize(8);st(...MUTED);
-    doc.text(done+'/'+clEntries.length+' items complete',M,y);y+=4;
-    clEntries.forEach(([item,isDone])=>{
-      tableRow(ry=>{
-        sf(...(isDone?GREEN:RED));
-        doc.ellipse(M+4,ry+2.8,2,2,'F');
-        doc.setFont('helvetica',isDone?'normal':'normal');st(...TEXT);
-        doc.text(item,M+10,ry+3.8);
-        doc.setFont('helvetica','bold');st(...(isDone?GREEN:RED));
-        doc.text(isDone?'✓ Complete':'Pending',PW-M-22,ry+3.8);
-        doc.setFont('helvetica','normal');st(...TEXT);
+    // ══════════════════════════════════════════════════════════════════════════
+    // CHECKLIST
+    // ══════════════════════════════════════════════════════════════════════════
+    const cl = emp.checklist || emp.offChecklist || {};
+    const cle = Object.entries(cl);
+    if(cle.length > 0){
+      const done = cle.filter(([,v])=>v).length;
+      sec((emp.status==='offboarded'?'Offboarding':'Onboarding')+' Checklist ('+done+'/'+cle.length+')');
+      ri = 0;
+      cle.forEach(([item, isDone]) => {
+        tr(ty => {
+          rgb(...(isDone ? GRN : RED)); box(LM+2, ty-2.5, 3.5, 3.5);
+          txt(...LTXT); doc.setFont('helvetica','normal');
+          doc.text(item, LM+9, ty);
+          txt(...(isDone ? GRN : RED)); doc.setFont('helvetica','bold');
+          doc.text(isDone ? 'Complete' : 'Pending', PW-RM-20, ty);
+          doc.setFont('helvetica','normal'); txt(...LTXT);
+        });
       });
-    });
-    y+=3;
-  }
+      y += 3;
+    }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // ATTACHED FILES
-  // ══════════════════════════════════════════════════════════════════════════
-  const empFiles=emp.files||[];
-  if(empFiles.length>0){
-    heading('Attached Files ('+empFiles.length+')');
-    rowIdx=0;
-    tableHead([['File name',2],['Size',110],['Uploaded',135],['By',160]]);
-    empFiles.forEach(f=>{
-      tableRow(ry=>{
-        doc.text((f.name||'').slice(0,48),M+2,ry+3.8);
-        doc.text(f.size||'',M+110,ry+3.8);
-        doc.text(f.uploadedAt?new Date(f.uploadedAt).toLocaleDateString('en-GB'):'',M+135,ry+3.8);
-        doc.text((f.uploadedBy||'').slice(0,18),M+160,ry+3.8);
+    // ══════════════════════════════════════════════════════════════════════════
+    // ATTACHED FILES
+    // ══════════════════════════════════════════════════════════════════════════
+    const empFiles = emp.files || [];
+    if(empFiles.length > 0){
+      sec('Attached Files ('+empFiles.length+')');
+      ri = 0;
+      rgb(...NAVY); box(LM,y,TW,6);
+      txt(...WHT); doc.setFontSize(8); doc.setFont('helvetica','bold');
+      doc.text('File name', LM+2,  y+4);
+      doc.text('Size',      LM+110, y+4);
+      doc.text('Date',      LM+135, y+4);
+      doc.text('By',        LM+158, y+4);
+      y += 6;
+      empFiles.forEach(f => {
+        tr(ty => {
+          doc.text((f.name||'').slice(0,50), LM+2,   ty);
+          doc.text(f.size||'',               LM+110, ty);
+          doc.text(f.uploadedAt ? new Date(f.uploadedAt).toLocaleDateString('en-GB') : '', LM+135, ty);
+          doc.text((f.uploadedBy||'').slice(0,18), LM+158, ty);
+        });
       });
-    });
-    y+=3;
-  }
+      y += 3;
+    }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // UPDATE ALL PAGE FOOTERS
-  // ══════════════════════════════════════════════════════════════════════════
-  const totalPg=doc.internal.getNumberOfPages();
-  for(let p=2;p<=totalPg;p++){
-    doc.setPage(p);
-    sf(...NAVY);doc.rect(0,286,PW,11,'F');
-    doc.setFont('helvetica','normal');doc.setFontSize(7);st(140,135,160);
-    doc.text('Moura HR — '+emp.name+' — Confidential',M,291.5);
-    doc.text('Page '+p+' of '+totalPg,PW-M,291.5,{align:'right'});
-  }
-  // Update page 1 footer with total
-  doc.setPage(1);
-  sf(...NAVY);doc.rect(0,286,PW,11,'F');
-  doc.setFont('helvetica','normal');doc.setFontSize(7);st(140,135,160);
-  doc.text('Moura HR — Employee Profile Report — Confidential',M,291.5);
-  doc.text('Page 1 of '+totalPg,PW-M,291.5,{align:'right'});
+    // ══════════════════════════════════════════════════════════════════════════
+    // UPDATE ALL PAGE FOOTERS WITH TOTAL COUNT
+    // ══════════════════════════════════════════════════════════════════════════
+    const totalPg = doc.internal.getNumberOfPages();
+    for(let p = 1; p <= totalPg; p++){
+      doc.setPage(p);
+      rgb(...NAVY); box(0,285,PW,12);
+      txt(150,145,170); doc.setFontSize(7); doc.setFont('helvetica','normal');
+      if(p===1){
+        doc.text('Moura HR  -  Employee Profile Report  -  Confidential', LM, 290);
+      } else {
+        doc.text('Moura HR  -  '+emp.name+'  -  Confidential', LM, 290);
+      }
+      doc.text('Page '+p+' of '+totalPg, PW-RM, 290, {align:'right'});
+    }
 
-  } catch(drawErr){
-    console.error('PDF drawing error:', drawErr);
-    toast('PDF generation failed: '+(drawErr.message||drawErr)+'. Check browser console.','error');
-    hideLoader();
-    return;
-  }
+    // ══════════════════════════════════════════════════════════════════════════
+    // DOWNLOAD
+    // ══════════════════════════════════════════════════════════════════════════
+    const safeName = (emp.name||'Employee').replace(/[^a-zA-Z0-9]/g,'_');
+    const filename = 'Moura_HR_'+safeName+'_Profile.pdf';
 
-  // ── Save — base64 data URI (works on GitHub Pages, no CSP issues) ────────────
-  try {
-    const safeName=(emp.name||'Employee').replace(/[^a-zA-Z0-9]/g,'_');
-    const filename='Moura_HR_'+safeName+'_Profile.pdf';
-
-    // Use base64 data URI — bypasses Content Security Policy on GitHub Pages
-    const pdfBase64 = doc.output('datauristring');
-
-    const link = document.createElement('a');
-    link.href = pdfBase64;
-    link.download = filename;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    toast('✓ PDF downloaded: '+filename,'success');
-    addAudit(CU.name,'Downloaded PDF profile for '+emp.name);
-
-  } catch(saveErr) {
-    console.error('PDF save error:', saveErr);
-    // Final fallback — open PDF in new tab
     try {
-      const pdfBase64 = doc.output('datauristring');
-      window.open(pdfBase64,'_blank');
-      toast('PDF opened in new tab — use browser Save As to download.','info');
-    } catch(e2){
-      toast('PDF generation failed. Please try again.','error');
+      // Primary: data URI download
+      const dataUri = doc.output('datauristring');
+      const a = document.createElement('a');
+      a.href = dataUri;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(()=>document.body.removeChild(a), 1000);
+      toast('✓ PDF downloaded: '+filename,'success');
+      addAudit(CU.name, 'Downloaded PDF profile for '+emp.name);
+    } catch(dlErr){
+      // Fallback: open in new tab
+      console.warn('Direct download failed, opening in tab:', dlErr);
+      const dataUri = doc.output('datauristring');
+      window.open(dataUri, '_blank');
+      toast('PDF opened in new tab  -  press Ctrl+S to save', 'info');
     }
+
+  } catch(err){
+    console.error('PDF generation error:', err);
+    toast('PDF error: '+(err.message||String(err)), 'error');
   }
 }
+
 
 // ─── INVITE LINK GENERATOR ────────────────────────────────────────────────────
 function generateInviteLink(){
