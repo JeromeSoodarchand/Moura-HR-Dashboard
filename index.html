@@ -281,6 +281,49 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 .file-item-actions{display:flex;gap:4px;flex-shrink:0}
 
 /* ── ANIMATIONS ──────────────────────────────────────────────────────────── */
+
+/* ── ATTENDANCE MODULE ── */
+.att-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.att-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;position:relative;overflow:hidden}
+.att-card-accent{position:absolute;top:0;left:0;width:3px;height:100%}
+.att-card-label{font-size:11.5px;color:var(--text2);margin-bottom:6px}
+.att-card-value{font-size:24px;font-weight:600;color:var(--text)}
+.att-card-sub{font-size:11px;color:var(--text3);margin-top:4px}
+.att-live{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:16px}
+.att-emp-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px 14px;display:flex;align-items:center;gap:10px;transition:all .15s}
+.att-emp-card.clocked-in{border-color:var(--green);background:var(--green-light)}
+.att-emp-card.clocked-out{border-color:var(--border);opacity:.7}
+.att-status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.att-status-dot.in{background:var(--green);box-shadow:0 0 0 3px rgba(29,158,117,.2)}
+.att-status-dot.out{background:var(--text3)}
+.att-emp-info{flex:1;min-width:0}
+.att-emp-name{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.att-emp-time{font-size:11px;color:var(--text3);margin-top:1px}
+.att-emp-hours{font-size:11px;font-weight:600;color:var(--green)}
+.qr-scanner-wrap{position:relative;width:100%;max-width:320px;margin:0 auto;border-radius:var(--radius-lg);overflow:hidden;background:#000}
+.qr-scanner-wrap video{width:100%;display:block}
+.qr-scanner-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.qr-scanner-frame{width:200px;height:200px;border:3px solid var(--gold);border-radius:12px;position:relative}
+.qr-scanner-frame::before,.qr-scanner-frame::after{content:'';position:absolute;width:24px;height:24px;border-color:var(--gold);border-style:solid}
+.qr-scanner-frame::before{top:-3px;left:-3px;border-width:4px 0 0 4px;border-radius:6px 0 0 0}
+.qr-scanner-frame::after{bottom:-3px;right:-3px;border-width:0 4px 4px 0;border-radius:0 0 6px 0}
+.qr-scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);animation:scanLine 2s linear infinite}
+@keyframes scanLine{0%{top:0}100%{top:100%}}
+.location-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:11.5px;font-weight:500;background:var(--navy-light);color:var(--navy)}
+.qr-location-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;text-align:center;cursor:pointer;transition:all .15s}
+.qr-location-card:hover{border-color:var(--gold);box-shadow:0 2px 12px rgba(214,147,40,.15)}
+.qr-location-card.selected{border-color:var(--gold);background:var(--gold-light)}
+.mobile-clock-btn{width:100%;padding:16px;font-size:15px;font-weight:600;border-radius:var(--radius-lg);border:none;cursor:pointer;font-family:inherit;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:10px}
+.mobile-clock-in{background:var(--green);color:#fff;box-shadow:0 4px 16px rgba(29,158,117,.35)}
+.mobile-clock-in:hover{background:var(--green-dark)}
+.mobile-clock-out{background:var(--red);color:#fff;box-shadow:0 4px 16px rgba(216,90,48,.35)}
+.mobile-clock-out:hover{background:var(--red-deep)}
+.att-report-table tbody td{padding:9px 12px}
+.hours-pill{display:inline-flex;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.hours-pill.good{background:var(--green-light);color:var(--green-deep)}
+.hours-pill.warn{background:var(--amber-light);color:var(--amber-deep)}
+.hours-pill.low{background:var(--red-light);color:var(--red-deep)}
+
 @keyframes sIn{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
 @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -301,6 +344,8 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 
@@ -384,6 +429,10 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
     <button class="nav-tab" data-perm="view_events" onclick="showPage('events',this)">
       <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
       <span class="tab-label">Events log</span>
+    </button>
+    <button class="nav-tab" data-perm="view_employees" onclick="showPage('attendance',this)">
+      <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+      <span class="tab-label">Attendance</span>
     </button>
     <button class="nav-tab" data-perm="view_training" onclick="showPage('training',this)">
       <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
@@ -489,6 +538,52 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
         <div class="ph-actions"><button class="btn btn-primary" data-perm-btn="add_employees" onclick="openModal('addEmployee')">+ New Hire</button></div>
       </div>
       <div class="kanban" id="onb-kanban"></div>
+    </div>
+
+    <!-- ATTENDANCE -->
+    <div class="page" id="page-attendance">
+      <div class="ph">
+        <div class="ph-title">Attendance</div>
+        <div class="ph-actions">
+          <button class="btn" onclick="exportAttendanceCSV()">⬇ Export CSV</button>
+          <button class="btn btn-blue" onclick="openAttendanceModal('scanQR')">📷 Clock In / Out</button>
+          <button class="btn btn-primary ahr-btn" onclick="openAttendanceModal('manageLocations')">🏢 Manage Locations</button>
+        </div>
+      </div>
+
+      <!-- Live board -->
+      <div class="card" style="margin-bottom:14px">
+        <div class="ch">
+          <span class="ct"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--green)"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Live — Who is on site right now</span>
+          <span class="ts tm" id="att-live-count"></span>
+        </div>
+        <div class="cb" id="att-live-board" style="padding:12px"></div>
+      </div>
+
+      <!-- Today summary metrics -->
+      <div class="att-grid" id="att-metrics"></div>
+
+      <!-- Report filters -->
+      <div class="card">
+        <div class="ch">
+          <span class="ct">Attendance report</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="date" class="si" id="att-date-from" style="width:140px">
+            <span class="tm txs">to</span>
+            <input type="date" class="si" id="att-date-to" style="width:140px">
+            <select class="si" id="att-dept-filter" style="width:130px" onchange="renderAttendanceReport()">
+              <option value="">All departments</option>
+            </select>
+            <button class="btn btn-primary" onclick="renderAttendanceReport()">Filter</button>
+          </div>
+        </div>
+        <div class="cb" style="padding:0">
+          <table class="att-report-table">
+            <thead><tr><th>Employee</th><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Hours</th><th>Location</th><th>Notes</th><th class="ahr-btn">Action</th></tr></thead>
+            <tbody id="att-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- EVENTS -->
@@ -774,6 +869,13 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 </div>
 
 <!-- MODAL -->
+
+<div id="att-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--bg);border-radius:var(--radius-lg);width:400px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div id="att-modal-content"></div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="mb" onclick="if(event.target===this)closeModal()">
   <div class="modal-box" id="mbox"></div>
 </div>
@@ -1681,7 +1783,7 @@ const TRST={'not-started':{label:'Not Started',cls:'b-not-started'},'in-progress
 const TRCOL={'not-started':'#888','in-progress':'#378ADD',completed:'#1D9E75',failed:'#D85A30',overdue:'#BA7517'};
 const sB=s=>({active:'<span class="badge b-active">Active</span>',onboarding:'<span class="badge b-onboarding">Onboarding</span>',offboarded:'<span class="badge b-offboarded">Offboarded</span>'}[s]||s);
 
-const PAGE_TITLES={dashboard:'Dashboard',employees:'Employees',onboarding:'Onboarding',events:'Events log',training:'Training tracker',offboarding:'Offboarding',analytics:'Analytics',usermgmt:'User management',settings:'Settings'};
+const PAGE_TITLES={dashboard:'Dashboard',attendance:'Attendance',employees:'Employees',onboarding:'Onboarding',events:'Events log',training:'Training tracker',offboarding:'Offboarding',analytics:'Analytics',usermgmt:'User management',settings:'Settings'};
 function showPage(id,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
@@ -3947,6 +4049,390 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&document.getElementById('login-screen').style.display==='flex')doLogin();
   if(e.key==='Escape')closeModal();
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// ATTENDANCE MODULE
+// ════════════════════════════════════════════════════════════════════════════
+
+let _attendance = [];
+let _attLocations = [];
+let _qrScanner = null;
+
+async function dbGetAttendance(dateFrom, dateTo){
+  const local = S.get('attendance', []);
+  if(!sbReady()) return local;
+  try{
+    let q = _sb.from('attendance').select('*').order('clock_in', {ascending:false});
+    if(dateFrom) q = q.gte('date', dateFrom);
+    if(dateTo)   q = q.lte('date', dateTo);
+    const {data, error} = await q;
+    if(error){ console.error('dbGetAttendance:', error); return local; }
+    return data.map(rowToAtt);
+  } catch(e){ return local; }
+}
+
+async function dbSaveAttendance(rec){
+  const local = S.get('attendance', []);
+  const i = local.findIndex(r => String(r.id) === String(rec.id));
+  if(i>=0) local[i]=rec; else local.push(rec);
+  S.set('attendance', local);
+  _attendance = local;
+  if(!sbReady()) return rec;
+  try{
+    const row = attToRow(rec);
+    if(rec.id && String(rec.id).length < 13){
+      const {data,error} = await _sb.from('attendance').update(row).eq('id',rec.id).select().single();
+      if(error){ console.error('Update attendance:', error); return rec; }
+      return data ? rowToAtt(data) : rec;
+    } else {
+      delete row.id;
+      const {data,error} = await _sb.from('attendance').insert(row).select().single();
+      if(error){ console.error('Insert attendance:', error); return rec; }
+      return data ? rowToAtt(data) : rec;
+    }
+  } catch(e){ console.error('dbSaveAttendance:', e); return rec; }
+}
+
+async function dbGetLocations(){
+  const local = S.get('attLocations', []);
+  if(!sbReady()) return local.length ? local : [{id:1,name:'Main Office',qrCode:'LOC-MAIN-001',address:''}];
+  try{
+    const {data,error} = await _sb.from('att_locations').select('*');
+    if(error){ return local.length ? local : [{id:1,name:'Main Office',qrCode:'LOC-MAIN-001',address:''}]; }
+    const locs = data.map(r => ({id:r.id,name:r.name,qrCode:r.qr_code,address:r.address||''}));
+    S.set('attLocations', locs);
+    return locs;
+  } catch(e){ return local.length ? local : [{id:1,name:'Main Office',qrCode:'LOC-MAIN-001',address:''}]; }
+}
+
+async function dbSaveLocation(loc){
+  const local = S.get('attLocations', []);
+  const i = local.findIndex(l => String(l.id) === String(loc.id));
+  if(i>=0) local[i]=loc; else local.push(loc);
+  S.set('attLocations', local);
+  _attLocations = local;
+  if(!sbReady()) return loc;
+  try{
+    const row = {name:loc.name,qr_code:loc.qrCode,address:loc.address||''};
+    if(loc.id && String(loc.id).length < 13){
+      await _sb.from('att_locations').update(row).eq('id',loc.id);
+    } else {
+      delete row.id;
+      const {data} = await _sb.from('att_locations').insert(row).select().single();
+      if(data) loc.id = data.id;
+    }
+  } catch(e){ console.error('dbSaveLocation:', e); }
+  return loc;
+}
+
+async function dbDeleteLocation(id){
+  const local = S.get('attLocations', []).filter(l => String(l.id) !== String(id));
+  S.set('attLocations', local);
+  _attLocations = local;
+  if(!sbReady()) return;
+  try{ await _sb.from('att_locations').delete().eq('id', id); } catch(e){}
+}
+
+function rowToAtt(r){
+  return { id:r.id, empId:r.emp_id, clockIn:r.clock_in, clockOut:r.clock_out,
+    date:r.date, durationMinutes:r.duration_minutes,
+    location:r.location, locationId:r.location_id,
+    lat:r.lat, lng:r.lng, notes:r.notes||'' };
+}
+function attToRow(r){
+  const row = { emp_id:r.empId, clock_in:r.clockIn, clock_out:r.clockOut||null,
+    date:r.date, duration_minutes:r.durationMinutes||null,
+    location:r.location||'', location_id:r.locationId||null,
+    lat:r.lat||null, lng:r.lng||null, notes:r.notes||'' };
+  Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
+  return row;
+}
+function fmtTime(isoStr){ if(!isoStr)return '—'; return new Date(isoStr).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); }
+function calcDuration(ci,co){ if(!ci||!co)return null; return Math.round((new Date(co)-new Date(ci))/60000); }
+function fmtDuration(mins){ if(!mins)return '—'; const h=Math.floor(mins/60),m=mins%60; return h>0?h+'h '+m+'m':m+'m'; }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function getEmployeeActiveRecord(empId){
+  return _attendance.find(r=>String(r.empId)===String(empId)&&r.date===todayStr()&&!r.clockOut);
+}
+
+async function renderAttendance(){
+  [_attendance, _attLocations] = await Promise.all([dbGetAttendance(todayStr(),todayStr()),dbGetLocations()]);
+  renderAttLiveBoard();
+  renderAttMetrics();
+  renderAttReportFilters();
+  renderAttendanceReport();
+}
+
+function renderAttLiveBoard(){
+  const emps = getEmps().filter(e=>e.status!=='offboarded');
+  const clockedIn = _attendance.filter(r=>r.date===todayStr()&&!r.clockOut);
+  const lc = document.getElementById('att-live-count');
+  if(lc) lc.textContent = clockedIn.length+' on site';
+  const board = document.getElementById('att-live-board');
+  if(!board) return;
+  board.innerHTML = '<div class="att-live">'+emps.map(emp=>{
+    const rec = getEmployeeActiveRecord(emp.id);
+    const c = aColor(emp.name);
+    const since = rec ? fmtTime(rec.clockIn) : null;
+    const elapsed = rec ? calcDuration(rec.clockIn,new Date().toISOString()) : null;
+    return '<div class="att-emp-card '+(rec?'clocked-in':'clocked-out')+'">'+
+      '<div class="att-status-dot '+(rec?'in':'out')+'"></div>'+
+      '<div class="avatar" style="background:'+c+'22;color:'+c+';width:28px;height:28px;font-size:10px;flex-shrink:0">'+inits(emp.name)+'</div>'+
+      '<div class="att-emp-info">'+
+        '<div class="att-emp-name">'+emp.name+'</div>'+
+        '<div class="att-emp-time">'+(rec?'In since '+since:'Not clocked in')+'</div>'+
+        (rec&&elapsed?'<div class="att-emp-hours">'+fmtDuration(elapsed)+'</div>':'')+
+      '</div></div>';
+  }).join('')+'</div>';
+}
+
+function renderAttMetrics(){
+  const el = document.getElementById('att-metrics');
+  if(!el) return;
+  const todays = _attendance.filter(r=>r.date===todayStr());
+  const active = todays.filter(r=>!r.clockOut).length;
+  const avgMins = todays.filter(r=>r.durationMinutes).reduce((s,r)=>s+r.durationMinutes,0)/(todays.filter(r=>r.durationMinutes).length||1);
+  const late = todays.filter(r=>r.clockIn&&new Date(r.clockIn).getHours()>=9).length;
+  el.innerHTML =
+    '<div class="att-card"><div class="att-card-accent" style="background:var(--green)"></div><div class="att-card-label">On site now</div><div class="att-card-value">'+active+'</div><div class="att-card-sub">employees clocked in</div></div>'+
+    '<div class="att-card"><div class="att-card-accent" style="background:var(--navy)"></div><div class="att-card-label">Clock-ins today</div><div class="att-card-value">'+todays.length+'</div><div class="att-card-sub">total records today</div></div>'+
+    '<div class="att-card"><div class="att-card-accent" style="background:var(--gold)"></div><div class="att-card-label">Avg hours (completed)</div><div class="att-card-value">'+fmtDuration(Math.round(avgMins))+'</div><div class="att-card-sub">per employee today</div></div>'+
+    '<div class="att-card"><div class="att-card-accent" style="background:var(--amber)"></div><div class="att-card-label">Late arrivals</div><div class="att-card-value">'+late+'</div><div class="att-card-sub">clocked in after 09:00</div></div>';
+}
+
+function renderAttReportFilters(){
+  const from = document.getElementById('att-date-from');
+  const to = document.getElementById('att-date-to');
+  if(!from||!to) return;
+  if(!from.value){ const d7=new Date();d7.setDate(d7.getDate()-6);from.value=d7.toISOString().slice(0,10); }
+  if(!to.value) to.value = todayStr();
+  const sel = document.getElementById('att-dept-filter');
+  if(!sel) return;
+  const depts = [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))];
+  sel.innerHTML = '<option value="">All departments</option>'+depts.map(d=>'<option>'+d+'</option>').join('');
+}
+
+async function renderAttendanceReport(){
+  const from = document.getElementById('att-date-from');
+  const to = document.getElementById('att-date-to');
+  const deptF = document.getElementById('att-dept-filter');
+  if(!from||!to) return;
+  const recs = await dbGetAttendance(from.value, to.value);
+  _attendance = recs;
+  const empIds = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||!deptF.value||e.dept===deptF.value)).map(e=>e.id);
+  let list = recs.filter(r=>empIds.some(id=>String(id)===String(r.empId)));
+  list.sort((a,b)=>new Date(b.clockIn)-new Date(a.clockIn));
+  const tbody = document.getElementById('att-tbody');
+  if(!tbody) return;
+  tbody.innerHTML = list.length===0
+    ? '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:20px">No records for this period.</td></tr>'
+    : list.map(r=>{
+        const emp=gE(r.empId),c=emp?aColor(emp.name):'#888';
+        const dur=r.durationMinutes,cls=dur>=480?'good':dur>=240?'warn':'low';
+        return '<tr>'+
+          '<td><div class="emp-cell"><div class="avatar" style="background:'+c+'22;color:'+c+';width:26px;height:26px;font-size:10px">'+( emp?inits(emp.name):'?')+'</div><div style="font-weight:500">'+(emp?emp.name:'Unknown')+'</div></div></td>'+
+          '<td class="tm">'+fDate(r.date)+'</td>'+
+          '<td style="font-weight:500;color:var(--green)">'+fmtTime(r.clockIn)+'</td>'+
+          '<td style="color:'+(r.clockOut?'var(--red)':'var(--amber)')+'">'+( r.clockOut?fmtTime(r.clockOut):'<span class="badge b-in-progress">On site</span>')+'</td>'+
+          '<td>'+(dur?'<span class="hours-pill '+cls+'">'+fmtDuration(dur)+'</span>':'—')+'</td>'+
+          '<td class="tm txs">'+(r.location||'—')+'</td>'+
+          '<td class="tm txs">'+(r.notes||'—')+'</td>'+
+          '<td>'+(canEdit()?'<div style="display:flex;gap:4px">'+(!r.clockOut?'<button class="btn btn-xs btn-primary" onclick="manualClockOut('+JSON.stringify(r.id)+')">Clock out</button>':'')+' <button class="btn btn-xs btn-danger" onclick="deleteAttRecord('+JSON.stringify(r.id)+')" >X</button></div>':'')+'</td>'+
+        '</tr>';
+      }).join('');
+}
+
+function openAttendanceModal(type){
+  const modal=document.getElementById('att-modal');
+  const content=document.getElementById('att-modal-content');
+  if(!modal||!content) return;
+  modal.style.display='flex';
+  if(type==='scanQR'){
+    const emp=getEmps().find(e=>e.email===CU.email||String(e.id)===String(CU.id))||null;
+    const activeRec=emp?getEmployeeActiveRecord(emp.id):null;
+    const isClockedIn=!!activeRec;
+    const c=emp?aColor(emp.name):'#888';
+    content.innerHTML='<div style="padding:20px">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">'+
+        '<div style="font-size:15px;font-weight:600">Camera - Clock '+(isClockedIn?'Out':'In')+'</div>'+
+        '<button onclick="closeAttModal()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--text3)">X</button>'+
+      '</div>'+
+      (emp?'<div style="background:var(--bg2);border-radius:var(--radius);padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:10px">'+
+        '<div class="avatar" style="background:'+c+'22;color:'+c+'">'+inits(emp.name)+'</div>'+
+        '<div><div style="font-weight:500">'+emp.name+'</div>'+
+        '<div class="txs tm">'+(isClockedIn?'Clocked in at '+fmtTime(activeRec.clockIn)+' - '+activeRec.location:'Not clocked in today')+'</div></div>'+
+        '<span class="badge '+(isClockedIn?'b-active':'b-not-started')+'" style="margin-left:auto">'+(isClockedIn?'On site':'Off site')+'</span>'+
+      '</div>':'<div class="tm txs" style="margin-bottom:12px">Scan a location QR code to record attendance.</div>')+
+      '<div class="qr-scanner-wrap" id="qr-video-wrap">'+
+        '<video id="qr-video" playsinline autoplay muted style="width:100%;border-radius:var(--radius-lg)"></video>'+
+        '<div class="qr-scanner-overlay"><div class="qr-scanner-frame"><div class="qr-scan-line"></div></div></div>'+
+      '</div>'+
+      '<div id="qr-status" style="text-align:center;padding:12px;font-size:13px;color:var(--text3)">Point camera at a location QR code</div>'+
+      '<div style="margin-top:4px"><div style="font-size:11.5px;font-weight:600;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Or select location manually</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+        _attLocations.map(loc=>'<div class="qr-location-card" onclick="processClockAction('+JSON.stringify(loc.id)+','+JSON.stringify(loc.name)+','+isClockedIn+','+(emp?JSON.stringify(emp.id):'null')+')"><div style="font-size:18px;margin-bottom:4px">&#127970;</div><div style="font-size:12.5px;font-weight:500">'+loc.name+'</div>'+(loc.address?'<div class="txs tm">'+loc.address+'</div>':'')+' </div>').join('')+
+      '</div></div></div>';
+    startQRScanner(isClockedIn, emp);
+  } else if(type==='manageLocations'){
+    renderManageLocations(content);
+  }
+}
+
+function renderManageLocations(content){
+  content.innerHTML='<div style="padding:20px">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">'+
+      '<div style="font-size:15px;font-weight:600">Locations & QR Codes</div>'+
+      '<button onclick="closeAttModal()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--text3)">X</button>'+
+    '</div>'+
+    '<div id="locations-list">'+
+      (_attLocations.map(loc=>'<div style="background:var(--bg2);border-radius:var(--radius);padding:12px;margin-bottom:10px;display:flex;gap:10px;align-items:flex-start">'+
+        '<div style="flex:1"><div style="font-weight:500;font-size:13px">'+loc.name+'</div>'+(loc.address?'<div class="txs tm">'+loc.address+'</div>':'')+
+        '<div style="font-size:11px;color:var(--text3);margin-top:4px;font-family:monospace">QR: '+loc.qrCode+'</div></div>'+
+        '<div id="qr-'+loc.id+'" style="flex-shrink:0"></div>'+
+        '<div style="display:flex;flex-direction:column;gap:4px">'+
+          '<button class="btn btn-xs" onclick="printLocationQR('+JSON.stringify(loc.id)+','+JSON.stringify(loc.name)+','+JSON.stringify(loc.qrCode)+')">Print QR</button>'+
+          '<button class="btn btn-xs btn-danger" onclick="removeLocation('+JSON.stringify(loc.id)+')">Remove</button>'+
+        '</div></div>').join('')||'<div class="tm txs" style="padding:12px;text-align:center">No locations yet.</div>')+
+    '</div>'+
+    '<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">'+
+      '<div style="font-size:12px;font-weight:500;margin-bottom:8px">Add new location</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+        '<input class="fi" id="loc-name" placeholder="Location name" style="flex:1;min-width:140px">'+
+        '<input class="fi" id="loc-addr" placeholder="Address (optional)" style="flex:1;min-width:140px">'+
+        '<button class="btn btn-primary" onclick="addLocation()">+ Add</button>'+
+      '</div></div></div>';
+  setTimeout(()=>{
+    _attLocations.forEach(loc=>{
+      const el=document.getElementById('qr-'+loc.id);
+      if(el&&window.QRCode){el.innerHTML='';new QRCode(el,{text:loc.qrCode,width:64,height:64,colorDark:'#1E1445',colorLight:'#ffffff'});}
+    });
+  },100);
+}
+
+async function addLocation(){
+  const name=(document.getElementById('loc-name')||{}).value||'';
+  if(!name.trim()){toast('Location name required.','error');return;}
+  const addr=(document.getElementById('loc-addr')||{}).value||'';
+  const qrCode='LOC-'+name.toUpperCase().replace(/[^A-Z0-9]/g,'-')+'-'+Date.now().toString(36).toUpperCase();
+  const loc={id:Date.now(),name:name.trim(),address:addr,qrCode};
+  showLoader('Saving...');
+  await dbSaveLocation(loc);
+  hideLoader();
+  _attLocations=S.get('attLocations',[]);
+  renderManageLocations(document.getElementById('att-modal-content'));
+  toast('Location "'+name+'" added.','success');
+}
+
+async function removeLocation(id){
+  if(!confirm('Remove this location?'))return;
+  await dbDeleteLocation(id);
+  _attLocations=S.get('attLocations',[]);
+  renderManageLocations(document.getElementById('att-modal-content'));
+  toast('Location removed.','success');
+}
+
+function printLocationQR(id,name,qrCode){
+  const win=window.open('','_blank','width=400,height=500');
+  win.document.write('<!DOCTYPE html><html><head><title>QR - '+name+'</title><style>body{font-family:-apple-system,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0}.title{font-size:22px;font-weight:700;color:#1E1445;margin-bottom:4px}.sub{font-size:13px;color:#888;margin-bottom:20px}.code{font-size:11px;color:#aaa;margin-top:16px;font-family:monospace}</style></head><body><div class="title">Moura HR</div><div class="sub">Attendance - '+name+'</div><div id="qr"></div><div class="code">'+qrCode+'</div><scr'+'ipt src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></scr'+'ipt><scr'+'ipt>new QRCode(document.getElementById("qr"),{text:"'+qrCode+'",width:200,height:200,colorDark:"#1E1445"});setTimeout(function(){window.print();},800);</scr'+'ipt></body></html>');
+  win.document.close();
+}
+
+async function startQRScanner(isClockedIn, emp){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    const video=document.getElementById('qr-video');
+    if(!video){stream.getTracks().forEach(t=>t.stop());return;}
+    video.srcObject=stream;
+    _qrScanner=stream;
+    const canvas=document.createElement('canvas');
+    const ctx=canvas.getContext('2d');
+    function scan(){
+      if(!document.getElementById('qr-video')){stream.getTracks().forEach(t=>t.stop());return;}
+      if(video.readyState===video.HAVE_ENOUGH_DATA){
+        canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+        ctx.drawImage(video,0,0);
+        const imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
+        const code=window.jsQR&&window.jsQR(imgData.data,imgData.width,imgData.height,{inversionAttempts:'dontInvert'});
+        if(code&&code.data){
+          const loc=_attLocations.find(l=>l.qrCode===code.data);
+          if(loc){stopQRScanner();processClockAction(loc.id,loc.name,isClockedIn,emp?emp.id:null);return;}
+          else{const s=document.getElementById('qr-status');if(s)s.textContent='Unknown QR code. Try another.';}
+        }
+      }
+      requestAnimationFrame(scan);
+    }
+    video.onloadedmetadata=()=>requestAnimationFrame(scan);
+  } catch(err){
+    const wrap=document.getElementById('qr-video-wrap');
+    if(wrap)wrap.innerHTML='<div style="padding:24px;text-align:center;color:var(--text3)"><div style="font-size:32px;margin-bottom:8px">📷</div><div style="font-size:13px">Camera not available.<br>Use manual selector below.</div></div>';
+  }
+}
+
+function stopQRScanner(){ if(_qrScanner){_qrScanner.getTracks().forEach(t=>t.stop());_qrScanner=null;} }
+
+async function processClockAction(locationId, locationName, isClockedIn, empId){
+  if(!empId){ const emp=getEmps().find(e=>e.email===CU.email||String(e.id)===String(CU.id)); empId=emp?emp.id:null; }
+  if(!empId){toast('Your employee record not found. Contact HR.','error');return;}
+  showLoader(isClockedIn?'Clocking out...':'Clocking in...');
+  if(isClockedIn){
+    const rec=getEmployeeActiveRecord(empId);
+    if(rec){
+      rec.clockOut=new Date().toISOString();
+      rec.durationMinutes=calcDuration(rec.clockIn,rec.clockOut);
+      await dbSaveAttendance(rec);
+      hideLoader();closeAttModal();await renderAttendance();
+      toast('Clocked out from '+locationName+'. '+fmtDuration(rec.durationMinutes)+' on site.','success');
+    } else { hideLoader();toast('No open clock-in found.','error'); }
+  } else {
+    const rec={id:Date.now(),empId,clockIn:new Date().toISOString(),clockOut:null,date:todayStr(),durationMinutes:null,location:locationName,locationId:locationId,notes:''};
+    try{ await new Promise(resolve=>{navigator.geolocation.getCurrentPosition(pos=>{rec.lat=pos.coords.latitude;rec.lng=pos.coords.longitude;resolve();},()=>resolve(),{timeout:3000});}); } catch(e){}
+    await dbSaveAttendance(rec);
+    hideLoader();closeAttModal();await renderAttendance();
+    const emp=gE(empId);
+    toast((emp?emp.name:'You')+' clocked in at '+locationName+'.','success');
+    dbAddAudit(CU.name,'Clock in: '+(emp?emp.name:empId)+' at '+locationName);
+  }
+}
+
+function closeAttModal(){ stopQRScanner(); const m=document.getElementById('att-modal');if(m)m.style.display='none'; }
+
+async function manualClockOut(recId){
+  const rec=_attendance.find(r=>String(r.id)===String(recId));if(!rec)return;
+  rec.clockOut=new Date().toISOString();rec.durationMinutes=calcDuration(rec.clockIn,rec.clockOut);
+  showLoader('Saving...');await dbSaveAttendance(rec);hideLoader();await renderAttendance();
+  toast('Clocked out. '+fmtDuration(rec.durationMinutes)+' recorded.','success');
+}
+
+async function deleteAttRecord(recId){
+  if(!confirm('Delete this attendance record?'))return;
+  _attendance=_attendance.filter(r=>String(r.id)!==String(recId));
+  const local=S.get('attendance',[]).filter(r=>String(r.id)!==String(recId));
+  S.set('attendance',local);
+  if(sbReady())try{await _sb.from('attendance').delete().eq('id',recId);}catch(e){}
+  await renderAttendance();toast('Record deleted.','info');
+}
+
+function exportAttendanceCSV(){
+  const rows=[['Employee','Department','Date','Clock In','Clock Out','Duration','Location','Notes']];
+  [..._attendance].sort((a,b)=>new Date(b.clockIn)-new Date(a.clockIn)).forEach(r=>{
+    const emp=gE(r.empId);
+    rows.push([emp?emp.name:'',emp?emp.dept:'',r.date,fmtTime(r.clockIn),fmtTime(r.clockOut),fmtDuration(r.durationMinutes),r.location||'',r.notes||'']);
+  });
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='attendance_'+todayStr()+'.csv';a.click();
+  toast('Attendance exported.','success');
+}
+
+// Close att modal on backdrop click
+document.getElementById('att-modal').addEventListener('click',function(e){if(e.target===document.getElementById('att-modal'))closeAttModal();});
+
+// Hook showPage to render attendance
+const _showPageOrigAtt = showPage;
+window.showPage = function(id, el){
+  _showPageOrigAtt(id, el);
+  if(id==='attendance') renderAttendance();
+};
+
 </script>
 </body>
 </html>
