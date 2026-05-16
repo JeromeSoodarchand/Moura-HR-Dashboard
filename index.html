@@ -1352,6 +1352,7 @@ async function boot(){
       app.style.display='flex';app.style.flexDirection='row';
       applyPermissions();
       applyStoredBranding();
+      initInactivityTracking();
       // Init Supabase if not already
       const sbUrl=localStorage.getItem('sb_url')||'';
       const sbKey=localStorage.getItem('sb_key')||'';
@@ -1535,14 +1536,95 @@ async function doLogin(){
   if(_nel)_nel.textContent=org;
   applyPermissions();
   renderDashboard();
+  initInactivityTracking();
   toast('Welcome back, '+user.name+'!','success');
 }
 
 function doLogout(){
+  clearInactivityTimers();
   addAudit(CU?.name||'User','Logged out');
   CU=null;S.set('session',null);
   location.reload();
 }
+
+// ─── INACTIVITY TIMER ────────────────────────────────────────────────────────
+let _inactivityWarn  = null; // fires at 5 min → show warning
+let _inactivityAuto  = null; // fires at 15 min → force logout
+let _inactivityToast = null; // the warning toast element
+const WARN_MS = 5  * 60 * 1000;  // 5 minutes
+const AUTO_MS = 15 * 60 * 1000;  // 15 minutes
+
+function resetInactivityTimers(){
+  if(!CU) return; // only track when logged in
+  clearInactivityTimers();
+  _inactivityWarn = setTimeout(showInactivityWarning, WARN_MS);
+  _inactivityAuto = setTimeout(autoLogout, AUTO_MS);
+}
+
+function clearInactivityTimers(){
+  if(_inactivityWarn) clearTimeout(_inactivityWarn);
+  if(_inactivityAuto) clearTimeout(_inactivityAuto);
+  _inactivityWarn = null;
+  _inactivityAuto = null;
+  // Remove warning toast if showing
+  if(_inactivityToast && _inactivityToast.parentNode){
+    _inactivityToast.parentNode.removeChild(_inactivityToast);
+    _inactivityToast = null;
+  }
+}
+
+function showInactivityWarning(){
+  if(!CU) return;
+  // Build a persistent warning toast (not auto-dismissed)
+  const tc = document.getElementById('tc');
+  if(!tc) return;
+  _inactivityToast = document.createElement('div');
+  _inactivityToast.className = 'toast';
+  _inactivityToast.style.cssText = 'border-left:3px solid #BA7517;max-width:340px;flex-direction:column;align-items:flex-start;gap:8px;padding:12px 16px';
+  _inactivityToast.innerHTML = `
+    <div style="font-weight:600;color:#FAEEDA">⏱ Session timeout warning</div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.75)">You have been inactive for 5 minutes. You will be logged out automatically in 10 minutes.</div>
+    <div style="display:flex;gap:8px;margin-top:2px">
+      <button onclick="keepSessionAlive()" style="padding:4px 12px;background:#D69328;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit">Stay logged in</button>
+      <button onclick="doLogout()" style="padding:4px 12px;background:transparent;color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.2);border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit">Log out now</button>
+    </div>`;
+  tc.appendChild(_inactivityToast);
+}
+
+function keepSessionAlive(){
+  resetInactivityTimers();
+  toast('Session extended — you are still logged in.','success');
+}
+
+function autoLogout(){
+  if(!CU) return;
+  // Remove warning toast
+  if(_inactivityToast && _inactivityToast.parentNode){
+    _inactivityToast.parentNode.removeChild(_inactivityToast);
+    _inactivityToast = null;
+  }
+  addAudit(CU?.name||'User','Auto-logged out after 15 minutes of inactivity');
+  CU=null;S.set('session',null);
+  // Show message before reload
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(30,20,69,0.92);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `<div style="background:#fff;border-radius:12px;padding:32px;text-align:center;max-width:360px;border-top:4px solid #D69328">
+    <div style="font-size:32px;margin-bottom:12px">⏱</div>
+    <div style="font-size:16px;font-weight:600;color:#1E1445;margin-bottom:8px">Session expired</div>
+    <div style="font-size:13px;color:#6A6490;margin-bottom:20px">You have been logged out due to 15 minutes of inactivity.</div>
+    <button onclick="location.reload()" style="padding:10px 24px;background:#D69328;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;font-family:inherit">Log back in</button>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+// Track user activity — reset timers on any interaction
+function initInactivityTracking(){
+  const events = ['mousedown','mousemove','keydown','touchstart','scroll','click'];
+  events.forEach(ev => document.addEventListener(ev, resetInactivityTimers, {passive:true}));
+  resetInactivityTimers(); // start the timers immediately after login
+}
+
+
 
 // ─── PERMISSIONS ─────────────────────────────────────────────────────────────
 function hasPerm(perm){
