@@ -1450,7 +1450,14 @@ async function dbGetUsers(){
   if(!sbReady()) return S.get('users',[]);
   const {data,error}=await _sb.from('hr_users').select('*').order('created_at');
   if(error){console.error(error);return S.get('users',[]);}
-  return data.map(r=>({id:r.id,name:r.name,username:r.username,email:r.email,role:r.role,active:r.active,passwordHash:r.password_hash,createdAt:r.created_at}));
+  return data.map(r=>({
+    id:r.id,name:r.name,username:r.username,
+    email:r.email||'',phone:r.phone||'',
+    role:r.role,active:r.active,
+    passwordHash:r.password_hash,
+    setupToken:r.setup_token||null,setupDone:r.setup_done||false,
+    empId:r.emp_id||null,createdAt:r.created_at
+  }));
 }
 
 async function dbSaveUser(user){
@@ -1461,11 +1468,11 @@ async function dbSaveUser(user){
     if(user.id && String(user.id).length<13){
       const {data,error}=await _sb.from('hr_users').update(row).eq('id',user.id).select().single();
       if(error){console.error('Update user error:',error);throw error;}
-      return{id:data.id,name:data.name,username:data.username,email:data.email,role:data.role,active:data.active,passwordHash:data.password_hash,createdAt:data.created_at};
+      return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at};
     } else {
       const {data,error}=await _sb.from('hr_users').insert(row).select().single();
       if(error){console.error('Insert user error:',error);throw error;}
-      return{id:data.id,name:data.name,username:data.username,email:data.email,role:data.role,active:data.active,passwordHash:data.password_hash,createdAt:data.created_at};
+      return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at};
     }
   } catch(err){
     console.error('dbSaveUser exception:',err);
@@ -1483,7 +1490,7 @@ async function dbFindUser(username){
   const {data,error}=await _sb.from('hr_users').select('*').eq('username',username).eq('active',true);
   if(error||!data||data.length===0) return null;
   const d=data[0];
-  return{id:d.id,name:d.name,username:d.username,email:d.email,role:d.role,active:d.active,passwordHash:d.password_hash};
+  return{id:d.id,name:d.name,username:d.username,email:d.email||'',phone:d.phone||'',role:d.role,active:d.active,passwordHash:d.password_hash,setupToken:d.setup_token||null,setupDone:d.setup_done||false,empId:d.emp_id||null};
 }
 
 // ── AUDIT ──
