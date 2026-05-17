@@ -1219,7 +1219,7 @@ async function dbGetUsers(){
 
 async function dbSaveUser(user){
   if(!sbReady()){ const u=S.get('users',[]);const i=u.findIndex(x=>String(x.id)===String(user.id));if(i>=0)u[i]=user;else u.push(user);S.set('users',u);return user; }
-  const row={name:user.name,username:user.username,email:user.email||'',role:user.role,active:user.active,password_hash:user.passwordHash};
+  const row={name:user.name,username:user.username,email:user.email||'',phone:user.phone||null,role:user.role,active:user.active,password_hash:user.passwordHash};
   Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
   try{
     if(user.id && String(user.id).length<13){
@@ -2709,7 +2709,8 @@ function openModal(type,pid,pid2){
     if(!u)return;
     mb.innerHTML=`<div class="modal-title">Edit User — ${u.name} <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="fr"><div class="fg"><label class="fl">Full name</label><input class="fi" id="eu-name" value="${u.name}"></div>
-      <div class="fg"><label class="fl">Email</label><input class="fi" id="eu-email" value="${u.email}"></div></div>
+      <div class="fg"><label class="fl">Mobile number</label><input class="fi" id="eu-phone" type="tel" value="${u.phone||''}" placeholder="+230 5700 0000"></div></div>
+      <div class="fg"><label class="fl">Email (optional)</label><input class="fi" id="eu-email" value="${u.email||''}"></div>
       <div class="fg"><label class="fl">Role</label>
         <select class="fs" id="eu-role" onchange="updateRoleDesc(this.value,'eu-role-desc')">
           ${['admin','hr','manager','viewer'].map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('')}
@@ -2759,12 +2760,14 @@ function updateRoleDesc(role,elId='role-desc-box'){
 
 // ─── SUBMIT HANDLERS ──────────────────────────────────────────────────────────
 function submitAdd(){
-  const name=document.getElementById('fn').value.trim(),email=document.getElementById('fe').value.trim();
-  if(!name||!email){toast('Name and email required.','error');return;}
+  const name=document.getElementById('fn').value.trim();
+  const email=document.getElementById('fe').value.trim();
+  const phone=document.getElementById('fph').value.trim();
+  if(!name){toast('Name is required.','error');return;}
+  if(!email&&!phone){toast('Email or mobile number is required.','error');return;}
   const sa=parseFloat(document.getElementById('fsal').value);
   const newEmp={
-    id:Date.now(),name,email,
-    phone:document.getElementById('fph').value,
+    id:Date.now(),name,email,phone,
     role:document.getElementById('fr2').value||'—',
     dept:document.getElementById('fd').value,
     manager:document.getElementById('fm').value||'—',
@@ -2780,22 +2783,65 @@ function submitAdd(){
     hideLoader();
     const s=saved||newEmp;
     if(!_cache.emps.find(e=>e.email===s.email)) _cache.emps.unshift(s);
+    saveEmps(_cache.emps);
     addNotif('New hire added: '+name,'success');
     dbAddAudit(CU.name,'Added employee: '+name);
     sendHRAlert('new_employee', getHREmails(), {
       employeeName:name, role:newEmp.role, dept:newEmp.dept,
       startDate:newEmp.start, manager:newEmp.manager, addedBy:CU.name
     });
-    closeModal();renderDashboard();toast(name+' added. Onboarding started.','success');
+    // Auto-create user account if they have a phone number
+    closeModal();
+    renderDashboard();
+    toast(name+' added. Onboarding started.','success');
+    if(phone){
+      setTimeout(()=>autoCreateUserForEmployee(s), 400);
+    }
   }).catch(err=>{
     hideLoader();
     console.error('Save employee error:',err);
-    // Save locally as fallback
     _cache.emps.unshift(newEmp);
     saveEmps(_cache.emps);
     addNotif('New hire added locally: '+name,'success');
     closeModal();renderDashboard();toast(name+' added (saved locally).','success');
+    if(phone) setTimeout(()=>autoCreateUserForEmployee(newEmp), 400);
   });
+}
+
+async function autoCreateUserForEmployee(emp){
+  if(!emp.phone) return;
+  // Check if user account already exists for this phone/email
+  const existing = getUsers().find(u=>
+    (emp.phone && u.phone && u.phone.replace(/[^0-9]/g,'')===emp.phone.replace(/[^0-9]/g,'')) ||
+    (emp.email && u.email && u.email.toLowerCase()===emp.email.toLowerCase())
+  );
+  if(existing){
+    // Already has an account — just show WhatsApp link to resend
+    showSetupLinkModal(existing);
+    return;
+  }
+  // Create new user account
+  const username = phoneToUsername(emp.phone);
+  const setupToken = generateSetupToken();
+  const newUser = {
+    id:Date.now(), name:emp.name, username,
+    phone:emp.phone, email:emp.email||'',
+    role:'viewer', active:true,
+    createdAt:new Date().toISOString(),
+    passwordHash:'', setupToken, setupDone:false
+  };
+  try{
+    const saved = await dbSaveUser(newUser);
+    const u = saved||newUser;
+    if(!_userCache.find(x=>x.username===u.username)) _userCache.push(u);
+    S.set('users',_userCache);
+    dbAddAudit(CU.name,'Auto-created user account for: '+emp.name);
+    // Show WhatsApp setup link modal
+    showSetupLinkModal(u);
+  } catch(err){
+    console.error('Auto-create user error:',err);
+    toast('Employee saved but user account creation failed. Create manually in Users.','error');
+  }
 }
 
 function submitEdit(id){
@@ -3094,7 +3140,8 @@ function submitEditUser(id){
   const u=_userCache.find(x=>x.id==id)||_userCache.find(x=>String(x.id)===String(id));
   if(!u){toast('User not found.','error');return;}
   u.name=document.getElementById('eu-name').value.trim()||u.name;
-  u.email=document.getElementById('eu-email').value.trim()||u.email;
+  u.phone=document.getElementById('eu-phone').value.trim()||u.phone||'';
+  u.email=document.getElementById('eu-email').value.trim()||u.email||'';
   u.role=document.getElementById('eu-role').value;
   const newPass=document.getElementById('eu-pass').value;
   const newPass2=document.getElementById('eu-pass2').value;
@@ -3187,16 +3234,22 @@ function parseCSVRow(row){
   vals.push(cur);return vals;
 }
 
-function executeImport(){
+async function executeImport(){
   if(!parsedCSVData){toast('No CSV data loaded.','error');return;}
   const {headers,data}=parsedCSVData;
   const emps=getEmps();
-  let added=0,updated=0,errors=[];
-  data.forEach((row,i)=>{
-    if(!row.name||!row.email){errors.push(`Row ${i+2}: missing name or email`);return;}
-    const existing=emps.find(e=>e.email.toLowerCase()===row.email.toLowerCase());
+  let added=0,updated=0,errors=[],newEmpsWithPhone=[];
+
+  showLoader('Importing…');
+
+  for(let i=0;i<data.length;i++){
+    const row=data[i];
+    if(!row.name){errors.push('Row '+(i+2)+': missing name');continue;}
+    const existing=emps.find(e=>
+      (row.email&&e.email&&e.email.toLowerCase()===row.email.toLowerCase())||
+      (row.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===row.phone.replace(/[^0-9]/g,''))
+    );
     if(existing){
-      // Update existing
       if(row.name)existing.name=row.name;
       if(row.phone)existing.phone=row.phone;
       if(row.role)existing.role=row.role;
@@ -3206,28 +3259,108 @@ function executeImport(){
       if(row.status&&['active','onboarding','offboarded'].includes(row.status))existing.status=row.status;
       if(row.salary&&!isNaN(parseFloat(row.salary))){
         const amt=parseFloat(row.salary);
-        if(!existing.salary)existing.salary={amount:amt,currency:row.currency||'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[]};
+        if(!existing.salary)existing.salary={amount:amt,currency:row.currency||'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[{date:td(),amount:amt,note:'CSV import'}]};
         else{existing.salary.amount=amt;if(row.currency)existing.salary.currency=row.currency;}
       }
+      try{ await dbSaveEmployee(existing); }catch(e){}
       updated++;
     } else {
-      // Add new
       const sal=row.salary&&!isNaN(parseFloat(row.salary))?parseFloat(row.salary):null;
-      emps.push({id:Date.now()+Math.random(),name:row.name,email:row.email,phone:row.phone||'',role:row.role||'—',dept:row.dept||'General',manager:row.manager||'—',start:row.start||td(),status:row.status||'onboarding',
-        salary:sal?{amount:sal,currency:row.currency||'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[{date:row.start||td(),amount:sal,note:'Imported from CSV'}]}:null,
-        checklist:(()=>{const d=(getSettings().checklistDefaults||['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done']);return Object.fromEntries(d.map(k=>[k,false]));})()});
-      added++;
+      const phone=(row.phone||'').trim();
+      const newEmp={
+        id:Date.now()+i+Math.random(),name:row.name,
+        email:(row.email||'').trim(),phone,
+        role:row.role||'—',dept:row.dept||'',
+        manager:row.manager||'—',start:row.start||td(),status:'onboarding',
+        salary:sal?{amount:sal,currency:row.currency||'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[{date:td(),amount:sal,note:'CSV import'}]}:null,
+        checklist:(()=>{const d=(getSettings().checklistDefaults||['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done']);return Object.fromEntries(d.map(k=>[k,false]));})(),
+        files:[],photoUrl:null,clockMode:'qr'
+      };
+      try{
+        const saved=await dbSaveEmployee(newEmp);
+        const s=saved||newEmp;
+        _cache.emps.unshift(s);
+        if(phone) newEmpsWithPhone.push(s);
+        added++;
+      }catch(err){
+        console.error('Import row error:',err);
+        errors.push('Row '+(i+2)+': '+row.name+' — save failed');
+      }
     }
-  });
-  saveEmps(emps);
-  addAudit(CU.name,`CSV import: ${added} added, ${updated} updated`);
-  const resultMsg=`✅ Import complete: ${added} added, ${updated} updated.${errors.length?` ⚠ ${errors.length} row(s) skipped.`:''}`;
-  document.getElementById('csv-preview-area').innerHTML+=`<div class="import-result success">${resultMsg}</div>`;
-  document.getElementById('import-btn').textContent='✓ Done';document.getElementById('import-btn').disabled=true;
-  addNotif(`CSV import: ${added} new, ${updated} updated`,'success');
-  toast(`Imported: ${added} new, ${updated} updated.`,'success');
+  }
+  saveEmps(_cache.emps);
+
+  // Auto-create user accounts for new employees with phone numbers
+  const createdUsers=[];
+  for(const emp of newEmpsWithPhone){
+    const alreadyUser=getUsers().find(u=>
+      (emp.phone&&u.phone&&u.phone.replace(/[^0-9]/g,'')===emp.phone.replace(/[^0-9]/g,''))||
+      (emp.email&&u.email&&u.email.toLowerCase()===emp.email.toLowerCase())
+    );
+    if(!alreadyUser){
+      const username=phoneToUsername(emp.phone);
+      const setupToken=generateSetupToken();
+      const newUser={id:Date.now()+Math.random(),name:emp.name,username,
+        phone:emp.phone,email:emp.email||'',role:'viewer',active:true,
+        createdAt:new Date().toISOString(),passwordHash:'',setupToken,setupDone:false};
+      try{
+        const saved=await dbSaveUser(newUser);
+        const u=saved||newUser;
+        if(!_userCache.find(x=>x.username===u.username)) _userCache.push(u);
+        createdUsers.push(u);
+      }catch(err){ console.error('Auto-create user error for '+emp.name,err); }
+    }
+  }
+  if(createdUsers.length) S.set('users',_userCache);
+
+  hideLoader();
+  addAudit(CU.name,'CSV import: '+added+' added, '+updated+' updated, '+createdUsers.length+' accounts created');
+  addNotif('CSV import: '+added+' new, '+updated+' updated, '+createdUsers.length+' accounts created','success');
   parsedCSVData=null;
+
+  const resultMsg='✅ Import complete: <strong>'+added+' added</strong>, '+updated+' updated.'+
+    (errors.length?' ⚠ '+errors.length+' row(s) skipped.':'')+
+    (createdUsers.length?' 🔑 '+createdUsers.length+' login accounts created.':'');
+  document.getElementById('csv-preview-area').innerHTML+='<div class="import-result success">'+resultMsg+'</div>';
+  document.getElementById('import-btn').textContent='✓ Done';
+  document.getElementById('import-btn').disabled=true;
+
+  if(createdUsers.length) setTimeout(()=>showCSVWhatsAppSummary(createdUsers),500);
+  renderDashboard();
+  toast('Imported: '+added+' new, '+updated+' updated, '+createdUsers.length+' accounts created.','success');
 }
+
+function showCSVWhatsAppSummary(users){
+  const base=window.location.href.split('?')[0];
+  const sbUrl=localStorage.getItem('sb_url')||'';
+  const sbKey=localStorage.getItem('sb_key')||'';
+  const mb=document.getElementById('mbox');
+  mb.className='modal-box wide';
+  document.getElementById('modal-backdrop').classList.add('open');
+  mb.innerHTML='<div class="modal-title">🔑 Send setup links ('+users.length+' accounts)<button class="modal-close" onclick="closeModal()">✕</button></div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Tap <strong>Send via WhatsApp</strong> to send each employee their setup link.</div>'+
+    '<div style="max-height:400px;overflow-y:auto">'+
+    users.map(u=>{
+      const params=new URLSearchParams();
+      params.set('setup',u.setupToken);
+      if(sbUrl)params.set('sburl',sbUrl);
+      if(sbKey)params.set('sbkey',sbKey);
+      const link=base+'?'+params.toString();
+      const cleanPhone=(u.phone||'').replace(/[^0-9]/g,'');
+      const msg=encodeURIComponent('Hello '+u.name+',\n\nYour Moura HR account is ready.\n\nClick this link to set your password:\n'+link+'\n\nYour login: '+u.phone+'\n\nMoura HR Team');
+      const waUrl='https://wa.me/'+cleanPhone+'?text='+msg;
+      const c=aColor(u.name);
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">'+
+        '<div class="avatar" style="background:'+c+'22;color:'+c+'">'+inits(u.name)+'</div>'+
+        '<div style="flex:1;min-width:0"><div style="font-weight:500;font-size:13px">'+u.name+'</div>'+
+        '<div style="font-size:12px;color:var(--text3)">'+u.phone+'</div></div>'+
+        '<a href="'+waUrl+'" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#25D366;color:#fff;border-radius:var(--radius);text-decoration:none;font-size:12.5px;font-weight:500;flex-shrink:0">'+
+        '<svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>'+
+        'Send via WhatsApp</a></div>';
+    }).join('')+
+    '</div><div class="mf"><button class="btn btn-primary" onclick="closeModal()">Done</button></div>';
+}
+
 
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
 function addNotif(msg,type='info'){notifs.unshift({id:Date.now(),msg,type,time:new Date().toLocaleTimeString()});renderNotifs();}
