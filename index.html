@@ -1660,30 +1660,39 @@ async function doLogin(){
 }
 
 async function promptLoginClockIn(user){
+  // Skip clock-in prompt for admin and HR roles — they manage the system
+  if(user.role==='admin'||user.role==='hr') return;
+
   if(!_attLocations||!_attLocations.length) _attLocations = await dbGetLocations();
   if(!_attLocations.length) return;
 
   if(!_cache.emps.length){ try{ _cache.emps=await dbGetEmployees(); }catch(e){} }
   const emps = getEmps().filter(e=>e.status!=='offboarded');
 
-  // Match user to employee
-  let emp = emps.find(e=>
-    (user.email && e.email && e.email.toLowerCase()===user.email.toLowerCase()) ||
-    (user.phone && e.phone && e.phone.replace(/[^0-9]/g,'')===user.phone.replace(/[^0-9]/g,'')) ||
-    String(e.id)===String(user.id)
-  );
-  if(!emp && user.username){
-    const uname = user.username.toLowerCase().replace(/[^a-z0-9]/g,'');
-    emp = emps.find(e=>{
-      const ename = (e.name||'').toLowerCase().replace(/[^a-z]/g,'');
-      return ename.includes(uname) || uname.includes((ename.split(' ')[0])||'x');
-    });
-  }
+  // Match user to employee — STRICT matching only (email or phone)
+  // Never use fuzzy name/username matching — too risky
+  let emp = null;
 
-  // Check already clocked in
+  // 1. Exact email match
+  if(user.email){
+    emp = emps.find(e=>e.email && e.email.toLowerCase()===user.email.toLowerCase());
+  }
+  // 2. Exact phone match (digits only)
+  if(!emp && user.phone){
+    const userPhone = user.phone.replace(/[^0-9]/g,'');
+    if(userPhone.length >= 7){
+      emp = emps.find(e=>e.phone && e.phone.replace(/[^0-9]/g,'')===userPhone);
+    }
+  }
+  // 3. No match — show picker so user selects themselves (no auto-guess)
+  // emp stays null → needsPicker = true
+
+  // Check already clocked in today
   if(emp){
     const localAtt = S.get('attendance',[]);
-    const alreadyIn = localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
+    const alreadyIn = localAtt.find(r=>
+      String(r.empId)===String(emp.id) && r.date===todayStr() && !r.clockOut
+    );
     if(alreadyIn) return;
   }
 
@@ -1817,22 +1826,28 @@ async function loginClockIn(empId, locationId, locationName){
 
 function doLogout(){
   clearInactivityTimers();
-  // Auto clock-out if the user is an employee and still clocked in
+  // Auto clock-out if still clocked in — only for non-admin/HR users
   try{
-    const emps = getEmps();
-    const emp = emps.find(e=>e.email===CU?.email||String(e.id)===String(CU?.id));
-    if(emp){
-      const localAtt = S.get('attendance',[]);
-      const openRec = localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
-      if(openRec){
-        openRec.clockOut = new Date().toISOString();
-        openRec.durationMinutes = calcDuration(openRec.clockIn, openRec.clockOut);
-        openRec.notes = (openRec.notes?openRec.notes+' | ':'')+'Auto clock-out on logout';
-        const idx = localAtt.findIndex(r=>String(r.id)===String(openRec.id));
-        if(idx>=0) localAtt[idx]=openRec;
-        S.set('attendance', localAtt);
-        // Fire and forget to Supabase — don't await, page reloads anyway
-        dbSaveAttendance(openRec).catch(()=>{});
+    if(CU && CU.role!=='admin' && CU.role!=='hr'){
+      const emps = getEmps();
+      let emp = null;
+      if(CU.email) emp = emps.find(e=>e.email&&e.email.toLowerCase()===CU.email.toLowerCase());
+      if(!emp&&CU.phone){
+        const p=CU.phone.replace(/[^0-9]/g,'');
+        if(p.length>=7) emp=emps.find(e=>e.phone&&e.phone.replace(/[^0-9]/g,'')===p);
+      }
+      if(emp){
+        const localAtt = S.get('attendance',[]);
+        const openRec = localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
+        if(openRec){
+          openRec.clockOut = new Date().toISOString();
+          openRec.durationMinutes = calcDuration(openRec.clockIn, openRec.clockOut);
+          openRec.notes = (openRec.notes?openRec.notes+' | ':'')+'Auto clock-out on logout';
+          const idx = localAtt.findIndex(r=>String(r.id)===String(openRec.id));
+          if(idx>=0) localAtt[idx]=openRec;
+          S.set('attendance', localAtt);
+          dbSaveAttendance(openRec).catch(()=>{});
+        }
       }
     }
   } catch(e){ console.warn('Auto clock-out error:', e); }
@@ -1892,21 +1907,28 @@ function keepSessionAlive(){
 
 function autoLogout(){
   if(!CU) return;
-  // Auto clock-out if still clocked in
+  // Auto clock-out if still clocked in — only for non-admin/HR users
   try{
-    const emps = getEmps();
-    const emp = emps.find(e=>e.email===CU?.email||String(e.id)===String(CU?.id));
-    if(emp){
-      const localAtt = S.get('attendance',[]);
-      const openRec = localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
-      if(openRec){
-        openRec.clockOut = new Date().toISOString();
-        openRec.durationMinutes = calcDuration(openRec.clockIn, openRec.clockOut);
-        openRec.notes = (openRec.notes?openRec.notes+' | ':'')+'Auto clock-out on session timeout';
-        const idx = localAtt.findIndex(r=>String(r.id)===String(openRec.id));
-        if(idx>=0) localAtt[idx]=openRec;
-        S.set('attendance', localAtt);
-        dbSaveAttendance(openRec).catch(()=>{});
+    if(CU && CU.role!=='admin' && CU.role!=='hr'){
+      const emps = getEmps();
+      let emp = null;
+      if(CU.email) emp = emps.find(e=>e.email&&e.email.toLowerCase()===CU.email.toLowerCase());
+      if(!emp&&CU.phone){
+        const p=CU.phone.replace(/[^0-9]/g,'');
+        if(p.length>=7) emp=emps.find(e=>e.phone&&e.phone.replace(/[^0-9]/g,'')===p);
+      }
+      if(emp){
+        const localAtt = S.get('attendance',[]);
+        const openRec = localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
+        if(openRec){
+          openRec.clockOut = new Date().toISOString();
+          openRec.durationMinutes = calcDuration(openRec.clockIn, openRec.clockOut);
+          openRec.notes = (openRec.notes?openRec.notes+' | ':'')+'Auto clock-out on session timeout';
+          const idx = localAtt.findIndex(r=>String(r.id)===String(openRec.id));
+          if(idx>=0) localAtt[idx]=openRec;
+          S.set('attendance', localAtt);
+          dbSaveAttendance(openRec).catch(()=>{});
+        }
       }
     }
   } catch(e){}
