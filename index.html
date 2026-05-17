@@ -3243,7 +3243,18 @@ function openModal(type,pid,pid2){
     const u=users.find(x=>x.id==pid)||users.find(x=>String(x.id)===String(pid));
     if(!u)return;
     mb.innerHTML=`<div class="modal-title">Edit User — ${u.name} <button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div class="fr"><div class="fg"><label class="fl">Full name</label><input class="fi" id="eu-name" value="${u.name}"></div>
+      <div style="background:var(--navy-light);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:12.5px;color:var(--navy)">
+        <div style="font-weight:600;margin-bottom:4px">Current login credentials</div>
+        <div>Username: <strong style="font-family:monospace;letter-spacing:.05em">${u.username}</strong></div>
+        <div style="margin-top:2px;color:var(--text2)">Password: set by employee (cannot be viewed)</div>
+      </div>
+      <div class="fsec">Account Details</div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Full name</label><input class="fi" id="eu-name" value="${u.name}"></div>
+        <div class="fg"><label class="fl">Username</label><input class="fi" id="eu-username" value="${u.username}" placeholder="login username" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9._-]/g,'')">
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">This is what the employee types to log in</div>
+        </div>
+      </div>
       <div class="fg"><label class="fl">Mobile number</label>${buildPhoneInput('eu-phone', u.phone||'')}</div>
       <div class="fg"><label class="fl">Email (optional)</label><input class="fi" id="eu-email" value="${u.email||''}"></div>
       <div class="fg"><label class="fl">Role</label>
@@ -3252,10 +3263,13 @@ function openModal(type,pid,pid2){
         </select>
         <div class="role-desc" id="eu-role-desc"></div>
       </div>
-      <div class="fsec">Change Password (leave blank to keep current)</div>
-      <div class="fr"><div class="fg"><label class="fl">New password</label><input class="fi" id="eu-pass" type="password" placeholder="New password…"></div>
-      <div class="fg"><label class="fl">Confirm</label><input class="fi" id="eu-pass2" type="password" placeholder="Repeat…"></div></div>
-      <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditUser(${pid})">Save changes</button></div>`;
+      <div class="fsec">Reset Password</div>
+      <div class="fr">
+        <div class="fg"><label class="fl">New password</label><input class="fi" id="eu-pass" type="password" placeholder="Leave blank to keep current"></div>
+        <div class="fg"><label class="fl">Confirm</label><input class="fi" id="eu-pass2" type="password" placeholder="Repeat new password"></div>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:4px">💡 Leave password fields blank to keep the current password unchanged.</div>
+      <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditUser(${u.id})">Save changes</button></div>`;
 
   // ── CSV IMPORT ──
   } else if(type==='csvImport'){
@@ -3738,6 +3752,13 @@ function submitEditUser(id){
   const u=_userCache.find(x=>x.id==id)||_userCache.find(x=>String(x.id)===String(id));
   if(!u){toast('User not found.','error');return;}
   u.name=document.getElementById('eu-name').value.trim()||u.name;
+  const newUsername=(document.getElementById('eu-username')?.value||'').trim();
+  if(newUsername && newUsername!==u.username){
+    // Check username not taken by another user
+    const taken=_userCache.find(x=>x.username===newUsername&&String(x.id)!==String(u.id));
+    if(taken){toast('Username "'+newUsername+'" is already taken.','error');return;}
+    u.username=newUsername;
+  }
   u.phone=normalisePhone(getPhoneValue('eu-phone')||document.getElementById('eu-phone')?.value||'')||u.phone||'';
   u.email=document.getElementById('eu-email').value.trim()||u.email||'';
   u.role=document.getElementById('eu-role').value;
