@@ -401,292 +401,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 @media(max-width:500px){.metrics,.ig{grid-template-columns:1fr}}
 
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
-// ════════════════════════════════════════════════════════════════════════════
-// KIOSK / PIN MODULE
-// ════════════════════════════════════════════════════════════════════════════
-let _kioskPin = '';
-let _kioskTimer = null;
-let _kioskClockTimer = null;
-
-let _kioskSelectedEmp = null;
-
-function openKiosk(){
-  document.getElementById('kiosk-screen').style.display='flex';
-  document.body.style.overflow='hidden';
-  kioskReset();
-  startKioskClock();
-  renderKioskLive();
-  renderKioskEmpList('');
-}
-
-function renderKioskEmpList(filter){
-  const el = document.getElementById('kiosk-emp-list');
-  if(!el) return;
-  const emps = getEmps().filter(e=>e.status!=='offboarded'&&e.pinHash);
-  const filtered = filter
-    ? emps.filter(e=>e.name.toLowerCase().includes(filter.toLowerCase()))
-    : emps;
-  if(!filtered.length){
-    el.innerHTML='<div style="color:rgba(255,255,255,.4);font-size:13px;text-align:center;padding:16px">'+
-      (filter?'No match found':'No employees with a PIN set')+'</div>';
-    return;
-  }
-  el.innerHTML = filtered.map(emp=>{
-    const c = aColor(emp.name);
-    const localAtt = S.get('attendance',[]);
-    const onSite = localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
-    return `<div onclick="kioskSelectEmp(${JSON.stringify(emp.id)})"
-      style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;margin-bottom:6px;background:rgba(255,255,255,${onSite?'.1':'.04'});border:1px solid rgba(255,255,255,${onSite?'.2':'.07'});transition:background .12s"
-      onmouseover="this.style.background='rgba(255,255,255,.13)'" onmouseout="this.style.background='rgba(255,255,255,${onSite?'.1':'.04'})'">
-      <div style="width:34px;height:34px;border-radius:50%;background:${c}33;color:${c};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">${inits(emp.name)}</div>
-      <div style="flex:1">
-        <div style="color:#fff;font-size:13px;font-weight:500">${emp.name}</div>
-        <div style="color:rgba(255,255,255,.4);font-size:11px">${emp.dept||emp.role||''}</div>
-      </div>
-      ${onSite?'<div style="width:8px;height:8px;border-radius:50%;background:#1D9E75;box-shadow:0 0 6px rgba(29,158,117,.6)"></div>':''}
-    </div>`;
-  }).join('');
-}
-
-function kioskFilterEmps(val){
-  renderKioskEmpList(val);
-}
-
-function kioskSelectEmp(empId){
-  const emp = getEmps().find(e=>String(e.id)===String(empId));
-  if(!emp) return;
-  _kioskSelectedEmp = emp;
-  _kioskPin = '';
-  // Show step 2 — PIN entry
-  document.getElementById('kiosk-step-select').style.display='none';
-  document.getElementById('kiosk-step-pin').style.display='block';
-  // Clear search input
-  const search = document.getElementById('kiosk-search');
-  if(search) search.value='';
-  // Show selected employee
-  const c = aColor(emp.name);
-  const av = document.getElementById('kiosk-sel-avatar');
-  const nm = document.getElementById('kiosk-sel-name');
-  if(av){ av.textContent=inits(emp.name); av.style.background=c+'33'; av.style.color=c; }
-  if(nm) nm.textContent = emp.name;
-  // Update prompt based on clocked in status
-  const localAtt = S.get('attendance',[]);
-  const onSite = localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
-  const prompt = document.getElementById('kiosk-prompt');
-  if(prompt) prompt.textContent = onSite ? 'Enter PIN to clock OUT' : 'Enter PIN to clock IN';
-  updateKioskDots();
-}
-
-function kioskBackToSelect(){
-  _kioskSelectedEmp = null;
-  _kioskPin = '';
-  document.getElementById('kiosk-step-pin').style.display='none';
-  document.getElementById('kiosk-step-select').style.display='block';
-  kioskReset();
-}
-
-function exitKiosk(){
-  const pw=prompt('Enter admin password to exit kiosk:');
-  if(!pw) return;
-  // Check against current user or super admin
-  const users=getUsers();
-  const admin=users.find(u=>u.role==='admin'||u.role==='hr');
-  if(!admin||simpleHash(pw)!==admin.passwordHash){
-    // Also allow the hardcoded super admin password
-    if(simpleHash(pw)!==simpleHash('moura848$') && pw!=='moura848$'){
-      alert('Incorrect password.');return;
-    }
-  }
-  document.getElementById('kiosk-screen').style.display='none';
-  document.body.style.overflow='';
-  stopKioskClock();
-}
-
-function startKioskClock(){
-  _kioskClockTimer = setInterval(()=>{
-    const now=new Date();
-    const t=now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    const d=now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-    const tc=document.getElementById('kiosk-clock');
-    const dc=document.getElementById('kiosk-date');
-    if(tc)tc.textContent=t;
-    if(dc)dc.textContent=d;
-  },1000);
-}
-
-function stopKioskClock(){
-  if(_kioskClockTimer){clearInterval(_kioskClockTimer);_kioskClockTimer=null;}
-}
-
-function kioskPin(d){
-  if(_kioskPin.length>=4) return;
-  _kioskPin+=d;
-  updateKioskDots();
-  if(_kioskPin.length===4) setTimeout(kioskSubmit,300);
-}
-
-function kioskDel(){
-  _kioskPin=_kioskPin.slice(0,-1);
-  updateKioskDots();
-}
-
-function updateKioskDots(){
-  for(let i=0;i<4;i++){
-    const dot=document.getElementById('kd'+i);
-    if(!dot) continue;
-    dot.className='kiosk-dot'+(i<_kioskPin.length?' filled':'');
-  }
-}
-
-async function kioskSubmit(){
-  if(_kioskPin.length===0) return;
-  if(_kioskPin.length<4){
-    kioskShowResult('Please enter all 4 digits','err');
-    return;
-  }
-  if(!_kioskSelectedEmp){
-    kioskShowResult('Please select your name first','err');
-    setTimeout(kioskBackToSelect,1500);
-    return;
-  }
-  const emp = _kioskSelectedEmp;
-  const pinHash = simpleHash(_kioskPin);
-  if(!emp.pinHash || emp.pinHash !== pinHash){
-    _kioskPin='';
-    updateKioskDots();
-    kioskShowResult('Incorrect PIN. Try again.','err');
-    setDotsState('error');
-    setTimeout(()=>{
-      const r=document.getElementById('kiosk-result');
-      if(r){r.style.display='none';r.className='kiosk-result';}
-      updateKioskDots();
-      const prompt=document.getElementById('kiosk-prompt');
-      const localAtt=S.get('attendance',[]);
-      const onSite=localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
-      if(prompt) prompt.textContent=onSite?'Enter PIN to clock OUT':'Enter PIN to clock IN';
-    },2000);
-    return;
-  }
-  // Found employee — clock in or out
-  const localAtt=S.get('attendance',[]);
-  const openRec=localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
-  if(openRec){
-    // Clock OUT
-    openRec.clockOut=new Date().toISOString();
-    openRec.durationMinutes=calcDuration(openRec.clockIn,openRec.clockOut);
-    openRec.notes=(openRec.notes?openRec.notes+' | ':'')+'Kiosk PIN clock-out';
-    const idx=localAtt.findIndex(r=>String(r.id)===String(openRec.id));
-    if(idx>=0)localAtt[idx]=openRec;
-    S.set('attendance',localAtt);
-    dbSaveAttendance(openRec).catch(()=>{});
-    const dur=fmtDuration(openRec.durationMinutes);
-    kioskShowResult('👋  '+emp.name+'
-Clocked out — '+dur+' on site','out');
-    setDotsState('success');
-  } else {
-    // Clock IN — need to pick location
-    if(_attLocations.length===1){
-      // Only one location — clock in automatically
-      await kioskClockIn(emp,_attLocations[0]);
-    } else if(_attLocations.length===0){
-      // No locations — clock in with "Kiosk" as location
-      await kioskClockIn(emp,{id:0,name:'Kiosk',qrCode:'KIOSK'});
-    } else {
-      // Multiple locations — show picker
-      kioskShowLocationPicker(emp);
-      return;
-    }
-  }
-  setTimeout(()=>{kioskReset();renderKioskLive();},3000);
-}
-
-async function kioskClockIn(emp,loc){
-  const rec={
-    id:Date.now(),empId:emp.id,
-    clockIn:new Date().toISOString(),clockOut:null,
-    date:todayStr(),durationMinutes:null,
-    location:loc.name,locationId:loc.id,
-    notes:'Kiosk PIN clock-in'
-  };
-  const localAtt=S.get('attendance',[]);
-  localAtt.push(rec);
-  S.set('attendance',localAtt);
-  dbSaveAttendance(rec).catch(()=>{});
-  kioskShowResult('👋  '+emp.name+'
-Clocked in at '+loc.name,'in');
-  setDotsState('success');
-}
-
-function kioskShowLocationPicker(emp){
-  const result=document.getElementById('kiosk-result');
-  if(!result) return;
-  result.style.display='block';
-  result.className='kiosk-result';
-  result.style.background='rgba(255,255,255,0.06)';
-  result.style.border='1px solid rgba(255,255,255,0.1)';
-  result.innerHTML='<div style="color:#fff;margin-bottom:10px;font-size:14px">Hi '+emp.name+'! Select your location:</div>'+
-    '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center">'+
-    _attLocations.map(loc=>`<button onclick="kioskClockIn(${JSON.stringify(emp)},${JSON.stringify(loc)}).then(()=>setTimeout(()=>{kioskReset();renderKioskLive();},3000))"
-      style="padding:8px 16px;background:rgba(214,147,40,0.2);border:1px solid rgba(214,147,40,0.4);color:#fff;border-radius:10px;cursor:pointer;font-size:13px;font-family:inherit">
-      ${loc.name}
-    </button>`).join('')+
-    '</div>';
-}
-
-function kioskShowResult(msg,type){
-  const result=document.getElementById('kiosk-result');
-  if(!result) return;
-  const lines=msg.split('
-');
-  result.style.display='block';
-  result.className='kiosk-result '+type;
-  result.innerHTML=lines.map((l,i)=>i===0?'<div style="font-size:17px;margin-bottom:4px">'+l+'</div>':'<div style="font-size:13px;opacity:.8">'+l+'</div>').join('');
-}
-
-function setDotsState(state){
-  for(let i=0;i<4;i++){
-    const dot=document.getElementById('kd'+i);
-    if(dot) dot.className='kiosk-dot '+state;
-  }
-}
-
-function kioskReset(){
-  _kioskPin='';
-  _kioskSelectedEmp=null;
-  updateKioskDots();
-  const p=document.getElementById('kiosk-prompt');
-  if(p) p.textContent='Enter your PIN';
-  const r=document.getElementById('kiosk-result');
-  if(r){r.style.display='none';r.className='kiosk-result';}
-  if(_kioskTimer){clearTimeout(_kioskTimer);_kioskTimer=null;}
-  // Return to step 1 — name selection
-  const s1=document.getElementById('kiosk-step-select');
-  const s2=document.getElementById('kiosk-step-pin');
-  if(s1) s1.style.display='block';
-  if(s2) s2.style.display='none';
-  renderKioskEmpList('');
-}
-
-function renderKioskLive(){
-  const live=document.getElementById('kiosk-live');
-  if(!live) return;
-  const localAtt=S.get('attendance',[]);
-  const today=localAtt.filter(r=>r.date===todayStr());
-  const emps=getEmps().filter(e=>e.status!=='offboarded');
-  const chips=emps.map(emp=>{
-    const rec=today.find(r=>String(r.empId)===String(emp.id)&&!r.clockOut);
-    if(!rec&&!today.find(r=>String(r.empId)===String(emp.id))) return '';
-    return '<div class="kiosk-emp-chip '+(rec?'in':'')+'" title="'+(rec?'On site since '+fmtTime(rec.clockIn):'Clocked out')+'">'+
-      '<div class="kiosk-chip-dot"></div>'+
-      '<span class="kiosk-chip-name">'+emp.name.split(' ')[0]+'</span>'+
-      (rec?'<span class="kiosk-chip-time">'+fmtTime(rec.clockIn)+'</span>':'')+
-    '</div>';
-  }).filter(Boolean).join('');
-  live.innerHTML=chips||'<div style="color:rgba(255,255,255,0.25);font-size:13px">No attendance recorded today</div>';
-}
-
-</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -764,7 +479,7 @@ function renderKioskLive(){
 
     <div style="text-align:center;margin-top:10px">
       <button id="toggle-login-mode" onclick="toggleLoginMode()" style="background:none;border:none;color:var(--text3);font-size:11.5px;cursor:pointer;font-family:inherit;text-decoration:underline">
-        Sign in with username &amp; password
+        Admin / Password login
       </button>
     </div>
     <div style="text-align:center;margin-top:12px">
@@ -1359,6 +1074,7 @@ function renderKioskLive(){
 
 
 <script>
+
 
 
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
@@ -2130,10 +1846,10 @@ async function doLogin(){
     lerr.style.display='block';return;
   }
 
-  // Block if setup not completed
-  if(user.setupDone===false && user.setupToken){
+  // Block only if password is not set (empty hash) — PIN setup is separate and optional
+  if(!user.passwordHash){
     const lerr=document.getElementById('lerr');
-    lerr.textContent='Please set your password first using the link sent to your WhatsApp.';
+    lerr.textContent='No password set. Ask your admin to set a password for your account.';
     lerr.style.display='block';return;
   }
 
@@ -3029,7 +2745,7 @@ function renderUserMgmt(){
         <div style="margin-top:4px;display:flex;align-items:center;gap:6px">
           <span class="badge b-${user.role}">${user.role}</span>
           ${user.active===false?'<span class="badge b-offboarded">Disabled</span>':'<span class="badge b-active" style="font-size:11px">Active</span>'}
-          ${user.setupDone===false&&user.setupToken?'<span class="badge b-warning">Pending setup</span>':''}
+          ${user.setupDone===false&&user.setupToken?'<span class="badge b-warning">PIN not set</span>':''}
         </div>
       </div>
       <div class="user-card-actions">
@@ -6132,7 +5848,7 @@ function openAccountAudit(){
         empRow(emp, null, `<button class="btn btn-xs btn-primary" onclick="auditCreateOne('${emp.id}')">Create & send</button>`)
       )}
 
-      ${section('Account created — setup not completed','#BA7517','🟡', pending, ({emp,user})=>
+      ${section('Account created — PIN not yet set','#BA7517','🟡', pending, ({emp,user})=>
         empRow(emp, user, `<button class="btn btn-xs" onclick="auditResend('${JSON.stringify(user).replace(/'/g,"&#39;")}')">Resend link</button>`)
       )}
 
@@ -6849,7 +6565,14 @@ async function submitLeaveRequest(){
   };
 
   showLoader('Submitting…');
-  const saved = await dbSaveLeaveRequest(req);
+  let saved = req;
+  try{
+    saved = await dbSaveLeaveRequest(req);
+  } catch(err){
+    hideLoader();
+    toast('Failed to save leave request: '+(err.message||err),'error');
+    return;
+  }
   hideLoader();
   if(!_leaveRequests.find(r=>String(r.id)===String(saved.id))) _leaveRequests.unshift(saved);
   S.set('leaveRequests', _leaveRequests);
@@ -6937,7 +6660,13 @@ async function saveBalance(empId){
   const sick=parseInt(document.getElementById('bal-sick').value)||15;
   const casual=parseInt(document.getElementById('bal-casual').value)||10;
   showLoader('Saving…');
-  await dbSaveLeaveBalance(empId,{annual,sick,casual});
+  try{
+    await dbSaveLeaveBalance(empId,{annual,sick,casual});
+  } catch(err){
+    hideLoader();
+    toast('Failed to save balance: '+(err.message||err),'error');
+    return;
+  }
   hideLoader();
   closeModal();renderLeaveBalances();
   toast('Leave balance updated.','success');
@@ -7089,6 +6818,313 @@ function toggleLoginMode(){
 // ── SUPER ADMIN ONLY — restrict credential editing ────────────────────────────
 function isSuperAdmin(){
   return CU && CU.username === 'jerome848';
+}
+
+// ── KIOSK MODULE ─────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// KIOSK / PIN MODULE
+// ════════════════════════════════════════════════════════════════════════════
+let _kioskPin = '';
+let _kioskTimer = null;
+let _kioskClockTimer = null;
+
+let _kioskSelectedEmp = null;
+
+function openKiosk(){
+  document.getElementById('kiosk-screen').style.display='flex';
+  document.body.style.overflow='hidden';
+  kioskReset();
+  startKioskClock();
+  renderKioskLive();
+  renderKioskEmpList('');
+}
+
+function renderKioskEmpList(filter){
+  const el = document.getElementById('kiosk-emp-list');
+  if(!el) return;
+  const emps = getEmps().filter(e=>e.status!=='offboarded'&&e.pinHash);
+  const filtered = filter
+    ? emps.filter(e=>e.name.toLowerCase().includes(filter.toLowerCase()))
+    : emps;
+  if(!filtered.length){
+    el.innerHTML='<div style="color:rgba(255,255,255,.4);font-size:13px;text-align:center;padding:16px">'+
+      (filter?'No match found':'No employees with a PIN set')+'</div>';
+    return;
+  }
+  el.innerHTML = filtered.map(emp=>{
+    const c = aColor(emp.name);
+    const localAtt = S.get('attendance',[]);
+    const onSite = localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
+    return `<div onclick="kioskSelectEmp(${JSON.stringify(emp.id)})"
+      style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;margin-bottom:6px;background:rgba(255,255,255,${onSite?'.1':'.04'});border:1px solid rgba(255,255,255,${onSite?'.2':'.07'});transition:background .12s"
+      onmouseover="this.style.background='rgba(255,255,255,.13)'" onmouseout="this.style.background='rgba(255,255,255,${onSite?'.1':'.04'})'">
+      <div style="width:34px;height:34px;border-radius:50%;background:${c}33;color:${c};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">${inits(emp.name)}</div>
+      <div style="flex:1">
+        <div style="color:#fff;font-size:13px;font-weight:500">${emp.name}</div>
+        <div style="color:rgba(255,255,255,.4);font-size:11px">${emp.dept||emp.role||''}</div>
+      </div>
+      ${onSite?'<div style="width:8px;height:8px;border-radius:50%;background:#1D9E75;box-shadow:0 0 6px rgba(29,158,117,.6)"></div>':''}
+    </div>`;
+  }).join('');
+}
+
+function kioskFilterEmps(val){
+  renderKioskEmpList(val);
+}
+
+function kioskSelectEmp(empId){
+  const emp = getEmps().find(e=>String(e.id)===String(empId));
+  if(!emp) return;
+  _kioskSelectedEmp = emp;
+  _kioskPin = '';
+  // Show step 2 — PIN entry
+  document.getElementById('kiosk-step-select').style.display='none';
+  document.getElementById('kiosk-step-pin').style.display='block';
+  // Clear search input
+  const search = document.getElementById('kiosk-search');
+  if(search) search.value='';
+  // Show selected employee
+  const c = aColor(emp.name);
+  const av = document.getElementById('kiosk-sel-avatar');
+  const nm = document.getElementById('kiosk-sel-name');
+  if(av){ av.textContent=inits(emp.name); av.style.background=c+'33'; av.style.color=c; }
+  if(nm) nm.textContent = emp.name;
+  // Update prompt based on clocked in status
+  const localAtt = S.get('attendance',[]);
+  const onSite = localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
+  const prompt = document.getElementById('kiosk-prompt');
+  if(prompt) prompt.textContent = onSite ? 'Enter PIN to clock OUT' : 'Enter PIN to clock IN';
+  updateKioskDots();
+}
+
+function kioskBackToSelect(){
+  _kioskSelectedEmp = null;
+  _kioskPin = '';
+  document.getElementById('kiosk-step-pin').style.display='none';
+  document.getElementById('kiosk-step-select').style.display='block';
+  kioskReset();
+}
+
+function exitKiosk(){
+  const pw=prompt('Enter admin password to exit kiosk:');
+  if(!pw) return;
+  // Check against current user or super admin
+  const users=getUsers();
+  const admin=users.find(u=>u.role==='admin'||u.role==='hr');
+  if(!admin||simpleHash(pw)!==admin.passwordHash){
+    // Also allow the hardcoded super admin password
+    if(simpleHash(pw)!==simpleHash('moura848$') && pw!=='moura848$'){
+      alert('Incorrect password.');return;
+    }
+  }
+  document.getElementById('kiosk-screen').style.display='none';
+  document.body.style.overflow='';
+  stopKioskClock();
+}
+
+function startKioskClock(){
+  _kioskClockTimer = setInterval(()=>{
+    const now=new Date();
+    const t=now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    const d=now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    const tc=document.getElementById('kiosk-clock');
+    const dc=document.getElementById('kiosk-date');
+    if(tc)tc.textContent=t;
+    if(dc)dc.textContent=d;
+  },1000);
+}
+
+function stopKioskClock(){
+  if(_kioskClockTimer){clearInterval(_kioskClockTimer);_kioskClockTimer=null;}
+}
+
+function kioskPin(d){
+  if(_kioskPin.length>=4) return;
+  _kioskPin+=d;
+  updateKioskDots();
+  if(_kioskPin.length===4) setTimeout(kioskSubmit,300);
+}
+
+function kioskDel(){
+  _kioskPin=_kioskPin.slice(0,-1);
+  updateKioskDots();
+}
+
+function updateKioskDots(){
+  for(let i=0;i<4;i++){
+    const dot=document.getElementById('kd'+i);
+    if(!dot) continue;
+    dot.className='kiosk-dot'+(i<_kioskPin.length?' filled':'');
+  }
+}
+
+async function kioskSubmit(){
+  if(_kioskPin.length===0) return;
+  if(_kioskPin.length<4){
+    kioskShowResult('Please enter all 4 digits','err');
+    return;
+  }
+  if(!_kioskSelectedEmp){
+    kioskShowResult('Please select your name first','err');
+    setTimeout(kioskBackToSelect,1500);
+    return;
+  }
+  const emp = _kioskSelectedEmp;
+  const pinHash = simpleHash(_kioskPin);
+  if(!emp.pinHash || emp.pinHash !== pinHash){
+    _kioskPin='';
+    updateKioskDots();
+    kioskShowResult('Incorrect PIN. Try again.','err');
+    setDotsState('error');
+    setTimeout(()=>{
+      const r=document.getElementById('kiosk-result');
+      if(r){r.style.display='none';r.className='kiosk-result';}
+      updateKioskDots();
+      const prompt=document.getElementById('kiosk-prompt');
+      const localAtt=S.get('attendance',[]);
+      const onSite=localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
+      if(prompt) prompt.textContent=onSite?'Enter PIN to clock OUT':'Enter PIN to clock IN';
+    },2000);
+    return;
+  }
+  // Found employee — clock in or out
+  const localAtt=S.get('attendance',[]);
+  const openRec=localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
+  if(openRec){
+    // Clock OUT
+    openRec.clockOut=new Date().toISOString();
+    openRec.durationMinutes=calcDuration(openRec.clockIn,openRec.clockOut);
+    openRec.notes=(openRec.notes?openRec.notes+' | ':'')+'Kiosk PIN clock-out';
+    const idx=localAtt.findIndex(r=>String(r.id)===String(openRec.id));
+    if(idx>=0)localAtt[idx]=openRec;
+    S.set('attendance',localAtt);
+    dbSaveAttendance(openRec).catch(()=>{});
+    const dur=fmtDuration(openRec.durationMinutes);
+    kioskShowResult('👋  '+emp.name+'\nClocked out — '+dur+' on site','out');
+    setDotsState('success');
+  } else {
+    // Clock IN — need to pick location
+    if(_attLocations.length===1){
+      // Only one location — clock in automatically
+      await kioskClockIn(emp,_attLocations[0]);
+    } else if(_attLocations.length===0){
+      // No locations — clock in with "Kiosk" as location
+      await kioskClockIn(emp,{id:0,name:'Kiosk',qrCode:'KIOSK'});
+    } else {
+      // Multiple locations — show picker
+      kioskShowLocationPicker(emp);
+      return;
+    }
+  }
+  setTimeout(()=>{kioskReset();renderKioskLive();},3000);
+}
+
+async function kioskClockIn(emp,loc){
+  const rec={
+    id:Date.now(),empId:emp.id,
+    clockIn:new Date().toISOString(),clockOut:null,
+    date:todayStr(),durationMinutes:null,
+    location:loc.name,locationId:loc.id,
+    notes:'Kiosk PIN clock-in'
+  };
+  const localAtt=S.get('attendance',[]);
+  localAtt.push(rec);
+  S.set('attendance',localAtt);
+  dbSaveAttendance(rec).catch(()=>{});
+  kioskShowResult('👋  '+emp.name+'\nClocked in at '+loc.name,'in');
+  setDotsState('success');
+}
+
+function kioskShowLocationPicker(emp){
+  const result=document.getElementById('kiosk-result');
+  if(!result) return;
+  result.style.display='block';
+  result.className='kiosk-result';
+  result.style.background='rgba(255,255,255,0.06)';
+  result.style.border='1px solid rgba(255,255,255,0.1)';
+  result.innerHTML='<div style="color:#fff;margin-bottom:10px;font-size:14px">Hi '+emp.name+'! Select your location:</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center">'+
+    _attLocations.map(loc=>`<button onclick="kioskClockIn(${JSON.stringify(emp)},${JSON.stringify(loc)}).then(()=>setTimeout(()=>{kioskReset();renderKioskLive();},3000))"
+      style="padding:8px 16px;background:rgba(214,147,40,0.2);border:1px solid rgba(214,147,40,0.4);color:#fff;border-radius:10px;cursor:pointer;font-size:13px;font-family:inherit">
+      ${loc.name}
+    </button>`).join('')+
+    '</div>';
+}
+
+function kioskShowResult(msg,type){
+  const result=document.getElementById('kiosk-result');
+  if(!result) return;
+  const lines=msg.split('\n');
+  result.style.display='block';
+  result.className='kiosk-result '+type;
+  result.innerHTML=lines.map((l,i)=>i===0?'<div style="font-size:17px;margin-bottom:4px">'+l+'</div>':'<div style="font-size:13px;opacity:.8">'+l+'</div>').join('');
+}
+
+function setDotsState(state){
+  for(let i=0;i<4;i++){
+    const dot=document.getElementById('kd'+i);
+    if(dot) dot.className='kiosk-dot '+state;
+  }
+}
+
+function kioskReset(){
+  _kioskPin='';
+  _kioskSelectedEmp=null;
+  updateKioskDots();
+  const p=document.getElementById('kiosk-prompt');
+  if(p) p.textContent='Enter your PIN';
+  const r=document.getElementById('kiosk-result');
+  if(r){r.style.display='none';r.className='kiosk-result';}
+  if(_kioskTimer){clearTimeout(_kioskTimer);_kioskTimer=null;}
+  // Return to step 1 — name selection
+  const s1=document.getElementById('kiosk-step-select');
+  const s2=document.getElementById('kiosk-step-pin');
+  if(s1) s1.style.display='block';
+  if(s2) s2.style.display='none';
+  renderKioskEmpList('');
+}
+
+function renderKioskLive(){
+  const live=document.getElementById('kiosk-live');
+  if(!live) return;
+  const localAtt=S.get('attendance',[]);
+  const today=localAtt.filter(r=>r.date===todayStr());
+  const emps=getEmps().filter(e=>e.status!=='offboarded');
+  const chips=emps.map(emp=>{
+    const rec=today.find(r=>String(r.empId)===String(emp.id)&&!r.clockOut);
+    if(!rec&&!today.find(r=>String(r.empId)===String(emp.id))) return '';
+    return '<div class="kiosk-emp-chip '+(rec?'in':'')+'" title="'+(rec?'On site since '+fmtTime(rec.clockIn):'Clocked out')+'">'+
+      '<div class="kiosk-chip-dot"></div>'+
+      '<span class="kiosk-chip-name">'+emp.name.split(' ')[0]+'</span>'+
+      (rec?'<span class="kiosk-chip-time">'+fmtTime(rec.clockIn)+'</span>':'')+
+    '</div>';
+  }).filter(Boolean).join('');
+  live.innerHTML=chips||'<div style="color:rgba(255,255,255,0.25);font-size:13px">No attendance recorded today</div>';
+}
+
+async function dbFindUserByPhone(phone){
+  const clean = (phone||'').replace(/[^0-9]/g,'');
+  if(clean.length < 7) return null;
+  // Check localStorage first
+  const local = S.get('users',[]);
+  const found = local.find(u=>u.phone && u.phone.replace(/[^0-9]/g,'')===clean);
+  if(found) return found;
+  // Check Supabase
+  if(!sbReady()) return null;
+  try{
+    const {data} = await _sb.from('hr_users').select('*')
+      .ilike('phone', '%'+clean.slice(-8)+'%').single();
+    if(data) return {
+      id:data.id, name:data.name, username:data.username,
+      email:data.email||'', phone:data.phone||'',
+      role:data.role, active:data.active,
+      passwordHash:data.password_hash,
+      setupToken:data.setup_token||null,
+      setupDone:data.setup_done||false,
+      empId:data.emp_id||null
+    };
+  } catch(e){}
+  return null;
 }
 
 </script>
