@@ -1897,16 +1897,180 @@ async function doLogin(){
   const _nel=document.getElementById('org-name-nav');
   if(_nel)_nel.textContent=org;
   applyPermissions();
-  renderDashboard();
   initInactivityTracking();
-  toast('Welcome back, '+user.name+'!','success');
-  // Offer clock-in after a short delay so the dashboard renders first
-  setTimeout(()=>promptLoginClockIn(user), 1200);
+
+  // ── Role-based post-login routing ─────────────────────────────────────────
+  if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
+    // Admin/HR/Manager → ask: clock in or access HR platform?
+    renderDashboard(); // render in background
+    setTimeout(()=>showManagerLoginChoice(user), 400);
+
+  } else {
+    // Viewer (regular employee) → show clock-in prompt only
+    showEmployeeClockInScreen(user);
+  }
 }
 
+function showManagerLoginChoice(user){
+  const modal   = document.getElementById('att-modal');
+  const content = document.getElementById('att-modal-content');
+  if(!modal||!content) return;
+  const c = aColor(user.name);
+  content.innerHTML = `
+    <div style="padding:24px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <div class="avatar avatar-lg" style="background:${c}22;color:${c}">${inits(user.name)}</div>
+        <div>
+          <div style="font-size:16px;font-weight:600">Welcome, ${user.name}</div>
+          <div style="font-size:13px;color:var(--text3)">What would you like to do?</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button onclick="managerClockInChoice()" style="display:flex;align-items:center;gap:14px;padding:16px;background:var(--green-light);border:2px solid var(--green);border-radius:var(--radius-lg);cursor:pointer;font-family:inherit;text-align:left;width:100%">
+          <span style="font-size:32px">⏱</span>
+          <div>
+            <div style="font-size:14px;font-weight:600;color:var(--green-deep)">Clock in / out</div>
+            <div style="font-size:12px;color:var(--green-dark);margin-top:2px">Record your attendance for today</div>
+          </div>
+        </button>
+        <button onclick="closeAttModal()" style="display:flex;align-items:center;gap:14px;padding:16px;background:var(--navy-light);border:2px solid var(--navy);border-radius:var(--radius-lg);cursor:pointer;font-family:inherit;text-align:left;width:100%">
+          <span style="font-size:32px">📊</span>
+          <div>
+            <div style="font-size:14px;font-weight:600;color:var(--navy)">Open HR Platform</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">Manage your team, log events, view reports</div>
+          </div>
+        </button>
+      </div>
+    </div>`;
+  modal.style.display = 'flex';
+}
+
+async function managerClockInChoice(){
+  closeAttModal();
+  // Works for admin, HR, and manager roles
+  await promptLoginClockIn(CU);
+}
+
+async function showEmployeeClockInScreen(user){
+  // Load locations in background
+  if(!_attLocations||!_attLocations.length) _attLocations = await dbGetLocations();
+  if(!_cache.emps.length){ try{ _cache.emps=await dbGetEmployees(); }catch(e){} }
+
+  // Find employee record
+  const emps = getEmps().filter(e=>e.status!=='offboarded');
+  let emp = emps.find(e=>
+    (user.email&&e.email&&e.email.toLowerCase()===user.email.toLowerCase())||
+    (user.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===user.phone.replace(/[^0-9]/g,''))
+  );
+
+  // Check if already clocked in today
+  const localAtt = S.get('attendance',[]);
+  const openRec = emp ? localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut) : null;
+
+  // Build minimal employee screen
+  const app = document.getElementById('app');
+  // Hide sidebar for viewer — they don't need it
+  const sidebar = document.querySelector('.sidebar');
+  if(sidebar) sidebar.style.display='none';
+  const appBody = document.querySelector('.app-body');
+  if(appBody) appBody.style.marginLeft='0';
+
+  // Show a full-screen attendance UI
+  const mainContent = document.querySelector('.main-content');
+  if(!mainContent) return;
+
+  const c = emp ? aColor(emp.name) : '#888';
+  const elapsed = openRec ? calcDuration(openRec.clockIn, new Date().toISOString()) : null;
+
+  mainContent.innerHTML = `
+    <div style="max-width:400px;margin:40px auto;text-align:center">
+      <div style="font-size:13px;color:var(--text3);margin-bottom:4px;letter-spacing:.05em;text-transform:uppercase">Moura HR</div>
+      <div id="emp-clock-time" style="font-size:48px;font-weight:200;color:var(--navy);font-variant-numeric:tabular-nums;margin-bottom:4px"></div>
+      <div id="emp-clock-date" style="font-size:13px;color:var(--text3);margin-bottom:32px;text-transform:uppercase;letter-spacing:.05em"></div>
+
+      ${emp ? `<div style="display:flex;align-items:center;gap:12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:24px;text-align:left">
+        <div class="avatar avatar-lg" style="background:${c}22;color:${c}">${inits(emp.name)}</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:15px">${emp.name}</div>
+          <div style="font-size:12.5px;color:var(--text3)">${emp.role||''} · ${emp.dept||''}</div>
+          ${openRec ? `<div style="font-size:12px;color:var(--green);margin-top:3px;font-weight:500">● On site since ${fmtTime(openRec.clockIn)} · ${fmtDuration(elapsed)}</div>`
+                    : '<div style="font-size:12px;color:var(--text3);margin-top:3px">Not clocked in today</div>'}
+        </div>
+      </div>` : ''}
+
+      ${openRec ? `
+        <button onclick="empClockOut('${openRec.id}')" class="mobile-clock-btn mobile-clock-out" style="margin-bottom:12px">
+          ⏹ Clock out from ${openRec.location||'site'}
+        </button>` :
+        _attLocations.length > 0 ? `
+        <div style="display:grid;grid-template-columns:${_attLocations.length===1?'1fr':'1fr 1fr'};gap:10px;margin-bottom:12px">
+          ${_attLocations.map(loc=>`
+            <button onclick="empClockIn('${emp?emp.id:''}','${loc.id}','${loc.name}')"
+              class="mobile-clock-btn mobile-clock-in" style="flex-direction:column;gap:4px;font-size:13px;padding:20px 12px">
+              <span style="font-size:28px">🏢</span>
+              <span style="font-weight:600">${loc.name}</span>
+              ${loc.address?`<span style="font-size:11px;opacity:.7">${loc.address}</span>`:''}
+            </button>`).join('')}
+        </div>` :
+        `<div style="color:var(--text3);font-size:13px;padding:20px">No locations configured. Contact HR.</div>`
+      }
+
+      <button onclick="openFullHRPlatform()" style="margin-top:8px;background:none;border:1px solid var(--border2);color:var(--text2);padding:8px 20px;border-radius:20px;cursor:pointer;font-size:12.5px;font-family:inherit">
+        Open full HR platform
+      </button>
+      <button onclick="doLogout()" style="display:block;margin:12px auto 0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;font-family:inherit;text-decoration:underline">
+        Sign out
+      </button>
+    </div>`;
+
+  // Start the clock
+  startEmpClockTick();
+  toast('Welcome back, '+user.name+'!','success');
+}
+
+let _empClockTick = null;
+function startEmpClockTick(){
+  clearInterval(_empClockTick);
+  _empClockTick = setInterval(()=>{
+    const now = new Date();
+    const tc = document.getElementById('emp-clock-time');
+    const dc = document.getElementById('emp-clock-date');
+    if(tc) tc.textContent = now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    if(dc) dc.textContent = now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+  },1000);
+}
+
+async function empClockIn(empId, locationId, locationName){
+  if(!empId){ toast('Employee record not found. Contact HR.','error'); return; }
+  await processClockAction(locationId, locationName, false, empId);
+  // Refresh the screen
+  showEmployeeClockInScreen(CU);
+}
+
+async function empClockOut(recId){
+  await manualClockOut(recId);
+  showEmployeeClockInScreen(CU);
+}
+
+function openFullHRPlatform(){
+  clearInterval(_empClockTick);
+  // Restore sidebar
+  const sidebar = document.querySelector('.sidebar');
+  if(sidebar) sidebar.style.display='';
+  const appBody = document.querySelector('.app-body');
+  if(appBody) appBody.style.marginLeft='';
+  // Restore full dashboard
+  const mainContent = document.querySelector('.main-content');
+  if(mainContent) mainContent.innerHTML = '';
+  // Re-render all pages
+  document.querySelectorAll('.page').forEach(p=>p.innerHTML='');
+  location.reload(); // simplest — reload keeps session, goes to dashboard
+}
+
+// Patch doLogin to not call this separately (it's now inside the routing above)
+
 async function promptLoginClockIn(user){
-  // Skip clock-in prompt for admin and HR roles — they manage the system
-  if(user.role==='admin'||user.role==='hr') return;
+  // All roles can clock in — called when they explicitly choose to
 
   if(!_attLocations||!_attLocations.length) _attLocations = await dbGetLocations();
   if(!_attLocations.length) return;
@@ -2073,7 +2237,7 @@ function doLogout(){
   clearInactivityTimers();
   // Auto clock-out if still clocked in — only for non-admin/HR users
   try{
-    if(CU && CU.role!=='admin' && CU.role!=='hr'){
+    if(CU){
       const emps = getEmps();
       let emp = null;
       if(CU.email) emp = emps.find(e=>e.email&&e.email.toLowerCase()===CU.email.toLowerCase());
@@ -2154,7 +2318,7 @@ function autoLogout(){
   if(!CU) return;
   // Auto clock-out if still clocked in — only for non-admin/HR users
   try{
-    if(CU && CU.role!=='admin' && CU.role!=='hr'){
+    if(CU){
       const emps = getEmps();
       let emp = null;
       if(CU.email) emp = emps.find(e=>e.email&&e.email.toLowerCase()===CU.email.toLowerCase());
@@ -2820,7 +2984,7 @@ function openModal(type,pid,pid2){
       <div class="fsec">Personal Information</div>
       <div class="fr"><div class="fg"><label class="fl">Full name *</label><input class="fi" id="fn" value="${emp?.name||''}" placeholder="Jane Smith"></div>
       <div class="fg"><label class="fl">Email *</label><input class="fi" id="fe" value="${emp?.email||''}" placeholder="jane@company.com"></div></div>
-      <div class="fr"><div class="fg"><label class="fl">Phone</label><input class="fi" id="fph" value="${emp?.phone||''}" placeholder="+1 555 000 0000"></div>
+      <div class="fr"><div class="fg"><label class="fl">Phone</label><input class="fi" id="fph" value="${emp?.phone||''}" placeholder="+230 or +27 number"></div>
       <div class="fg"><label class="fl">Start date</label><input class="fi" id="fst" type="date" value="${emp?.start||td()}"></div></div>
       <div class="fsec">Role</div>
       <div class="fr"><div class="fg"><label class="fl">Job title / Role</label><input class="fi" id="fr2" value="${emp?.role||''}" placeholder="Software Engineer"></div>
@@ -2937,7 +3101,7 @@ function openModal(type,pid,pid2){
       <div class="fsec">Employee Details</div>
       <div class="fr">
         <div class="fg"><label class="fl">Full name *</label><input class="fi" id="un-name" placeholder="Jane Smith"></div>
-        <div class="fg"><label class="fl">Mobile number *</label><input class="fi" id="un-phone" type="tel" placeholder="+230 5700 0000"></div>
+        <div class="fg"><label class="fl">Mobile number *</label>${buildPhoneInput('un-phone','')}</div>
       </div>
       <div class="fg"><label class="fl">Email (optional)</label><input class="fi" id="un-email" type="email" placeholder="jane@company.com"></div>
       <div class="fsec">Role & Access</div>
@@ -2964,7 +3128,7 @@ function openModal(type,pid,pid2){
     if(!u)return;
     mb.innerHTML=`<div class="modal-title">Edit User — ${u.name} <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="fr"><div class="fg"><label class="fl">Full name</label><input class="fi" id="eu-name" value="${u.name}"></div>
-      <div class="fg"><label class="fl">Mobile number</label><input class="fi" id="eu-phone" type="tel" value="${u.phone||''}" placeholder="+230 5700 0000"></div></div>
+      <div class="fg"><label class="fl">Mobile number</label>${buildPhoneInput('eu-phone', u.phone||'')}</div>
       <div class="fg"><label class="fl">Email (optional)</label><input class="fi" id="eu-email" value="${u.email||''}"></div>
       <div class="fg"><label class="fl">Role</label>
         <select class="fs" id="eu-role" onchange="updateRoleDesc(this.value,'eu-role-desc')">
@@ -3017,7 +3181,7 @@ function updateRoleDesc(role,elId='role-desc-box'){
 function submitAdd(){
   const name=document.getElementById('fn').value.trim();
   const email=document.getElementById('fe').value.trim();
-  const phone=document.getElementById('fph').value.trim();
+  const phone=normalisePhone(document.getElementById('fph').value);
   if(!name){toast('Name is required.','error');return;}
   if(!email&&!phone){toast('Email or mobile number is required.','error');return;}
   const sa=parseFloat(document.getElementById('fsal').value);
@@ -3110,7 +3274,7 @@ function submitEdit(id){
   const emps=getEmps();const emp=emps.find(e=>String(e.id)===String(id));if(!emp)return;
   emp.name=document.getElementById('fn').value.trim()||emp.name;
   emp.email=document.getElementById('fe').value.trim()||emp.email;
-  emp.phone=document.getElementById('fph').value;
+  emp.phone=normalisePhone(document.getElementById('fph').value);
   emp.role=document.getElementById('fr2').value||emp.role;
   emp.dept=document.getElementById('fd').value;emp.manager=document.getElementById('fm').value||emp.manager;
   const sa=parseFloat(document.getElementById('fsal').value);
@@ -3255,31 +3419,74 @@ function submitUpdateTr(id){
 }
 
 function submitOffboard(){
-  const emps=getEmps();const empId=parseInt(document.getElementById('foe').value);const emp=emps.find(e=>String(e.id)===String(empId));if(!emp)return;
-  emp.status='offboarded';emp.lastDay=document.getElementById('fold').value;emp.reason=document.getElementById('forr').value;
+  const emps=getEmps();
+  const empId=parseInt(document.getElementById('foe').value);
+  const emp=emps.find(e=>String(e.id)===String(empId));
+  if(!emp)return;
+  emp.status='offboarded';
+  emp.lastDay=document.getElementById('fold').value;
+  emp.reason=document.getElementById('forr').value;
   emp.offChecklist={'Exit interview done':false,'Equipment returned':false,'System access revoked':false,'Final payroll processed':false};
-  saveEmps(emps);
-  const evts=getEvts();evts.push({id:Date.now(),empId,type:'milestone',date:emp.lastDay||td(),desc:'Offboarding initiated — '+emp.reason,loggedBy:CU.name,notified:true});saveEvts(evts);
-  showLoader('Saving…');
-  dbSaveEmployee(emp).then(saved=>{
-    hideLoader();
+
+  // CRITICAL: clear phone and email so they can be safely reused by a new employee
+  const oldPhone = emp.phone||'';
+  const oldEmail = emp.email||'';
+  emp.phone = '';
+  emp.email = '';
+
+  showLoader('Saving\u2026');
+  dbSaveEmployee(emp).then(async saved=>{
     const idx=_cache.emps.findIndex(e=>String(e.id)===String(emp.id));
     if(idx>=0)_cache.emps[idx]=saved||emp;
     saveEmps(_cache.emps);
-    addNotif(emp.name+' offboarded. Exit checklist created.','info');
+
+    // Disable and scrub the linked user account
+    const allUsers=getUsers();
+    const userToDisable=allUsers.find(u=>
+      (emp.userId&&String(u.id)===String(emp.userId))||
+      (u.empId&&String(u.empId)===String(emp.id))||
+      (oldPhone&&u.phone&&u.phone.replace(/[^0-9]/g,'')===oldPhone.replace(/[^0-9]/g,''))||
+      (oldEmail&&u.email&&u.email.toLowerCase()===oldEmail.toLowerCase())
+    );
+    if(userToDisable){
+      userToDisable.active=false;
+      userToDisable.setupToken=null;
+      userToDisable.setupDone=false;
+      userToDisable.phone='';
+      const uidx=_userCache.findIndex(u=>String(u.id)===String(userToDisable.id));
+      if(uidx>=0)_userCache[uidx]=userToDisable;
+      S.set('users',_userCache);
+      if(sbReady()){
+        try{
+          await _sb.from('hr_users').update({active:false,setup_token:null,setup_done:false,phone:''}).eq('id',userToDisable.id);
+        }catch(e){console.warn('Disable user error:',e);}
+      }
+      dbAddAudit(CU.name,'Disabled user account for offboarded employee: '+emp.name);
+    }
+
+    // Log offboarding event
+    const newEvt={id:Date.now(),empId:emp.id,type:'milestone',
+      date:emp.lastDay||td(),
+      desc:'Offboarding initiated \u2014 '+emp.reason+(oldPhone?' (phone cleared for reuse)':''),
+      loggedBy:CU.name,notified:true};
+    dbSaveEvent(newEvt).then(ev=>{_cache.evts.unshift(ev||newEvt);saveEvts(_cache.evts);}).catch(()=>{});
+
+    hideLoader();
+    addNotif(emp.name+' offboarded. Account disabled. Phone cleared for reuse.','info');
     dbAddAudit(CU.name,'Offboarded: '+emp.name+' ('+emp.reason+')');
-    sendHRAlert('offboarding', getHREmails(), {
-      employeeName:emp.name, dept:emp.dept,
-      lastDay:fDate(emp.lastDay), reason:emp.reason, initiatedBy:CU.name
+    sendHRAlert('offboarding',getHREmails(),{
+      employeeName:emp.name,dept:emp.dept,
+      lastDay:fDate(emp.lastDay),reason:emp.reason,initiatedBy:CU.name
     });
-    closeModal();renderDashboard();toast(emp.name+' offboarded.','success');
+    closeModal();renderDashboard();
+    toast(emp.name+' offboarded. Login disabled. Phone freed for reuse.','success');
   }).catch(err=>{
     hideLoader();
-    saveEmps(getEmps());
-    toast('Offboarding saved locally (DB error: '+(err.message||err)+')','error');
+    toast('Offboarding save error: '+(err.message||err),'error');
     closeModal();renderDashboard();
   });
 }
+
 function generateSetupToken(){
   return Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2)+Date.now().toString(36);
 }
@@ -3291,7 +3498,7 @@ function phoneToUsername(phone){
 
 function submitAddUser(){
   const name  = document.getElementById('un-name').value.trim();
-  const phone = document.getElementById('un-phone').value.trim();
+  const phone = normalisePhone(getPhoneValue('un-phone')||document.getElementById('un-phone')?.value||'');
   const email = document.getElementById('un-email').value.trim();
   const role  = document.getElementById('un-role').value;
   if(!name)  { toast('Full name is required.','error'); return; }
@@ -3300,8 +3507,21 @@ function submitAddUser(){
   // Auto-generate username from phone number
   const username = phoneToUsername(phone);
   const users = getUsers();
-  if(users.find(u=>u.username===username)){
-    toast('An account for this mobile number already exists.','error'); return;
+
+  // Check for existing ACTIVE account with this phone
+  const activeConflict = users.find(u=>u.active!==false&&u.phone&&u.phone.replace(/[^0-9]/g,'')===phone.replace(/[^0-9]/g,''));
+  if(activeConflict){
+    toast('An active account already exists for this number ('+activeConflict.name+'). Disable it first in Users.','error');
+    return;
+  }
+  // Check for disabled account with same phone — silently reuse username slot
+  const disabledConflict = users.find(u=>u.active===false&&u.phone&&u.phone.replace(/[^0-9]/g,'')===phone.replace(/[^0-9]/g,''));
+  if(disabledConflict){
+    // Old account exists but disabled — it was cleared on offboarding, phone is safe to reuse
+    // But warn if username would clash
+  }
+  if(users.find(u=>u.active!==false&&u.username===username)){
+    toast('Username conflict for this number. Please contact admin.','error'); return;
   }
 
   // Generate a one-time setup token — employee will use this to set their password
@@ -3402,7 +3622,7 @@ function submitEditUser(id){
   const u=_userCache.find(x=>x.id==id)||_userCache.find(x=>String(x.id)===String(id));
   if(!u){toast('User not found.','error');return;}
   u.name=document.getElementById('eu-name').value.trim()||u.name;
-  u.phone=document.getElementById('eu-phone').value.trim()||u.phone||'';
+  u.phone=normalisePhone(getPhoneValue('eu-phone')||document.getElementById('eu-phone')?.value||'')||u.phone||'';
   u.email=document.getElementById('eu-email').value.trim()||u.email||'';
   u.role=document.getElementById('eu-role').value;
   const newPass=document.getElementById('eu-pass').value;
@@ -5310,7 +5530,7 @@ async function submitSetupPassword(){
     } catch(e){ console.warn('Setup save to DB error:', e); }
   }
 
-  // Auto-login
+  // Auto-login with role-based routing
   CU = user;
   S.set('session',{userId:user.id, username:user.username, loginAt:new Date().toISOString()});
   document.getElementById('setup-screen').style.display = 'none';
@@ -5318,10 +5538,15 @@ async function submitSetupPassword(){
   app.style.display = 'flex'; app.style.flexDirection = 'row';
   applyPermissions();
   applyStoredBranding();
-  renderDashboard();
   initInactivityTracking();
-  toast('Password set! Welcome to Moura HR, '+user.name+'!','success');
-  setTimeout(()=>promptLoginClockIn(user), 1500);
+
+  if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
+    renderDashboard();
+    setTimeout(()=>showManagerLoginChoice(user), 600);
+  } else {
+    showEmployeeClockInScreen(user);
+    toast('Welcome to Moura HR, '+user.name+'!','success');
+  }
 }
 
 // Allow login with phone number OR username ──────────────────────────────────
@@ -5972,6 +6197,84 @@ function getInvalidTokenHTML(){
     '<div style="font-size:13px;color:var(--text3);line-height:1.6">This link was not recognised or has expired.<br>Ask your HR admin to send a new one.</div>'+
     '<button onclick="goToLogin()" style="margin-top:16px;padding:9px 20px;background:var(--gold);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:13px">Go to login</button>'+
     '</div>';
+}
+
+
+// ── PHONE COUNTRY CODES ───────────────────────────────────────────────────────
+const PHONE_COUNTRIES = [
+  {code:'+230', flag:'🇲🇺', name:'Mauritius',     digits:8,  pattern:/^[5-8]\d{7}$/},
+  {code:'+27',  flag:'🇿🇦', name:'South Africa',  digits:9,  pattern:/^[6-8]\d{8}$/},
+  {code:'+1',   flag:'🇺🇸', name:'USA / Canada',  digits:10, pattern:/^\d{10}$/},
+  {code:'+44',  flag:'🇬🇧', name:'UK',             digits:10, pattern:/^[7-9]\d{9}$/},
+  {code:'+33',  flag:'🇫🇷', name:'France',         digits:9,  pattern:/^[6-7]\d{8}$/},
+  {code:'+39',  flag:'🇮🇹', name:'Italy',          digits:10, pattern:/^3\d{9}$/},
+  {code:'+49',  flag:'🇩🇪', name:'Germany',        digits:11, pattern:/^\d{10,11}$/},
+  {code:'+61',  flag:'🇦🇺', name:'Australia',      digits:9,  pattern:/^4\d{8}$/},
+  {code:'+64',  flag:'🇳🇿', name:'New Zealand',    digits:8,  pattern:/^2\d{7,9}$/},
+  {code:'+91',  flag:'🇮🇳', name:'India',          digits:10, pattern:/^[6-9]\d{9}$/},
+  {code:'+971', flag:'🇦🇪', name:'UAE',            digits:9,  pattern:/^5\d{8}$/},
+  {code:'+254', flag:'🇰🇪', name:'Kenya',          digits:9,  pattern:/^7\d{8}$/},
+  {code:'+255', flag:'🇹🇿', name:'Tanzania',       digits:9,  pattern:/^7\d{8}$/},
+  {code:'+234', flag:'🇳🇬', name:'Nigeria',        digits:10, pattern:/^[7-9]\d{9}$/},
+  {code:'+212', flag:'🇲🇦', name:'Morocco',        digits:9,  pattern:/^[5-7]\d{8}$/},
+];
+
+// Build a phone input with country selector
+// Returns HTML string — insert into a form field container
+function buildPhoneInput(inputId, value){
+  // Detect existing country code from value
+  let selected = PHONE_COUNTRIES[0]; // default Mauritius
+  let localVal = '';
+  if(value){
+    const match = PHONE_COUNTRIES.find(c=>value.startsWith(c.code));
+    if(match){ selected=match; localVal=value.slice(match.code.length).trim(); }
+    else localVal=value;
+  }
+  return `<div style="display:flex;gap:6px;align-items:center">
+    <select id="${inputId}-cc" class="fs" style="width:auto;flex-shrink:0;padding-right:8px" onchange="onCountryChange('${inputId}')">
+      ${PHONE_COUNTRIES.map(c=>`<option value="${c.code}" ${c.code===selected.code?'selected':''}>${c.flag} ${c.code}</option>`).join('')}
+    </select>
+    <input class="fi" id="${inputId}" type="tel" inputmode="numeric"
+      value="${localVal}" placeholder="${selected.name} number"
+      style="flex:1" oninput="this.value=this.value.replace(/[^0-9 ]/g,'')">
+  </div>
+  <div style="font-size:11px;color:var(--text3);margin-top:3px" id="${inputId}-hint">${selected.flag} ${selected.name} · ${selected.code}</div>`;
+}
+
+function onCountryChange(inputId){
+  const sel = document.getElementById(inputId+'-cc');
+  const hint = document.getElementById(inputId+'-hint');
+  const country = PHONE_COUNTRIES.find(c=>c.code===sel.value)||PHONE_COUNTRIES[0];
+  const inp = document.getElementById(inputId);
+  if(inp) inp.placeholder = country.name+' number';
+  if(hint) hint.textContent = country.flag+' '+country.name+' · '+country.code;
+}
+
+function getPhoneValue(inputId){
+  const sel = document.getElementById(inputId+'-cc');
+  const inp = document.getElementById(inputId);
+  if(!sel||!inp) return '';
+  const local = (inp.value||'').trim().replace(/\s+/g,' ');
+  if(!local) return '';
+  return sel.value+' '+local;
+}
+
+function prefillMauritius(input){
+  // Legacy: just ensure field is focused
+  if(!input.value.trim()) input.value='';
+}
+
+function normalisePhone(val){
+  val=(val||'').trim();
+  // Already has a + prefix — return as-is
+  if(val.startsWith('+')) return val;
+  // Convert 00[country]... → +[country]...
+  if(val.startsWith('00')) return '+'+val.slice(2);
+  // Plain 8-digit Mauritius local number
+  if(/^[5-8]\d{7}$/.test(val.replace(/\s/g,''))) return '+230 '+val;
+  // Plain 9-digit SA local number
+  if(/^0[6-8]\d{8}$/.test(val.replace(/\s/g,''))) return '+27 '+val.slice(1);
+  return val;
 }
 
 </script>
