@@ -342,138 +342,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 @media(max-width:500px){.metrics,.ig{grid-template-columns:1fr}}
 
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
-// ── SETUP FLOW (employee sets password via link) ─────────────────────────────
-async function checkSetupToken(){
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get('setup');
-  if(!token) return false;
-
-  // Connect Supabase if params are in URL
-  const sbUrl = params.get('sburl')||localStorage.getItem('sb_url')||'';
-  const sbKey = params.get('sbkey')||localStorage.getItem('sb_key')||'';
-  if(sbUrl && sbKey){
-    localStorage.setItem('sb_url', sbUrl);
-    localStorage.setItem('sb_key', sbKey);
-    if(!_sb) _sb = supabase.createClient(sbUrl, sbKey);
-  }
-
-  // Find user with this token
-  let user = null;
-  // Check localStorage first
-  const localUsers = S.get('users',[]);
-  user = localUsers.find(u=>u.setupToken===token && !u.setupDone);
-
-  // If not local, try Supabase
-  if(!user && sbReady()){
-    try{
-      const {data} = await _sb.from('hr_users').select('*').eq('setup_token', token).single();
-      if(data && !data.setup_done){
-        user = {id:data.id, name:data.name, username:data.username,
-          phone:data.phone||data.email, email:data.email,
-          role:data.role, active:data.active,
-          setupToken:data.setup_token, setupDone:data.setup_done,
-          passwordHash:data.password_hash};
-      }
-    } catch(e){ console.warn('Setup token lookup error:', e); }
-  }
-
-  if(!user){
-    // Token not found or already used
-    document.getElementById('setup-screen').style.display='flex';
-    document.getElementById('setup-screen').innerHTML = `
-      <div class="login-card" style="text-align:center">
-        <div style="font-size:40px;margin-bottom:12px">⚠️</div>
-        <div style="font-size:15px;font-weight:600;color:var(--navy);margin-bottom:8px">Link not valid</div>
-        <div style="font-size:13px;color:var(--text3);line-height:1.6">This setup link has already been used or has expired.<br>Contact your HR admin for a new link.</div>
-      </div>`;
-    // Clean URL
-    window.history.replaceState({}, '', window.location.pathname);
-    return true;
-  }
-
-  // Show setup screen
-  document.getElementById('setup-screen').style.display = 'flex';
-  document.getElementById('setup-name-label').textContent = 'Welcome, '+user.name+'!';
-  document.getElementById('setup-phone').value = user.phone||user.username;
-  // Store token in session for submission
-  window._setupUser = user;
-  // Clean URL so token isn't visible
-  window.history.replaceState({}, '', window.location.pathname);
-  return true;
-}
-
-async function submitSetupPassword(){
-  const pass  = document.getElementById('setup-pass').value;
-  const pass2 = document.getElementById('setup-pass2').value;
-  const errEl = document.getElementById('setup-err');
-  errEl.style.display = 'none';
-
-  if(!pass || pass.length < 6){
-    errEl.textContent = 'Password must be at least 6 characters.';
-    errEl.style.display = 'block'; return;
-  }
-  if(pass !== pass2){
-    errEl.textContent = 'Passwords do not match.';
-    errEl.style.display = 'block'; return;
-  }
-
-  const user = window._setupUser;
-  if(!user){ errEl.textContent = 'Session error. Please use the link again.'; errEl.style.display='block'; return; }
-
-  user.passwordHash = simpleHash(pass);
-  user.setupDone    = true;
-
-  // Save updated user
-  const localUsers = S.get('users',[]);
-  const idx = localUsers.findIndex(u=>u.setupToken===user.setupToken);
-  if(idx>=0) localUsers[idx] = user; else localUsers.push(user);
-  S.set('users', localUsers);
-
-  if(sbReady()){
-    try{
-      await _sb.from('hr_users').update({
-        password_hash: user.passwordHash,
-        setup_done: true
-      }).eq('id', user.id);
-    } catch(e){ console.warn('Setup save to DB error:', e); }
-  }
-
-  // Auto-login
-  CU = user;
-  S.set('session',{userId:user.id, username:user.username, loginAt:new Date().toISOString()});
-  document.getElementById('setup-screen').style.display = 'none';
-  const app = document.getElementById('app');
-  app.style.display = 'flex'; app.style.flexDirection = 'row';
-  applyPermissions();
-  applyStoredBranding();
-  renderDashboard();
-  initInactivityTracking();
-  toast('Password set! Welcome to Moura HR, '+user.name+'!','success');
-  setTimeout(()=>promptLoginClockIn(user), 1500);
-}
-
-// Allow login with phone number OR username ──────────────────────────────────
-async function dbFindUserByPhone(phone){
-  const clean = phone.replace(/[^0-9]/g,'');
-  // Check localStorage
-  const local = S.get('users',[]);
-  const found = local.find(u=>u.phone && u.phone.replace(/[^0-9]/g,'')===clean);
-  if(found) return found;
-  // Check Supabase
-  if(!sbReady()) return null;
-  try{
-    const {data} = await _sb.from('hr_users').select('*')
-      .ilike('phone', '%'+clean.slice(-8)+'%').single();
-    if(data) return {id:data.id,name:data.name,username:data.username,
-      phone:data.phone||data.email,email:data.email,role:data.role,
-      active:data.active,passwordHash:data.password_hash,
-      setupToken:data.setup_token,setupDone:data.setup_done};
-  } catch(e){}
-  return null;
-}
-
-</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -1015,7 +884,9 @@ async function dbFindUserByPhone(phone){
 </div>
 <div class="toast-container" id="tc"></div>
 
+
 <script>
+
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
 
@@ -4922,7 +4793,139 @@ window.showPage = function(id, el){
   if(id==='attendance') renderAttendance();
 };
 
-</script>
 
+
+// ── SETUP FLOW (employee sets password via link) ─────────────────────────────
+async function checkSetupToken(){
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('setup');
+  if(!token) return false;
+
+  // Connect Supabase if params are in URL
+  const sbUrl = params.get('sburl')||localStorage.getItem('sb_url')||'';
+  const sbKey = params.get('sbkey')||localStorage.getItem('sb_key')||'';
+  if(sbUrl && sbKey){
+    localStorage.setItem('sb_url', sbUrl);
+    localStorage.setItem('sb_key', sbKey);
+    if(!_sb) _sb = supabase.createClient(sbUrl, sbKey);
+  }
+
+  // Find user with this token
+  let user = null;
+  // Check localStorage first
+  const localUsers = S.get('users',[]);
+  user = localUsers.find(u=>u.setupToken===token && !u.setupDone);
+
+  // If not local, try Supabase
+  if(!user && sbReady()){
+    try{
+      const {data} = await _sb.from('hr_users').select('*').eq('setup_token', token).single();
+      if(data && !data.setup_done){
+        user = {id:data.id, name:data.name, username:data.username,
+          phone:data.phone||data.email, email:data.email,
+          role:data.role, active:data.active,
+          setupToken:data.setup_token, setupDone:data.setup_done,
+          passwordHash:data.password_hash};
+      }
+    } catch(e){ console.warn('Setup token lookup error:', e); }
+  }
+
+  if(!user){
+    // Token not found or already used
+    document.getElementById('setup-screen').style.display='flex';
+    document.getElementById('setup-screen').innerHTML = `
+      <div class="login-card" style="text-align:center">
+        <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+        <div style="font-size:15px;font-weight:600;color:var(--navy);margin-bottom:8px">Link not valid</div>
+        <div style="font-size:13px;color:var(--text3);line-height:1.6">This setup link has already been used or has expired.<br>Contact your HR admin for a new link.</div>
+      </div>`;
+    // Clean URL
+    window.history.replaceState({}, '', window.location.pathname);
+    return true;
+  }
+
+  // Show setup screen
+  document.getElementById('setup-screen').style.display = 'flex';
+  document.getElementById('setup-name-label').textContent = 'Welcome, '+user.name+'!';
+  document.getElementById('setup-phone').value = user.phone||user.username;
+  // Store token in session for submission
+  window._setupUser = user;
+  // Clean URL so token isn't visible
+  window.history.replaceState({}, '', window.location.pathname);
+  return true;
+}
+
+async function submitSetupPassword(){
+  const pass  = document.getElementById('setup-pass').value;
+  const pass2 = document.getElementById('setup-pass2').value;
+  const errEl = document.getElementById('setup-err');
+  errEl.style.display = 'none';
+
+  if(!pass || pass.length < 6){
+    errEl.textContent = 'Password must be at least 6 characters.';
+    errEl.style.display = 'block'; return;
+  }
+  if(pass !== pass2){
+    errEl.textContent = 'Passwords do not match.';
+    errEl.style.display = 'block'; return;
+  }
+
+  const user = window._setupUser;
+  if(!user){ errEl.textContent = 'Session error. Please use the link again.'; errEl.style.display='block'; return; }
+
+  user.passwordHash = simpleHash(pass);
+  user.setupDone    = true;
+
+  // Save updated user
+  const localUsers = S.get('users',[]);
+  const idx = localUsers.findIndex(u=>u.setupToken===user.setupToken);
+  if(idx>=0) localUsers[idx] = user; else localUsers.push(user);
+  S.set('users', localUsers);
+
+  if(sbReady()){
+    try{
+      await _sb.from('hr_users').update({
+        password_hash: user.passwordHash,
+        setup_done: true
+      }).eq('id', user.id);
+    } catch(e){ console.warn('Setup save to DB error:', e); }
+  }
+
+  // Auto-login
+  CU = user;
+  S.set('session',{userId:user.id, username:user.username, loginAt:new Date().toISOString()});
+  document.getElementById('setup-screen').style.display = 'none';
+  const app = document.getElementById('app');
+  app.style.display = 'flex'; app.style.flexDirection = 'row';
+  applyPermissions();
+  applyStoredBranding();
+  renderDashboard();
+  initInactivityTracking();
+  toast('Password set! Welcome to Moura HR, '+user.name+'!','success');
+  setTimeout(()=>promptLoginClockIn(user), 1500);
+}
+
+// Allow login with phone number OR username ──────────────────────────────────
+async function dbFindUserByPhone(phone){
+  const clean = phone.replace(/[^0-9]/g,'');
+  // Check localStorage
+  const local = S.get('users',[]);
+  const found = local.find(u=>u.phone && u.phone.replace(/[^0-9]/g,'')===clean);
+  if(found) return found;
+  // Check Supabase
+  if(!sbReady()) return null;
+  try{
+    const {data} = await _sb.from('hr_users').select('*')
+      .ilike('phone', '%'+clean.slice(-8)+'%').single();
+    if(data) return {id:data.id,name:data.name,username:data.username,
+      phone:data.phone||data.email,email:data.email,role:data.role,
+      active:data.active,passwordHash:data.password_hash,
+      setupToken:data.setup_token,setupDone:data.setup_done};
+  } catch(e){}
+  return null;
+}
+
+
+</script>
 </body>
 </html>
