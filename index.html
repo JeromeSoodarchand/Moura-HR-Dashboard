@@ -3340,7 +3340,7 @@ function showSetupLinkModal(user){
 
   const mb = document.getElementById('mbox');
   mb.className = 'modal-box';
-  document.getElementById('modal-backdrop').classList.add('open');
+  document.getElementById('mb').classList.add('open');
   mb.innerHTML = `
     <div class="modal-title">
       Account created ✓
@@ -3579,7 +3579,7 @@ function showCSVWhatsAppSummary(users){
   const sbKey=localStorage.getItem('sb_key')||'';
   const mb=document.getElementById('mbox');
   mb.className='modal-box wide';
-  document.getElementById('modal-backdrop').classList.add('open');
+  document.getElementById('mb').classList.add('open');
   mb.innerHTML='<div class="modal-title">🔑 Send setup links ('+users.length+' accounts)<button class="modal-close" onclick="closeModal()">✕</button></div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Tap <strong>Send via WhatsApp</strong> to send each employee their setup link.</div>'+
     '<div style="max-height:400px;overflow-y:auto">'+
@@ -4820,13 +4820,15 @@ async function dbSaveLocation(loc){
   try{
     const row = {name:loc.name,qr_code:loc.qrCode,address:loc.address||''};
     if(loc.id && String(loc.id).length < 13){
-      await _sb.from('att_locations').update(row).eq('id',loc.id);
+      const {error} = await _sb.from('att_locations').update(row).eq('id',loc.id);
+      if(error){ console.error('Update location error:',error); }
     } else {
       delete row.id;
-      const {data} = await _sb.from('att_locations').insert(row).select().single();
-      if(data) loc.id = data.id;
+      const {data,error} = await _sb.from('att_locations').insert(row).select().single();
+      if(error){ console.error('Insert location error:',error); }
+      else if(data) loc.id = data.id;
     }
-  } catch(e){ console.error('dbSaveLocation:', e); }
+  } catch(e){ console.error('dbSaveLocation exception:', e); toast('Location save error: '+e.message,'error'); }
   return loc;
 }
 
