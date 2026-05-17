@@ -754,6 +754,7 @@ function renderKioskLive(){
           <input class="si" placeholder="Search…" oninput="filterEmp(this.value)">
           <button class="btn" onclick="exportCSV('employees')">⬇ CSV</button>
           <button class="btn btn-amber" data-perm-btn="add_employees" onclick="openModal('csvImport')">⬆ Import CSV</button>
+          <button class="btn btn-blue ahr-btn" onclick="openAccountAudit()">🔍 Account Audit</button>
           <button class="btn btn-primary" data-perm-btn="add_employees" onclick="openModal('addEmployee')">+ Add Employee</button>
         </div>
       </div>
@@ -5657,6 +5658,209 @@ async function executeDeleteUser(userId, empAction){
   dbAddAudit(CU.name,'Deleted user: '+u.name+' (emp action: '+empAction+')');
   addNotif('User deleted: '+u.name,'info');
   renderUserMgmt();
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// ACCOUNT AUDIT — ensure every active employee has a user account
+// ════════════════════════════════════════════════════════════════════════════
+
+function openAccountAudit(){
+  if(!canEdit()){toast('HR and Admin only.','error');return;}
+
+  const emps   = getEmps().filter(e=>e.status!=='offboarded');
+  const users  = getUsers();
+
+  // Classify each employee
+  const missing  = []; // no user account at all
+  const pending  = []; // account exists but setup not done
+  const noPhone  = []; // no phone — can't auto-create or send WhatsApp
+  const linked   = []; // fully set up
+
+  emps.forEach(emp=>{
+    const user = findUserForEmployee(emp, users);
+    if(!user){
+      if(emp.phone) missing.push({emp, user:null});
+      else noPhone.push({emp, user:null});
+    } else if(user.setupDone===false && user.setupToken){
+      pending.push({emp, user});
+    } else {
+      linked.push({emp, user});
+    }
+  });
+
+  const mb = document.getElementById('mbox');
+  mb.className = 'modal-box xl';
+  document.getElementById('mb').classList.add('open');
+
+  const section = (title, color, icon, items, renderFn) => {
+    if(!items.length) return '';
+    return `<div style="margin-bottom:18px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:16px">${icon}</span>
+        <span style="font-size:13px;font-weight:600;color:var(--text)">${title}</span>
+        <span style="background:${color};color:#fff;border-radius:20px;padding:1px 8px;font-size:11px;font-weight:600">${items.length}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">${items.map(renderFn).join('')}</div>
+    </div>`;
+  };
+
+  const empRow = (emp, user, actions) => {
+    const c = aColor(emp.name);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--bg2);border-radius:var(--radius);border:1px solid var(--border)">
+      <div class="avatar" style="background:${c}22;color:${c};flex-shrink:0">${inits(emp.name)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500">${emp.name}</div>
+        <div style="font-size:11.5px;color:var(--text3)">${emp.dept||''}${emp.phone?' · '+emp.phone:' · no phone'}</div>
+        ${user?`<div style="font-size:11px;color:var(--text3)">@${user.username}</div>`:''}
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">${actions}</div>
+    </div>`;
+  };
+
+  mb.innerHTML = `
+    <div class="modal-title">
+      🔍 Account Audit
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:18px">
+      <div style="text-align:center;padding:10px;background:var(--green-light);border-radius:var(--radius)">
+        <div style="font-size:22px;font-weight:700;color:var(--green)">${linked.length}</div>
+        <div style="font-size:11px;color:var(--green-deep)">Fully set up</div>
+      </div>
+      <div style="text-align:center;padding:10px;background:var(--amber-light);border-radius:var(--radius)">
+        <div style="font-size:22px;font-weight:700;color:var(--amber)">${pending.length}</div>
+        <div style="font-size:11px;color:var(--amber-deep)">Pending setup</div>
+      </div>
+      <div style="text-align:center;padding:10px;background:var(--red-light);border-radius:var(--radius)">
+        <div style="font-size:22px;font-weight:700;color:var(--red)">${missing.length}</div>
+        <div style="font-size:11px;color:var(--red-deep)">No account</div>
+      </div>
+      <div style="text-align:center;padding:10px;background:var(--bg2);border-radius:var(--radius)">
+        <div style="font-size:22px;font-weight:700;color:var(--text3)">${noPhone.length}</div>
+        <div style="font-size:11px;color:var(--text3)">No phone</div>
+      </div>
+    </div>
+
+    <div id="audit-body" style="max-height:460px;overflow-y:auto">
+
+      ${missing.length ? `
+      <div style="background:var(--navy);color:#fff;border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:13px">Create accounts for all ${missing.length} employees without one</span>
+        <button onclick="auditCreateAll()" style="padding:6px 14px;background:var(--gold);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12.5px;font-weight:600;font-family:inherit;flex-shrink:0">
+          Create all & send WhatsApp
+        </button>
+      </div>` : ''}
+
+      ${section('No account — has phone number','#D85A30','🔴', missing, ({emp})=>
+        empRow(emp, null, `<button class="btn btn-xs btn-primary" onclick="auditCreateOne('${emp.id}')">Create & send</button>`)
+      )}
+
+      ${section('Account created — setup not completed','#BA7517','🟡', pending, ({emp,user})=>
+        empRow(emp, user, `<button class="btn btn-xs" onclick="auditResend('${JSON.stringify(user).replace(/'/g,"&#39;")}')">Resend link</button>`)
+      )}
+
+      ${section('No phone number — cannot create account automatically','#888','⚪', noPhone, ({emp})=>
+        empRow(emp, null, `<button class="btn btn-xs" onclick="closeModal();openModal('editEmployee',${emp.id})">Add phone</button>`)
+      )}
+
+      ${!missing.length && !pending.length && !noPhone.length ? `
+      <div style="text-align:center;padding:32px;color:var(--green)">
+        <div style="font-size:36px;margin-bottom:8px">✅</div>
+        <div style="font-size:15px;font-weight:600">All employees have accounts</div>
+        <div style="font-size:13px;color:var(--text3);margin-top:4px">Every active employee is set up and ready to log in.</div>
+      </div>` : ''}
+
+    </div>
+    <div class="mf"><button class="btn btn-primary" onclick="closeModal()">Close</button></div>`;
+}
+
+function findUserForEmployee(emp, users){
+  // 1. Direct ID link
+  if(emp.userId){
+    const u = users.find(u=>String(u.id)===String(emp.userId));
+    if(u) return u;
+  }
+  // 2. empId on user
+  const byEmpId = users.find(u=>u.empId&&String(u.empId)===String(emp.id));
+  if(byEmpId) return byEmpId;
+  // 3. Exact email
+  if(emp.email){
+    const byEmail = users.find(u=>u.email&&u.email.toLowerCase()===emp.email.toLowerCase());
+    if(byEmail) return byEmail;
+  }
+  // 4. Exact phone
+  if(emp.phone){
+    const p = emp.phone.replace(/[^0-9]/g,'');
+    if(p.length>=7){
+      const byPhone = users.find(u=>u.phone&&u.phone.replace(/[^0-9]/g,'')===p);
+      if(byPhone) return byPhone;
+    }
+  }
+  return null;
+}
+
+async function auditCreateOne(empId){
+  const emp = gE(empId);
+  if(!emp||!emp.phone){toast('Employee has no phone number.','error');return;}
+  const btn = event.target;
+  btn.textContent='Creating…';btn.disabled=true;
+  await autoCreateUserForEmployee(emp);
+  // Refresh audit view
+  closeModal();
+  setTimeout(openAccountAudit, 300);
+}
+
+async function auditCreateAll(){
+  if(!confirm('Create accounts for all employees without one and open WhatsApp for each?')) return;
+  closeModal();
+  const emps   = getEmps().filter(e=>e.status!=='offboarded');
+  const users  = getUsers();
+  const missing = emps.filter(emp=>{
+    const user = findUserForEmployee(emp, users);
+    return !user && emp.phone;
+  });
+  if(!missing.length){toast('No employees without accounts.','info');return;}
+
+  showLoader('Creating '+missing.length+' accounts…');
+  const created = [];
+  for(const emp of missing){
+    const existing = getUsers().find(u=>findUserForEmployee(emp,[u]));
+    if(existing){ created.push(existing); continue; }
+    const username  = phoneToUsername(emp.phone);
+    const setupToken= generateSetupToken();
+    const newUser = {
+      id:Date.now()+Math.random(), name:emp.name, username,
+      phone:emp.phone, email:emp.email||'',
+      role:'viewer', active:true,
+      createdAt:new Date().toISOString(),
+      passwordHash:'', setupToken, setupDone:false,
+      empId: emp.id
+    };
+    try{
+      const saved = await dbSaveUser(newUser);
+      const u = saved||newUser;
+      if(!_userCache.find(x=>x.username===u.username)) _userCache.push(u);
+      // Link back to employee
+      const empObj = gE(emp.id);
+      if(empObj){ empObj.userId=u.id; dbSaveEmployee(empObj).catch(()=>{}); }
+      created.push(u);
+    } catch(err){ console.error('Create user error for '+emp.name, err); }
+  }
+  S.set('users', _userCache);
+  hideLoader();
+  dbAddAudit(CU.name,'Bulk account creation: '+created.length+' accounts created');
+  if(created.length) showCSVWhatsAppSummary(created);
+  else toast('No new accounts created.','info');
+}
+
+function auditResend(userJson){
+  try{
+    const user = typeof userJson === 'string' ? JSON.parse(userJson.replace(/&#39;/g,"'")) : userJson;
+    closeModal();
+    showSetupLinkModal(user);
+  } catch(e){ toast('Could not parse user data.','error'); }
 }
 
 </script>
