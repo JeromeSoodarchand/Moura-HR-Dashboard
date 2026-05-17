@@ -324,6 +324,44 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 .hours-pill.warn{background:var(--amber-light);color:var(--amber-deep)}
 .hours-pill.low{background:var(--red-light);color:var(--red-deep)}
 
+
+/* ── KIOSK / PIN MODE ────────────────────────────────────────────────────── */
+#kiosk-screen{display:none;position:fixed;inset:0;z-index:8000;background:linear-gradient(160deg,#0A0820 0%,#1E1445 60%,#2C1F60 100%);flex-direction:column;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+.kiosk-header{text-align:center;margin-bottom:32px}
+.kiosk-logo{font-size:28px;font-weight:700;color:#fff;letter-spacing:.02em}
+.kiosk-sub{font-size:14px;color:rgba(255,255,255,0.4);margin-top:4px;letter-spacing:.05em;text-transform:uppercase}
+.kiosk-time{font-size:48px;font-weight:200;color:#fff;text-align:center;letter-spacing:.05em;margin-bottom:4px;font-variant-numeric:tabular-nums}
+.kiosk-date{font-size:14px;color:rgba(255,255,255,0.4);text-align:center;margin-bottom:40px;text-transform:uppercase;letter-spacing:.08em}
+.kiosk-card{background:rgba(255,255,255,0.06);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:32px 36px;width:360px;max-width:90vw}
+.kiosk-prompt{font-size:16px;color:rgba(255,255,255,0.7);text-align:center;margin-bottom:20px;font-weight:400}
+.kiosk-pin-display{display:flex;justify-content:center;gap:12px;margin-bottom:28px;height:20px;align-items:center}
+.kiosk-dot{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,0.3);transition:all .15s}
+.kiosk-dot.filled{background:var(--gold);border-color:var(--gold);box-shadow:0 0 10px rgba(214,147,40,.5)}
+.kiosk-dot.error{background:var(--red);border-color:var(--red)}
+.kiosk-dot.success{background:#25D366;border-color:#25D366}
+.pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.pin-btn{aspect-ratio:1;border:none;border-radius:14px;background:rgba(255,255,255,0.08);color:#fff;font-size:22px;font-weight:500;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;-webkit-tap-highlight-color:transparent;user-select:none}
+.pin-btn:hover{background:rgba(255,255,255,0.14)}
+.pin-btn:active{transform:scale(.93);background:rgba(255,255,255,0.2)}
+.pin-btn.pin-zero{grid-column:2}
+.pin-btn.pin-del{background:rgba(255,255,255,0.04);font-size:16px}
+.pin-btn.pin-ok{background:var(--gold);grid-column:3;font-size:18px}
+.pin-btn.pin-ok:hover{background:var(--gold-dark)}
+.pin-sub{font-size:9px;letter-spacing:.08em;opacity:.5;text-transform:uppercase}
+.kiosk-live{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:32px;max-width:600px}
+.kiosk-emp-chip{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);border-radius:30px;padding:6px 12px 6px 6px;color:#fff}
+.kiosk-emp-chip.in{border-color:rgba(29,158,117,.5);background:rgba(29,158,117,.12)}
+.kiosk-chip-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,0.3);flex-shrink:0}
+.kiosk-emp-chip.in .kiosk-chip-dot{background:#1D9E75;box-shadow:0 0 6px rgba(29,158,117,.6)}
+.kiosk-chip-name{font-size:12px;font-weight:500}
+.kiosk-chip-time{font-size:11px;opacity:.5}
+.kiosk-result{text-align:center;padding:16px;border-radius:14px;margin-top:16px;font-size:15px;font-weight:500;display:none}
+.kiosk-result.in{background:rgba(29,158,117,.2);color:#4ade80;border:1px solid rgba(29,158,117,.3)}
+.kiosk-result.out{background:rgba(216,90,48,.2);color:#fca5a5;border:1px solid rgba(216,90,48,.3)}
+.kiosk-result.err{background:rgba(255,255,255,.06);color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.1)}
+.kiosk-exit-btn{position:fixed;bottom:16px;right:16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.3);padding:8px 16px;border-radius:20px;cursor:pointer;font-size:12px;font-family:inherit}
+.kiosk-exit-btn:hover{background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.6)}
+
 @keyframes sIn{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
 @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -342,7 +380,202 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 @media(max-width:500px){.metrics,.ig{grid-template-columns:1fr}}
 
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+// ════════════════════════════════════════════════════════════════════════════
+// KIOSK / PIN MODULE
+// ════════════════════════════════════════════════════════════════════════════
+let _kioskPin = '';
+let _kioskTimer = null;
+let _kioskClockTimer = null;
+
+function openKiosk(){
+  document.getElementById('kiosk-screen').style.display='flex';
+  document.body.style.overflow='hidden';
+  kioskReset();
+  startKioskClock();
+  renderKioskLive();
+}
+
+function exitKiosk(){
+  const pw=prompt('Enter admin password to exit kiosk:');
+  if(!pw) return;
+  // Check against current user or super admin
+  const users=getUsers();
+  const admin=users.find(u=>u.role==='admin'||u.role==='hr');
+  if(!admin||simpleHash(pw)!==admin.passwordHash){
+    // Also allow the hardcoded super admin password
+    if(simpleHash(pw)!==simpleHash('moura848$') && pw!=='moura848$'){
+      alert('Incorrect password.');return;
+    }
+  }
+  document.getElementById('kiosk-screen').style.display='none';
+  document.body.style.overflow='';
+  stopKioskClock();
+}
+
+function startKioskClock(){
+  _kioskClockTimer = setInterval(()=>{
+    const now=new Date();
+    const t=now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    const d=now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    const tc=document.getElementById('kiosk-clock');
+    const dc=document.getElementById('kiosk-date');
+    if(tc)tc.textContent=t;
+    if(dc)dc.textContent=d;
+  },1000);
+}
+
+function stopKioskClock(){
+  if(_kioskClockTimer){clearInterval(_kioskClockTimer);_kioskClockTimer=null;}
+}
+
+function kioskPin(d){
+  if(_kioskPin.length>=4) return;
+  _kioskPin+=d;
+  updateKioskDots();
+  if(_kioskPin.length===4) setTimeout(kioskSubmit,300);
+}
+
+function kioskDel(){
+  _kioskPin=_kioskPin.slice(0,-1);
+  updateKioskDots();
+}
+
+function updateKioskDots(){
+  for(let i=0;i<4;i++){
+    const dot=document.getElementById('kd'+i);
+    if(!dot) continue;
+    dot.className='kiosk-dot'+(i<_kioskPin.length?' filled':'');
+  }
+}
+
+async function kioskSubmit(){
+  if(_kioskPin.length===0) return;
+  if(_kioskPin.length<4){
+    kioskShowResult('Please enter all 4 digits','err');
+    return;
+  }
+  const pinHash=simpleHash(_kioskPin);
+  const emps=getEmps().filter(e=>e.status!=='offboarded');
+  const emp=emps.find(e=>e.pinHash&&e.pinHash===pinHash);
+  if(!emp){
+    kioskShowResult('PIN not recognised. Try again.','err');
+    setDotsState('error');
+    setTimeout(kioskReset,2000);
+    return;
+  }
+  // Found employee — clock in or out
+  const localAtt=S.get('attendance',[]);
+  const openRec=localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
+  if(openRec){
+    // Clock OUT
+    openRec.clockOut=new Date().toISOString();
+    openRec.durationMinutes=calcDuration(openRec.clockIn,openRec.clockOut);
+    openRec.notes=(openRec.notes?openRec.notes+' | ':'')+'Kiosk PIN clock-out';
+    const idx=localAtt.findIndex(r=>String(r.id)===String(openRec.id));
+    if(idx>=0)localAtt[idx]=openRec;
+    S.set('attendance',localAtt);
+    dbSaveAttendance(openRec).catch(()=>{});
+    const dur=fmtDuration(openRec.durationMinutes);
+    kioskShowResult('👋  '+emp.name+'
+Clocked out — '+dur+' on site','out');
+    setDotsState('success');
+  } else {
+    // Clock IN — need to pick location
+    if(_attLocations.length===1){
+      // Only one location — clock in automatically
+      await kioskClockIn(emp,_attLocations[0]);
+    } else if(_attLocations.length===0){
+      // No locations — clock in with "Kiosk" as location
+      await kioskClockIn(emp,{id:0,name:'Kiosk',qrCode:'KIOSK'});
+    } else {
+      // Multiple locations — show picker
+      kioskShowLocationPicker(emp);
+      return;
+    }
+  }
+  setTimeout(()=>{kioskReset();renderKioskLive();},3000);
+}
+
+async function kioskClockIn(emp,loc){
+  const rec={
+    id:Date.now(),empId:emp.id,
+    clockIn:new Date().toISOString(),clockOut:null,
+    date:todayStr(),durationMinutes:null,
+    location:loc.name,locationId:loc.id,
+    notes:'Kiosk PIN clock-in'
+  };
+  const localAtt=S.get('attendance',[]);
+  localAtt.push(rec);
+  S.set('attendance',localAtt);
+  dbSaveAttendance(rec).catch(()=>{});
+  kioskShowResult('👋  '+emp.name+'
+Clocked in at '+loc.name,'in');
+  setDotsState('success');
+}
+
+function kioskShowLocationPicker(emp){
+  const result=document.getElementById('kiosk-result');
+  if(!result) return;
+  result.style.display='block';
+  result.className='kiosk-result';
+  result.style.background='rgba(255,255,255,0.06)';
+  result.style.border='1px solid rgba(255,255,255,0.1)';
+  result.innerHTML='<div style="color:#fff;margin-bottom:10px;font-size:14px">Hi '+emp.name+'! Select your location:</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center">'+
+    _attLocations.map(loc=>`<button onclick="kioskClockIn(${JSON.stringify(emp)},${JSON.stringify(loc)}).then(()=>setTimeout(()=>{kioskReset();renderKioskLive();},3000))"
+      style="padding:8px 16px;background:rgba(214,147,40,0.2);border:1px solid rgba(214,147,40,0.4);color:#fff;border-radius:10px;cursor:pointer;font-size:13px;font-family:inherit">
+      ${loc.name}
+    </button>`).join('')+
+    '</div>';
+}
+
+function kioskShowResult(msg,type){
+  const result=document.getElementById('kiosk-result');
+  if(!result) return;
+  const lines=msg.split('
+');
+  result.style.display='block';
+  result.className='kiosk-result '+type;
+  result.innerHTML=lines.map((l,i)=>i===0?'<div style="font-size:17px;margin-bottom:4px">'+l+'</div>':'<div style="font-size:13px;opacity:.8">'+l+'</div>').join('');
+}
+
+function setDotsState(state){
+  for(let i=0;i<4;i++){
+    const dot=document.getElementById('kd'+i);
+    if(dot) dot.className='kiosk-dot '+state;
+  }
+}
+
+function kioskReset(){
+  _kioskPin='';
+  updateKioskDots();
+  const p=document.getElementById('kiosk-prompt');
+  if(p) p.textContent='Enter your PIN';
+  const r=document.getElementById('kiosk-result');
+  if(r){r.style.display='none';r.className='kiosk-result';}
+  if(_kioskTimer){clearTimeout(_kioskTimer);_kioskTimer=null;}
+}
+
+function renderKioskLive(){
+  const live=document.getElementById('kiosk-live');
+  if(!live) return;
+  const localAtt=S.get('attendance',[]);
+  const today=localAtt.filter(r=>r.date===todayStr());
+  const emps=getEmps().filter(e=>e.status!=='offboarded');
+  const chips=emps.map(emp=>{
+    const rec=today.find(r=>String(r.empId)===String(emp.id)&&!r.clockOut);
+    if(!rec&&!today.find(r=>String(r.empId)===String(emp.id))) return '';
+    return '<div class="kiosk-emp-chip '+(rec?'in':'')+'" title="'+(rec?'On site since '+fmtTime(rec.clockIn):'Clocked out')+'">'+
+      '<div class="kiosk-chip-dot"></div>'+
+      '<span class="kiosk-chip-name">'+emp.name.split(' ')[0]+'</span>'+
+      (rec?'<span class="kiosk-chip-time">'+fmtTime(rec.clockIn)+'</span>':'')+
+    '</div>';
+  }).filter(Boolean).join('');
+  live.innerHTML=chips||'<div style="color:rgba(255,255,255,0.25);font-size:13px">No attendance recorded today</div>';
+}
+
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -503,6 +736,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
       <div class="ph"><div class="ph-title">Management Overview</div>
         <div class="ph-actions">
           <button class="btn" onclick="exportCSV('employees')">⬇ Export</button>
+          <button class="btn btn-blue" onclick="openKiosk()">⌨ Open Kiosk</button>
           <button class="btn btn-primary" data-perm-btn="add_employees" onclick="openModal('addEmployee')">+ Add Employee</button>
         </div>
       </div>
@@ -886,6 +1120,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 
 
 <script>
+
 
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
@@ -1276,7 +1511,7 @@ function rowToEmp(r){
   return{id:r.id,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
     salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:r.salary_history||[]}:null,
     checklist:r.checklist||{},offChecklist:r.off_checklist||{},lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
-    photoUrl:r.photo_url||null,files:r.files||[],clockMode:r.clock_mode||'qr'};
+    photoUrl:r.photo_url||null,files:r.files||[],clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null};
 }
 function empToRow(e){
   const row={
@@ -1305,6 +1540,7 @@ function empToRow(e){
     completed_onboarding: e.completedOnboarding || null,
     photo_url:            e.photoUrl            || null,
     clock_mode:           e.clockMode            || 'qr',
+    pin_hash:             e.pinHash              || null,
     updated_at:           new Date().toISOString(),
   };
   // Remove any remaining undefined values
@@ -2584,6 +2820,12 @@ function openModal(type,pid,pid2){
         </select>
         <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Choose QR for office staff, Simple tap for drivers and field workers.</div>
       </div>
+      <div class="fg"><label class="fl">Kiosk PIN (4 digits)</label>
+        <input class="fi" id="femp-pin" type="password" inputmode="numeric" maxlength="4"
+          value="${emp?.pin?'••••':''}" placeholder="Leave blank for no PIN access"
+          style="letter-spacing:.2em;font-size:18px">
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Used for clock in/out on the shared tablet kiosk. Leave blank to disable kiosk access for this employee.</div>
+      </div>
       <div class="fsec">Compensation</div>
       <div class="fr3"><div class="fg"><label class="fl">Salary amount</label><input class="fi" id="fsal" type="number" value="${emp?.salary?.amount||''}" placeholder="50000"></div>
       <div class="fg"><label class="fl">Currency</label><select class="fs" id="fcur">${['USD','EUR','GBP','MUR','AUD','CAD'].map(c=>`<option ${emp?.salary?.currency===c?'selected':''}>${c}</option>`).join('')}</select></div>
@@ -2776,7 +3018,8 @@ function submitAdd(){
     salary:sa?{amount:sa,currency:document.getElementById('fcur').value,frequency:document.getElementById('ffreq').value,lastReview:null,nextReview:document.getElementById('fnr').value||null,history:[{date:document.getElementById('fst').value||td(),amount:sa,note:'Starting salary'}]}:null,
     checklist:(()=>{const d=(getSettings().checklistDefaults||['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done']);return Object.fromEntries(d.map(k=>[k,false]));})(),
     files:[],photoUrl:null,
-    clockMode:document.getElementById('fclockmode')?.value||'qr'
+    clockMode:document.getElementById('fclockmode')?.value||'qr',
+    pinHash:(()=>{const p=(document.getElementById('femp-pin')?.value||'').replace(/[^0-9]/g,'');return p.length===4?simpleHash(p):null;})(),
   };
   showLoader('Saving…');
   dbSaveEmployee(newEmp).then(saved=>{
@@ -4851,7 +5094,6 @@ function printLocationQR(id,name,qrCode){
     '</body></html>');
   win.document.close();
 }
-
 async function startQRScanner(isClockedIn, emp){
   try{
     const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
@@ -5081,6 +5323,238 @@ async function dbFindUserByPhone(phone){
 }
 
 
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// KIOSK / PIN MODULE
+// ════════════════════════════════════════════════════════════════════════════
+let _kioskPin = '';
+let _kioskTimer = null;
+let _kioskClockTimer = null;
+
+function openKiosk(){
+  document.getElementById('kiosk-screen').style.display='flex';
+  document.body.style.overflow='hidden';
+  kioskReset();
+  startKioskClock();
+  renderKioskLive();
+}
+
+function exitKiosk(){
+  const pw=prompt('Enter admin password to exit kiosk:');
+  if(!pw) return;
+  // Check against current user or super admin
+  const users=getUsers();
+  const admin=users.find(u=>u.role==='admin'||u.role==='hr');
+  if(!admin||simpleHash(pw)!==admin.passwordHash){
+    // Also allow the hardcoded super admin password
+    if(simpleHash(pw)!==simpleHash('moura848$') && pw!=='moura848$'){
+      alert('Incorrect password.');return;
+    }
+  }
+  document.getElementById('kiosk-screen').style.display='none';
+  document.body.style.overflow='';
+  stopKioskClock();
+}
+
+function startKioskClock(){
+  _kioskClockTimer = setInterval(()=>{
+    const now=new Date();
+    const t=now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    const d=now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    const tc=document.getElementById('kiosk-clock');
+    const dc=document.getElementById('kiosk-date');
+    if(tc)tc.textContent=t;
+    if(dc)dc.textContent=d;
+  },1000);
+}
+
+function stopKioskClock(){
+  if(_kioskClockTimer){clearInterval(_kioskClockTimer);_kioskClockTimer=null;}
+}
+
+function kioskPin(d){
+  if(_kioskPin.length>=4) return;
+  _kioskPin+=d;
+  updateKioskDots();
+  if(_kioskPin.length===4) setTimeout(kioskSubmit,300);
+}
+
+function kioskDel(){
+  _kioskPin=_kioskPin.slice(0,-1);
+  updateKioskDots();
+}
+
+function updateKioskDots(){
+  for(let i=0;i<4;i++){
+    const dot=document.getElementById('kd'+i);
+    if(!dot) continue;
+    dot.className='kiosk-dot'+(i<_kioskPin.length?' filled':'');
+  }
+}
+
+async function kioskSubmit(){
+  if(_kioskPin.length===0) return;
+  if(_kioskPin.length<4){
+    kioskShowResult('Please enter all 4 digits','err');
+    return;
+  }
+  const pinHash=simpleHash(_kioskPin);
+  const emps=getEmps().filter(e=>e.status!=='offboarded');
+  const emp=emps.find(e=>e.pinHash&&e.pinHash===pinHash);
+  if(!emp){
+    kioskShowResult('PIN not recognised. Try again.','err');
+    setDotsState('error');
+    setTimeout(kioskReset,2000);
+    return;
+  }
+  // Found employee — clock in or out
+  const localAtt=S.get('attendance',[]);
+  const openRec=localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
+  if(openRec){
+    // Clock OUT
+    openRec.clockOut=new Date().toISOString();
+    openRec.durationMinutes=calcDuration(openRec.clockIn,openRec.clockOut);
+    openRec.notes=(openRec.notes?openRec.notes+' | ':'')+'Kiosk PIN clock-out';
+    const idx=localAtt.findIndex(r=>String(r.id)===String(openRec.id));
+    if(idx>=0)localAtt[idx]=openRec;
+    S.set('attendance',localAtt);
+    dbSaveAttendance(openRec).catch(()=>{});
+    const dur=fmtDuration(openRec.durationMinutes);
+    kioskShowResult('👋  '+emp.name+'\nClocked out — '+dur+' on site','out');
+    setDotsState('success');
+  } else {
+    // Clock IN — need to pick location
+    if(_attLocations.length===1){
+      // Only one location — clock in automatically
+      await kioskClockIn(emp,_attLocations[0]);
+    } else if(_attLocations.length===0){
+      // No locations — clock in with "Kiosk" as location
+      await kioskClockIn(emp,{id:0,name:'Kiosk',qrCode:'KIOSK'});
+    } else {
+      // Multiple locations — show picker
+      kioskShowLocationPicker(emp);
+      return;
+    }
+  }
+  setTimeout(()=>{kioskReset();renderKioskLive();},3000);
+}
+
+async function kioskClockIn(emp,loc){
+  const rec={
+    id:Date.now(),empId:emp.id,
+    clockIn:new Date().toISOString(),clockOut:null,
+    date:todayStr(),durationMinutes:null,
+    location:loc.name,locationId:loc.id,
+    notes:'Kiosk PIN clock-in'
+  };
+  const localAtt=S.get('attendance',[]);
+  localAtt.push(rec);
+  S.set('attendance',localAtt);
+  dbSaveAttendance(rec).catch(()=>{});
+  kioskShowResult('👋  '+emp.name+'\nClocked in at '+loc.name,'in');
+  setDotsState('success');
+}
+
+function kioskShowLocationPicker(emp){
+  const result=document.getElementById('kiosk-result');
+  if(!result) return;
+  result.style.display='block';
+  result.className='kiosk-result';
+  result.style.background='rgba(255,255,255,0.06)';
+  result.style.border='1px solid rgba(255,255,255,0.1)';
+  result.innerHTML='<div style="color:#fff;margin-bottom:10px;font-size:14px">Hi '+emp.name+'! Select your location:</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center">'+
+    _attLocations.map(loc=>`<button onclick="kioskClockIn(${JSON.stringify(emp)},${JSON.stringify(loc)}).then(()=>setTimeout(()=>{kioskReset();renderKioskLive();},3000))"
+      style="padding:8px 16px;background:rgba(214,147,40,0.2);border:1px solid rgba(214,147,40,0.4);color:#fff;border-radius:10px;cursor:pointer;font-size:13px;font-family:inherit">
+      ${loc.name}
+    </button>`).join('')+
+    '</div>';
+}
+
+function kioskShowResult(msg,type){
+  const result=document.getElementById('kiosk-result');
+  if(!result) return;
+  const lines=msg.split('\n');
+  result.style.display='block';
+  result.className='kiosk-result '+type;
+  result.innerHTML=lines.map((l,i)=>i===0?'<div style="font-size:17px;margin-bottom:4px">'+l+'</div>':'<div style="font-size:13px;opacity:.8">'+l+'</div>').join('');
+}
+
+function setDotsState(state){
+  for(let i=0;i<4;i++){
+    const dot=document.getElementById('kd'+i);
+    if(dot) dot.className='kiosk-dot '+state;
+  }
+}
+
+function kioskReset(){
+  _kioskPin='';
+  updateKioskDots();
+  const p=document.getElementById('kiosk-prompt');
+  if(p) p.textContent='Enter your PIN';
+  const r=document.getElementById('kiosk-result');
+  if(r){r.style.display='none';r.className='kiosk-result';}
+  if(_kioskTimer){clearTimeout(_kioskTimer);_kioskTimer=null;}
+}
+
+function renderKioskLive(){
+  const live=document.getElementById('kiosk-live');
+  if(!live) return;
+  const localAtt=S.get('attendance',[]);
+  const today=localAtt.filter(r=>r.date===todayStr());
+  const emps=getEmps().filter(e=>e.status!=='offboarded');
+  const chips=emps.map(emp=>{
+    const rec=today.find(r=>String(r.empId)===String(emp.id)&&!r.clockOut);
+    if(!rec&&!today.find(r=>String(r.empId)===String(emp.id))) return '';
+    return '<div class="kiosk-emp-chip '+(rec?'in':'')+'" title="'+(rec?'On site since '+fmtTime(rec.clockIn):'Clocked out')+'">'+
+      '<div class="kiosk-chip-dot"></div>'+
+      '<span class="kiosk-chip-name">'+emp.name.split(' ')[0]+'</span>'+
+      (rec?'<span class="kiosk-chip-time">'+fmtTime(rec.clockIn)+'</span>':'')+
+    '</div>';
+  }).filter(Boolean).join('');
+  live.innerHTML=chips||'<div style="color:rgba(255,255,255,0.25);font-size:13px">No attendance recorded today</div>';
+}
+
+
 </script>
+
+<!-- KIOSK / PIN SCREEN -->
+<div id="kiosk-screen">
+  <div class="kiosk-header">
+    <div class="kiosk-logo">Moura</div>
+    <div class="kiosk-sub">HR Attendance Kiosk</div>
+  </div>
+  <div class="kiosk-time" id="kiosk-clock">--:--</div>
+  <div class="kiosk-date" id="kiosk-date">---</div>
+  <div class="kiosk-card">
+    <div class="kiosk-prompt" id="kiosk-prompt">Enter your PIN</div>
+    <div class="kiosk-pin-display" id="kiosk-dots">
+      <div class="kiosk-dot" id="kd0"></div>
+      <div class="kiosk-dot" id="kd1"></div>
+      <div class="kiosk-dot" id="kd2"></div>
+      <div class="kiosk-dot" id="kd3"></div>
+    </div>
+    <div class="pin-grid">
+      <button class="pin-btn" onclick="kioskPin('1')"><span>1</span></button>
+      <button class="pin-btn" onclick="kioskPin('2')"><span>2</span><span class="pin-sub">ABC</span></button>
+      <button class="pin-btn" onclick="kioskPin('3')"><span>3</span><span class="pin-sub">DEF</span></button>
+      <button class="pin-btn" onclick="kioskPin('4')"><span>4</span><span class="pin-sub">GHI</span></button>
+      <button class="pin-btn" onclick="kioskPin('5')"><span>5</span><span class="pin-sub">JKL</span></button>
+      <button class="pin-btn" onclick="kioskPin('6')"><span>6</span><span class="pin-sub">MNO</span></button>
+      <button class="pin-btn" onclick="kioskPin('7')"><span>7</span><span class="pin-sub">PQRS</span></button>
+      <button class="pin-btn" onclick="kioskPin('8')"><span>8</span><span class="pin-sub">TUV</span></button>
+      <button class="pin-btn" onclick="kioskPin('9')"><span>9</span><span class="pin-sub">WXYZ</span></button>
+      <button class="pin-btn pin-del" onclick="kioskDel()">⌫</button>
+      <button class="pin-btn pin-zero" onclick="kioskPin('0')">0</button>
+      <button class="pin-btn pin-ok" onclick="kioskSubmit()">✓</button>
+    </div>
+    <div class="kiosk-result" id="kiosk-result"></div>
+  </div>
+  <div class="kiosk-live" id="kiosk-live"></div>
+  <button class="kiosk-exit-btn" onclick="exitKiosk()">Exit kiosk</button>
+</div>
+
+
 </body>
 </html>
