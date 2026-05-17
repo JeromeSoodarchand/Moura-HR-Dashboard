@@ -2608,8 +2608,8 @@ function renderUserMgmt(){
           <button class="btn btn-xs" onclick="openModal('editUser',${user.id})">Edit</button>
           <button class="btn btn-xs ${user.active===false?'btn-primary':'btn-danger'}" onclick="toggleUser(${user.id})">${user.active===false?'Enable':'Disable'}</button>
           <button class="btn btn-xs btn-danger" onclick="confirmDeleteUser(${user.id})">Delete</button>
-          ${user.setupToken&&!user.setupDone?`<button class="btn btn-xs" onclick="showSetupLinkModal(${JSON.stringify(user)})">Resend link</button>`:''}
-        `:''}
+          <button class="btn btn-xs btn-blue" onclick="sendSetupLink(${user.id})">📲 Send link</button>
+        `:'<button class="btn btn-xs btn-blue" onclick="sendSetupLink(${user.id})">📲 Send link</button>'}
       </div>
     </div>`;
   }).join('');
@@ -5861,6 +5861,97 @@ function auditResend(userJson){
     closeModal();
     showSetupLinkModal(user);
   } catch(e){ toast('Could not parse user data.','error'); }
+}
+
+
+// ── SEND SETUP LINK — works for any user, any status ────────────────────────
+async function sendSetupLink(userId){
+  let user = _userCache.find(u=>String(u.id)===String(userId));
+  if(!user){ toast('User not found.','error'); return; }
+
+  // If user has no phone, show error
+  if(!user.phone){
+    toast(user.name+' has no mobile number. Edit their account to add one.','error');
+    return;
+  }
+
+  // If user has no setup token OR setup is already done,
+  // generate a fresh token so they can reset / onboard fresh
+  const needsFreshToken = !user.setupToken || user.setupDone;
+  if(needsFreshToken){
+    user.setupToken  = generateSetupToken();
+    user.setupDone   = false;
+    // Save updated token
+    const idx = _userCache.findIndex(u=>String(u.id)===String(userId));
+    if(idx>=0) _userCache[idx] = user;
+    S.set('users', _userCache);
+    if(sbReady()){
+      try{
+        await _sb.from('hr_users').update({
+          setup_token: user.setupToken,
+          setup_done:  false
+        }).eq('id', user.id);
+      } catch(e){ console.warn('Token refresh error:', e); }
+    }
+  }
+
+  // Build WhatsApp message
+  const base = window.location.href.split('?')[0];
+  const sbUrl = localStorage.getItem('sb_url')||'';
+  const sbKey = localStorage.getItem('sb_key')||'';
+  const params = new URLSearchParams();
+  params.set('setup', user.setupToken);
+  if(sbUrl) params.set('sburl', sbUrl);
+  if(sbKey) params.set('sbkey', sbKey);
+  const link = base + '?' + params.toString();
+
+  const cleanPhone = user.phone.replace(/[^0-9]/g,'');
+  const isExistingUser = !needsFreshToken;
+  const msgText = isExistingUser
+    ? 'Hello '+user.name+',\n\nHere is your Moura HR login link:\n'+link+'\n\nYour mobile number is your username: '+user.phone+'\n\nMoura HR Team'
+    : 'Hello '+user.name+',\n\nYour Moura HR account is ready.\n\nClick this link to set your password and log in:\n'+link+'\n\nYour login is your mobile number: '+user.phone+'\n\nMoura HR Team';
+
+  const msg = encodeURIComponent(msgText);
+  const waUrl = 'https://wa.me/'+cleanPhone+'?text='+msg;
+
+  // Show modal with WhatsApp button
+  const mb = document.getElementById('mbox');
+  mb.className = 'modal-box';
+  document.getElementById('mb').classList.add('open');
+  const c = aColor(user.name);
+  mb.innerHTML = `
+    <div class="modal-title">
+      📲 Send login link
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;background:var(--bg2);border-radius:var(--radius);padding:12px 14px;margin-bottom:16px">
+      <div class="avatar avatar-lg" style="background:${c}22;color:${c}">${inits(user.name)}</div>
+      <div>
+        <div style="font-weight:600;font-size:14px">${user.name}</div>
+        <div style="font-size:12.5px;color:var(--text3)">@${user.username} · ${user.phone}</div>
+        <div style="font-size:12px;margin-top:4px">
+          ${needsFreshToken
+            ? '<span style="color:var(--amber)">🔄 Fresh setup link generated</span>'
+            : '<span style="color:var(--green)">✓ Existing setup link</span>'}
+        </div>
+      </div>
+    </div>
+    <div style="background:var(--bg2);border-radius:var(--radius);padding:10px 12px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Setup link</div>
+      <div style="font-size:10.5px;word-break:break-all;color:var(--text2);font-family:monospace;line-height:1.4">${link}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <a href="${waUrl}" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:10px;padding:13px;background:#25D366;color:#fff;border-radius:var(--radius);text-decoration:none;font-size:14px;font-weight:600">
+        <svg viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+        Send via WhatsApp to ${user.phone}
+      </a>
+      <button onclick="copySetupLink('${link}')" class="btn" style="justify-content:center">📋 Copy link only</button>
+    </div>
+    <div style="font-size:12px;color:var(--text3);text-align:center;margin-top:12px;line-height:1.5">
+      ${needsFreshToken
+        ? 'A fresh link has been generated. Any previous link is now invalid.'
+        : 'This link is valid until the employee completes setup.'}
+    </div>`;
 }
 
 </script>
