@@ -5228,50 +5228,51 @@ async function checkSetupToken(){
     if(!_sb) _sb = supabase.createClient(sbUrl, sbKey);
   }
 
-  // Find user with this token
+  // Find user with this token — match by token alone, ignore setupDone
+  // (sendSetupLink regenerates tokens for already-setup users too)
   let user = null;
+
   // Check localStorage first
   const localUsers = S.get('users',[]);
-  user = localUsers.find(u=>u.setupToken===token && !u.setupDone);
+  user = localUsers.find(u=>u.setupToken===token);
 
-  // If not local, try Supabase
+  // If not found locally, try Supabase
   if(!user && sbReady()){
     try{
-      const {data} = await _sb.from('hr_users').select('*').eq('setup_token', token).single();
-      if(data && !data.setup_done){
-        user = {id:data.id, name:data.name, username:data.username,
-          phone:data.phone||data.email, email:data.email,
+      const {data} = await _sb.from('hr_users').select('*').eq('setup_token',token).single();
+      if(data){
+        user = {
+          id:data.id, name:data.name, username:data.username,
+          phone:data.phone||data.email||'', email:data.email||'',
           role:data.role, active:data.active,
           setupToken:data.setup_token, setupDone:data.setup_done,
-          passwordHash:data.password_hash};
+          passwordHash:data.password_hash, empId:data.emp_id||null
+        };
       }
-    } catch(e){ console.warn('Setup token lookup error:', e); }
+    } catch(e){ console.warn('Setup token lookup error:',e); }
   }
 
   if(!user){
-    // Token not found or already used
     document.getElementById('setup-screen').style.display='flex';
-    document.getElementById('setup-screen').innerHTML = `
-      <div class="login-card" style="text-align:center">
-        <div style="font-size:40px;margin-bottom:12px">⚠️</div>
-        <div style="font-size:15px;font-weight:600;color:var(--navy);margin-bottom:8px">Link not valid</div>
-        <div style="font-size:13px;color:var(--text3);line-height:1.6">This setup link has already been used or has expired.<br>Contact your HR admin for a new link.</div>
-      </div>`;
-    // Clean URL
-    window.history.replaceState({}, '', window.location.pathname);
+    document.getElementById('setup-screen').innerHTML = getInvalidTokenHTML();
+    window.history.replaceState({},'',window.location.pathname);
     return true;
   }
 
+  // Always reset setupDone so the form works regardless of previous state
+  user.setupDone = false;
+
   // Show setup screen
-  document.getElementById('setup-screen').style.display = 'flex';
-  document.getElementById('setup-name-label').textContent = 'Welcome, '+user.name+'!';
-  document.getElementById('setup-phone').value = user.phone||user.username;
-  // Store token in session for submission
-  window._setupUser = user;
-  // Clean URL so token isn't visible
-  window.history.replaceState({}, '', window.location.pathname);
+  document.getElementById('setup-screen').style.display='flex';
+  const nameEl=document.getElementById('setup-name-label');
+  const phoneEl=document.getElementById('setup-phone');
+  if(nameEl) nameEl.textContent='Welcome, '+user.name+'!';
+  if(phoneEl) phoneEl.value=user.phone||user.username;
+  window._setupUser=user;
+  window.history.replaceState({},'',window.location.pathname);
   return true;
 }
+
 
 async function submitSetupPassword(){
   const pass  = document.getElementById('setup-pass').value;
@@ -5959,6 +5960,18 @@ async function sendSetupLink(userId){
         ? 'A fresh link has been generated. Any previous link is now invalid.'
         : 'This link is valid until the employee completes setup.'}
     </div>`;
+}
+
+
+function goToLogin(){document.getElementById("setup-screen").style.display="none";showLoginScreen();}
+
+function getInvalidTokenHTML(){
+  return '<div class="login-card" style="text-align:center">'+
+    '<div style="font-size:40px;margin-bottom:12px">⚠️</div>'+
+    '<div style="font-size:15px;font-weight:600;color:var(--navy);margin-bottom:8px">Link not valid</div>'+
+    '<div style="font-size:13px;color:var(--text3);line-height:1.6">This link was not recognised or has expired.<br>Ask your HR admin to send a new one.</div>'+
+    '<button onclick="goToLogin()" style="margin-top:16px;padding:9px 20px;background:var(--gold);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:13px">Go to login</button>'+
+    '</div>';
 }
 
 </script>
