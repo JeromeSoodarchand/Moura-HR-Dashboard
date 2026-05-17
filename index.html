@@ -362,6 +362,27 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 .kiosk-exit-btn{position:fixed;bottom:16px;right:16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.3);padding:8px 16px;border-radius:20px;cursor:pointer;font-size:12px;font-family:inherit}
 .kiosk-exit-btn:hover{background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.6)}
 
+
+/* ── LEAVE MANAGEMENT ─────────────────────────────────────────────────────── */
+.leave-status-pending{background:#FEF3C7;color:#92400E;border:1px solid #FCD34D}
+.leave-status-approved{background:var(--green-light);color:var(--green-deep);border:1px solid #6EE7B7}
+.leave-status-rejected{background:var(--red-light);color:var(--red-deep);border:1px solid #FCA5A5}
+.leave-status-cancelled{background:var(--gray-light);color:var(--gray-deep);border:1px solid #D1D5DB}
+.leave-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:10px;transition:box-shadow .15s}
+.leave-card:hover{box-shadow:0 2px 12px rgba(30,20,69,.08)}
+.leave-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.leave-type-badge{display:inline-flex;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600}
+.leave-calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.leave-cal-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:12px;position:relative}
+.leave-cal-day.has-leave{background:var(--red-light);color:var(--red-deep);font-weight:600}
+.leave-cal-day.today{background:var(--gold);color:#fff;font-weight:700}
+.leave-cal-day.weekend{color:var(--text3)}
+.leave-cal-day.other-month{opacity:.3}
+.leave-balance-bar{height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-top:4px}
+.leave-balance-fill{height:100%;border-radius:4px;transition:width .4s}
+.leave-request-btn{display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--gold);color:#fff;border:none;border-radius:var(--radius-lg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;width:100%;justify-content:center;margin-top:12px;transition:background .15s}
+.leave-request-btn:hover{background:var(--gold-dark)}
+
 @keyframes sIn{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
 @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -667,6 +688,10 @@ function renderKioskLive(){
       <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
       <span class="tab-label">Attendance</span>
     </button>
+    <button class="nav-tab" data-perm="view_employees" onclick="showPage('leave',this)">
+      <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg></div>
+      <span class="tab-label">Leave</span>
+    </button>
     <button class="nav-tab" data-perm="view_training" onclick="showPage('training',this)">
       <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
       <span class="tab-label">Training</span>
@@ -837,6 +862,94 @@ function renderKioskLive(){
         <button class="fb" onclick="setEVF('milestone',this)">Milestones</button>
       </div>
       <div class="card"><table><thead><tr><th>Date</th><th>Employee</th><th>Type</th><th>Description</th><th>Logged by</th><th>Notified</th></tr></thead><tbody id="events-tbody"></tbody></table></div>
+    </div>
+
+    <!-- LEAVE MANAGEMENT -->
+    <div class="page" id="page-leave">
+      <div class="ph">
+        <div class="ph-title">Leave Management</div>
+        <div class="ph-actions">
+          <button class="btn" onclick="exportLeaveCSV()">⬇ Export</button>
+          <button class="btn btn-primary ahr-btn" onclick="openLeaveRequestModal()">+ Request Leave</button>
+        </div>
+      </div>
+
+      <!-- Summary metrics -->
+      <div class="metrics" id="leave-metrics"></div>
+
+      <div class="g2">
+        <!-- Pending requests -->
+        <div class="card">
+          <div class="ch">
+            <span class="ct">Pending Requests</span>
+            <span class="ts tm" id="leave-pending-count"></span>
+          </div>
+          <div class="cb" id="leave-pending-list" style="padding:10px 14px"></div>
+        </div>
+
+        <!-- Mini calendar -->
+        <div class="card">
+          <div class="ch">
+            <span class="ct">Team Calendar</span>
+            <div style="display:flex;gap:4px">
+              <button class="btn btn-xs" onclick="leaveCalPrev()">‹</button>
+              <span class="ts" id="leave-cal-label" style="padding:4px 8px;font-weight:500"></span>
+              <button class="btn btn-xs" onclick="leaveCalNext()">›</button>
+            </div>
+          </div>
+          <div class="cb">
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:6px">
+              ${['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>`<div style="text-align:center;font-size:11px;font-weight:600;color:var(--text3);padding:4px">${d}</div>`).join('')}
+            </div>
+            <div class="leave-calendar" id="leave-calendar"></div>
+            <div style="display:flex;gap:12px;margin-top:10px;font-size:11.5px;color:var(--text3)">
+              <span><span style="display:inline-block;width:10px;height:10px;background:var(--red-light);border-radius:2px;margin-right:4px"></span>On leave</span>
+              <span><span style="display:inline-block;width:10px;height:10px;background:var(--gold);border-radius:2px;margin-right:4px"></span>Today</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- All requests table -->
+      <div class="card">
+        <div class="ch">
+          <span class="ct">All Leave Requests</span>
+          <div style="display:flex;gap:6px">
+            <select class="si" style="width:130px" id="leave-filter-type" onchange="renderLeaveTable()">
+              <option value="">All types</option>
+              <option value="annual">Annual</option>
+              <option value="sick">Sick</option>
+              <option value="casual">Casual</option>
+              <option value="maternity">Maternity</option>
+              <option value="paternity">Paternity</option>
+              <option value="bereavement">Bereavement</option>
+              <option value="other">Other</option>
+            </select>
+            <select class="si" style="width:130px" id="leave-filter-status" onchange="renderLeaveTable()">
+              <option value="">All status</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+        <div style="padding:0">
+          <table><thead><tr>
+            <th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Actions</th>
+          </tr></thead><tbody id="leave-tbody"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Leave balances -->
+      <div class="card">
+        <div class="ch"><span class="ct">Leave Balances</span></div>
+        <div class="cb" style="padding:0">
+          <table><thead><tr>
+            <th>Employee</th><th>Annual</th><th>Sick</th><th>Casual</th><th>Used This Year</th><th>Actions</th>
+          </tr></thead><tbody id="leave-balances-tbody"></tbody></table>
+        </div>
+      </div>
     </div>
 
     <!-- TRAINING -->
@@ -2018,7 +2131,10 @@ async function showEmployeeClockInScreen(user){
       <button onclick="openFullHRPlatform()" style="margin-top:8px;background:none;border:1px solid var(--border2);color:var(--text2);padding:8px 20px;border-radius:20px;cursor:pointer;font-size:12.5px;font-family:inherit">
         Open full HR platform
       </button>
-      <button onclick="doLogout()" style="display:block;margin:12px auto 0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;font-family:inherit;text-decoration:underline">
+      <button onclick="empRequestLeave()" style="display:block;margin:10px auto 0;background:none;border:1px solid var(--gold);color:var(--gold);padding:6px 18px;border-radius:20px;cursor:pointer;font-size:12.5px;font-family:inherit">
+        📅 Request leave
+      </button>
+      <button onclick="doLogout()" style="display:block;margin:10px auto 0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;font-family:inherit;text-decoration:underline">
         Sign out
       </button>
     </div>`;
@@ -6275,6 +6391,570 @@ function normalisePhone(val){
   // Plain 9-digit SA local number
   if(/^0[6-8]\d{8}$/.test(val.replace(/\s/g,''))) return '+27 '+val.slice(1);
   return val;
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// LEAVE MANAGEMENT MODULE
+// ════════════════════════════════════════════════════════════════════════════
+
+// Default balances (days per year) — Mauritius Labour Act
+const LEAVE_DEFAULTS = {annual:20, sick:15, casual:10};
+const LEAVE_TYPES = {
+  annual:     {label:'Annual Leave',     color:'#378ADD', bg:'#E6F1FB'},
+  sick:       {label:'Sick Leave',       color:'#D85A30', bg:'#FAECE7'},
+  casual:     {label:'Casual Leave',     color:'#BA7517', bg:'#FAEEDA'},
+  maternity:  {label:'Maternity Leave',  color:'#7F77DD', bg:'#EEEDFE'},
+  paternity:  {label:'Paternity Leave',  color:'#1D9E75', bg:'#E1F5EE'},
+  bereavement:{label:'Bereavement',      color:'#444441', bg:'#F1EFE8'},
+  other:      {label:'Other',            color:'#888780', bg:'#F5F4F0'},
+};
+const MAURITIUS_HOLIDAYS_2025 = [
+  '2025-01-01','2025-01-02','2025-02-01','2025-03-12','2025-05-01',
+  '2025-11-01','2025-11-02','2025-12-25','2025-08-15','2025-09-03'
+];
+
+let _leaveRequests = [];
+let _leaveBalances = {};
+let _leaveCalYear  = new Date().getFullYear();
+let _leaveCalMonth = new Date().getMonth();
+
+// ── DB helpers ────────────────────────────────────────────────────────────────
+async function dbGetLeaveRequests(){
+  const local = S.get('leaveRequests',[]);
+  if(!sbReady()) return local;
+  try{
+    const {data,error} = await _sb.from('leave_requests').select('*').order('created_at',{ascending:false});
+    if(error){ return local; }
+    return data.map(r=>({
+      id:r.id, empId:r.emp_id, type:r.type, fromDate:r.from_date, toDate:r.to_date,
+      days:r.days, reason:r.reason||'', status:r.status, reviewedBy:r.reviewed_by||'',
+      reviewNote:r.review_note||'', createdAt:r.created_at, updatedAt:r.updated_at
+    }));
+  } catch(e){ return local; }
+}
+
+async function dbSaveLeaveRequest(req){
+  const local = S.get('leaveRequests',[]);
+  const i = local.findIndex(r=>String(r.id)===String(req.id));
+  if(i>=0) local[i]=req; else local.push(req);
+  S.set('leaveRequests', local);
+  _leaveRequests = local;
+  if(!sbReady()) return req;
+  try{
+    const row = {
+      emp_id:req.empId, type:req.type, from_date:req.fromDate, to_date:req.toDate,
+      days:req.days, reason:req.reason||'', status:req.status,
+      reviewed_by:req.reviewedBy||null, review_note:req.reviewNote||null,
+      updated_at:new Date().toISOString()
+    };
+    Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
+    if(req.id && String(req.id).length<13){
+      const {data,error} = await _sb.from('leave_requests').update(row).eq('id',req.id).select().single();
+      if(error){ console.error('Update leave error:',error); return req; }
+      return data ? {...req, id:data.id} : req;
+    } else {
+      delete row.id;
+      const {data,error} = await _sb.from('leave_requests').insert(row).select().single();
+      if(error){ console.error('Insert leave error:',error); return req; }
+      return data ? {...req, id:data.id} : req;
+    }
+  } catch(e){ console.error('dbSaveLeaveRequest exception:',e); return req; }
+}
+
+async function dbGetLeaveBalances(){
+  const local = S.get('leaveBalances',{});
+  if(!sbReady()) return local;
+  try{
+    const {data,error} = await _sb.from('leave_balances').select('*');
+    if(error) return local;
+    const out = {};
+    data.forEach(r=>{ out[r.emp_id]={annual:r.annual||20,sick:r.sick||15,casual:r.casual||10}; });
+    S.set('leaveBalances', out);
+    return out;
+  } catch(e){ return local; }
+}
+
+async function dbSaveLeaveBalance(empId, balances){
+  const local = S.get('leaveBalances',{});
+  local[empId] = balances;
+  S.set('leaveBalances', local);
+  _leaveBalances = local;
+  if(!sbReady()) return;
+  try{
+    await _sb.from('leave_balances').upsert(
+      {emp_id:empId, annual:balances.annual, sick:balances.sick, casual:balances.casual, updated_at:new Date().toISOString()},
+      {onConflict:'emp_id'}
+    );
+  } catch(e){ console.error('Save leave balance error:',e); }
+}
+
+// ── Business logic ────────────────────────────────────────────────────────────
+function countWorkingDays(from, to){
+  let count=0, cur=new Date(from+'T00:00:00');
+  const end=new Date(to+'T00:00:00');
+  while(cur<=end){
+    const dow=cur.getDay();
+    const ds=cur.toISOString().slice(0,10);
+    if(dow!==0&&dow!==6&&!MAURITIUS_HOLIDAYS_2025.includes(ds)) count++;
+    cur.setDate(cur.getDate()+1);
+  }
+  return count;
+}
+
+function getEmpBalance(empId){
+  const bal = _leaveBalances[empId] || {...LEAVE_DEFAULTS};
+  // Calculate used this year from approved requests
+  const year = new Date().getFullYear();
+  const used = {annual:0, sick:0, casual:0};
+  _leaveRequests.filter(r=>String(r.empId)===String(empId)&&r.status==='approved').forEach(r=>{
+    if(new Date(r.fromDate).getFullYear()===year && LEAVE_DEFAULTS.hasOwnProperty(r.type)){
+      used[r.type]=(used[r.type]||0)+r.days;
+    }
+  });
+  return {
+    annual: bal.annual, sick: bal.sick, casual: bal.casual,
+    usedAnnual: used.annual, usedSick: used.sick, usedCasual: used.casual,
+    remAnnual: Math.max(0,bal.annual-used.annual),
+    remSick:   Math.max(0,bal.sick-used.sick),
+    remCasual: Math.max(0,bal.casual-used.casual),
+  };
+}
+
+function leaveBadge(status){
+  const map = {
+    pending: 'leave-status-pending', approved:'leave-status-approved',
+    rejected:'leave-status-rejected', cancelled:'leave-status-cancelled'
+  };
+  const labels = {pending:'Pending',approved:'Approved',rejected:'Rejected',cancelled:'Cancelled'};
+  return `<span class="badge ${map[status]||''}">${labels[status]||status}</span>`;
+}
+
+function leaveTypeBadge(type){
+  const cfg = LEAVE_TYPES[type]||LEAVE_TYPES.other;
+  return `<span class="badge" style="background:${cfg.bg};color:${cfg.color}">${cfg.label}</span>`;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+async function renderLeave(){
+  [_leaveRequests, _leaveBalances] = await Promise.all([dbGetLeaveRequests(), dbGetLeaveBalances()]);
+  renderLeaveMetrics();
+  renderLeavePending();
+  renderLeaveCalendar();
+  renderLeaveTable();
+  renderLeaveBalances();
+}
+
+function renderLeaveMetrics(){
+  const el = document.getElementById('leave-metrics');
+  if(!el) return;
+  const pending  = _leaveRequests.filter(r=>r.status==='pending').length;
+  const approved = _leaveRequests.filter(r=>r.status==='approved'&&new Date(r.fromDate)>=new Date(new Date().getFullYear()+'-01-01')).length;
+  const onLeave  = _leaveRequests.filter(r=>r.status==='approved'&&r.fromDate<=todayStr()&&r.toDate>=todayStr()).length;
+  const emps     = getEmps().filter(e=>e.status!=='offboarded').length;
+  el.innerHTML = `
+    <div class="mc"><div class="mc-accent" style="background:var(--amber)"></div>
+      <div class="mc-label">Pending approval</div><div class="mc-value">${pending}</div>
+      <div class="mc-delta">${pending?'Needs review':'All clear'}</div></div>
+    <div class="mc"><div class="mc-accent" style="background:var(--red)"></div>
+      <div class="mc-label">On leave today</div><div class="mc-value">${onLeave}</div>
+      <div class="mc-delta">${emps} total employees</div></div>
+    <div class="mc"><div class="mc-accent" style="background:var(--green)"></div>
+      <div class="mc-label">Approved this year</div><div class="mc-value">${approved}</div>
+      <div class="mc-delta">leave requests</div></div>
+    <div class="mc"><div class="mc-accent" style="background:var(--navy)"></div>
+      <div class="mc-label">Coverage today</div>
+      <div class="mc-value">${emps-onLeave}</div>
+      <div class="mc-delta">employees available</div></div>`;
+}
+
+function renderLeavePending(){
+  const el = document.getElementById('leave-pending-list');
+  const cnt = document.getElementById('leave-pending-count');
+  if(!el) return;
+  const pending = _leaveRequests.filter(r=>r.status==='pending')
+    .sort((a,b)=>new Date(a.fromDate)-new Date(b.fromDate));
+  if(cnt) cnt.textContent = pending.length+' pending';
+  if(!pending.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:12px 0;text-align:center">✅ No pending requests</div>';
+    return;
+  }
+  el.innerHTML = pending.map(req=>{
+    const emp = gE(req.empId);
+    const c   = emp ? aColor(emp.name) : '#888';
+    const cfg = LEAVE_TYPES[req.type]||LEAVE_TYPES.other;
+    return `<div class="leave-card">
+      <div class="leave-card-header">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="avatar" style="background:${c}22;color:${c};width:28px;height:28px;font-size:10px">${emp?inits(emp.name):'?'}</div>
+          <div>
+            <div style="font-size:13px;font-weight:500">${emp?emp.name:'Unknown'}</div>
+            <div class="txs tm">${fDate(req.fromDate)} – ${fDate(req.toDate)} · ${req.days} day${req.days!==1?'s':''}</div>
+          </div>
+        </div>
+        <span class="leave-type-badge" style="background:${cfg.bg};color:${cfg.color}">${cfg.label}</span>
+      </div>
+      ${req.reason?`<div class="txs tm" style="margin-bottom:10px;padding-left:36px">${req.reason}</div>`:''}
+      ${canEdit()?`<div style="display:flex;gap:6px;padding-left:36px">
+        <button class="btn btn-xs btn-primary" onclick="reviewLeave('${req.id}','approved')">✓ Approve</button>
+        <button class="btn btn-xs btn-danger" onclick="reviewLeave('${req.id}','rejected')">✕ Reject</button>
+      </div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderLeaveCalendar(){
+  const cal = document.getElementById('leave-calendar');
+  const lbl = document.getElementById('leave-cal-label');
+  if(!cal) return;
+  const year=_leaveCalYear, month=_leaveCalMonth;
+  if(lbl) lbl.textContent=new Date(year,month,1).toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+
+  // Get all approved leave dates for this month
+  const leaveDates={};
+  _leaveRequests.filter(r=>r.status==='approved').forEach(req=>{
+    let cur=new Date(req.fromDate+'T00:00:00');
+    const end=new Date(req.toDate+'T00:00:00');
+    while(cur<=end){
+      const ds=cur.toISOString().slice(0,10);
+      if(!leaveDates[ds]) leaveDates[ds]=[];
+      const emp=gE(req.empId);
+      if(emp) leaveDates[ds].push(emp.name.split(' ')[0]);
+      cur.setDate(cur.getDate()+1);
+    }
+  });
+
+  const first=new Date(year,month,1);
+  const last=new Date(year,month+1,0);
+  const today=todayStr();
+  let cells='';
+  // Pad start
+  for(let i=0;i<first.getDay();i++) cells+=`<div class="leave-cal-day other-month"></div>`;
+  // Days
+  for(let d=1;d<=last.getDate();d++){
+    const ds=`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isToday=ds===today;
+    const hasLeave=!!leaveDates[ds];
+    const isWeekend=[0,6].includes(new Date(ds+'T00:00:00').getDay());
+    const cls=['leave-cal-day',isToday?'today':hasLeave?'has-leave':isWeekend?'weekend':''].filter(Boolean).join(' ');
+    const tip=hasLeave?` title="${leaveDates[ds].join(', ')} on leave"`:'';
+    cells+=`<div class="${cls}"${tip}>${d}</div>`;
+  }
+  cal.innerHTML=cells;
+}
+
+function leaveCalPrev(){ _leaveCalMonth--; if(_leaveCalMonth<0){_leaveCalMonth=11;_leaveCalYear--;} renderLeaveCalendar(); }
+function leaveCalNext(){ _leaveCalMonth++; if(_leaveCalMonth>11){_leaveCalMonth=0;_leaveCalYear++;} renderLeaveCalendar(); }
+
+function renderLeaveTable(){
+  const tbody = document.getElementById('leave-tbody');
+  if(!tbody) return;
+  const typeF   = document.getElementById('leave-filter-type')?.value||'';
+  const statusF = document.getElementById('leave-filter-status')?.value||'';
+  let list = [..._leaveRequests];
+  if(typeF)   list=list.filter(r=>r.type===typeF);
+  if(statusF) list=list.filter(r=>r.status===statusF);
+  list.sort((a,b)=>new Date(b.createdAt||b.fromDate)-new Date(a.createdAt||a.fromDate));
+
+  if(!list.length){
+    tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:20px">No leave requests found.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(req=>{
+    const emp=gE(req.empId),c=emp?aColor(emp.name):'#888';
+    return `<tr>
+      <td><div class="emp-cell">
+        <div class="avatar" style="background:${c}22;color:${c};width:26px;height:26px;font-size:10px">${emp?inits(emp.name):'?'}</div>
+        <div style="font-weight:500">${emp?emp.name:'Unknown'}</div>
+      </div></td>
+      <td>${leaveTypeBadge(req.type)}</td>
+      <td class="tm">${fDate(req.fromDate)}</td>
+      <td class="tm">${fDate(req.toDate)}</td>
+      <td style="font-weight:500">${req.days}</td>
+      <td class="tm txs">${req.reason||'—'}</td>
+      <td>${leaveBadge(req.status)}</td>
+      <td>
+        ${req.status==='pending'&&canEdit()?`
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-xs btn-primary" onclick="reviewLeave('${req.id}','approved')">✓</button>
+            <button class="btn btn-xs btn-danger" onclick="reviewLeave('${req.id}','rejected')">✕</button>
+          </div>`:
+          req.status==='approved'&&canEdit()?`<button class="btn btn-xs" onclick="reviewLeave('${req.id}','cancelled')">Cancel</button>`:'—'
+        }
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderLeaveBalances(){
+  const tbody = document.getElementById('leave-balances-tbody');
+  if(!tbody) return;
+  const emps = getEmps().filter(e=>e.status!=='offboarded');
+  if(!emps.length){ tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:16px">No employees</td></tr>'; return; }
+  tbody.innerHTML = emps.map(emp=>{
+    const b = getEmpBalance(emp.id);
+    const c = aColor(emp.name);
+    const bar=(used,total)=>`<div class="leave-balance-bar"><div class="leave-balance-fill" style="width:${Math.min(100,Math.round(used/total*100))}%;background:${used/total>0.8?'var(--red)':used/total>0.5?'var(--amber)':'var(--green)'}"></div></div>`;
+    return `<tr>
+      <td><div class="emp-cell">
+        <div class="avatar" style="background:${c}22;color:${c};width:26px;height:26px;font-size:10px">${inits(emp.name)}</div>
+        <div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.dept||''}</div></div>
+      </div></td>
+      <td><div style="font-size:12px">${b.remAnnual}/${b.annual} rem</div>${bar(b.usedAnnual,b.annual)}</td>
+      <td><div style="font-size:12px">${b.remSick}/${b.sick} rem</div>${bar(b.usedSick,b.sick)}</td>
+      <td><div style="font-size:12px">${b.remCasual}/${b.casual} rem</div>${bar(b.usedCasual,b.casual)}</td>
+      <td class="tm">${b.usedAnnual+b.usedSick+b.usedCasual} days</td>
+      <td>${canEdit()?`<button class="btn btn-xs" onclick="openEditBalance('${emp.id}')">Edit</button>`:'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+function openLeaveRequestModal(empId){
+  if(!empId){
+    // Default to current user's employee record
+    const emps = getEmps().filter(e=>e.status!=='offboarded');
+    const me = emps.find(e=>
+      (CU.email&&e.email&&e.email.toLowerCase()===CU.email.toLowerCase())||
+      (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===CU.phone.replace(/[^0-9]/g,''))
+    );
+    empId = me ? me.id : null;
+  }
+
+  const mb=document.getElementById('mbox');mb.className='modal-box';
+  document.getElementById('mb').classList.add('open');
+  const emps=getEmps().filter(e=>e.status!=='offboarded');
+
+  mb.innerHTML=`
+    <div class="modal-title">Request Leave <button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="fg"><label class="fl">Employee *</label>
+      <select class="fs" id="lv-emp">
+        ${emps.map(e=>`<option value="${e.id}" ${String(e.id)===String(empId)?'selected':''}>${e.name} — ${e.dept||''}</option>`).join('')}
+      </select>
+    </div>
+    <div class="fg"><label class="fl">Leave type *</label>
+      <select class="fs" id="lv-type" onchange="updateLeaveBalance()">
+        ${Object.entries(LEAVE_TYPES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}
+      </select>
+    </div>
+    <div id="lv-balance-info" style="background:var(--bg2);border-radius:var(--radius);padding:8px 12px;font-size:12.5px;margin-bottom:12px;color:var(--text2)"></div>
+    <div class="fr">
+      <div class="fg"><label class="fl">From date *</label>
+        <input class="fi" id="lv-from" type="date" value="${todayStr()}" onchange="updateLeaveDays()">
+      </div>
+      <div class="fg"><label class="fl">To date *</label>
+        <input class="fi" id="lv-to" type="date" value="${todayStr()}" onchange="updateLeaveDays()">
+      </div>
+    </div>
+    <div id="lv-days-info" style="font-size:12.5px;color:var(--text2);margin-bottom:12px;padding:8px 12px;background:var(--bg2);border-radius:var(--radius)">
+      Select dates to calculate working days
+    </div>
+    <div class="fg"><label class="fl">Reason</label>
+      <textarea class="ft" id="lv-reason" placeholder="Optional reason or notes…" rows="2"></textarea>
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitLeaveRequest()">Submit Request</button>
+    </div>`;
+
+  setTimeout(()=>{ updateLeaveBalance(); updateLeaveDays(); }, 50);
+}
+
+function updateLeaveBalance(){
+  const empId = document.getElementById('lv-emp')?.value;
+  const type  = document.getElementById('lv-type')?.value;
+  const el    = document.getElementById('lv-balance-info');
+  if(!el||!empId) return;
+  const b = getEmpBalance(empId);
+  if(['annual','sick','casual'].includes(type)){
+    const rem = {annual:b.remAnnual, sick:b.remSick, casual:b.remCasual}[type];
+    const total = {annual:b.annual, sick:b.sick, casual:b.casual}[type];
+    const pct = Math.round((total-rem)/total*100);
+    el.innerHTML = `Balance: <strong>${rem} days remaining</strong> of ${total} · ${pct}% used
+      <div class="leave-balance-bar" style="margin-top:4px"><div class="leave-balance-fill" style="width:${pct}%;background:${pct>80?'var(--red)':pct>50?'var(--amber)':'var(--green)'}"></div></div>`;
+  } else {
+    el.innerHTML = LEAVE_TYPES[type]?.label+' — no balance limit';
+  }
+}
+
+function updateLeaveDays(){
+  const from = document.getElementById('lv-from')?.value;
+  const to   = document.getElementById('lv-to')?.value;
+  const el   = document.getElementById('lv-days-info');
+  if(!el||!from||!to) return;
+  if(to<from){ el.innerHTML='<span style="color:var(--red)">End date must be after start date</span>'; return; }
+  const days = countWorkingDays(from, to);
+  el.innerHTML = `<strong>${days} working day${days!==1?'s':''}</strong> (excluding weekends & public holidays)`;
+}
+
+async function submitLeaveRequest(){
+  const empId  = document.getElementById('lv-emp')?.value;
+  const type   = document.getElementById('lv-type')?.value;
+  const from   = document.getElementById('lv-from')?.value;
+  const to     = document.getElementById('lv-to')?.value;
+  const reason = document.getElementById('lv-reason')?.value||'';
+  if(!empId||!from||!to){ toast('Please fill all required fields.','error'); return; }
+  if(to<from){ toast('End date must be after start date.','error'); return; }
+
+  const days = countWorkingDays(from, to);
+  if(days===0){ toast('No working days in selected range.','error'); return; }
+
+  // Check balance for tracked types
+  if(['annual','sick','casual'].includes(type)){
+    const b = getEmpBalance(empId);
+    const rem = {annual:b.remAnnual, sick:b.remSick, casual:b.remCasual}[type];
+    if(days>rem){
+      if(!confirm(`This request is for ${days} days but only ${rem} days remain. Submit anyway?`)) return;
+    }
+  }
+
+  // Check for overlapping approved leave
+  const overlap = _leaveRequests.find(r=>
+    String(r.empId)===String(empId)&&
+    r.status==='approved'&&
+    r.fromDate<=to&&r.toDate>=from
+  );
+  if(overlap){ toast('Employee already has approved leave overlapping these dates.','error'); return; }
+
+  const req = {
+    id:Date.now(), empId, type, fromDate:from, toDate:to,
+    days, reason, status:'pending',
+    reviewedBy:'', reviewNote:'', createdAt:new Date().toISOString()
+  };
+
+  showLoader('Submitting…');
+  const saved = await dbSaveLeaveRequest(req);
+  hideLoader();
+  if(!_leaveRequests.find(r=>String(r.id)===String(saved.id))) _leaveRequests.unshift(saved);
+  S.set('leaveRequests', _leaveRequests);
+
+  const emp = gE(empId);
+  addNotif((emp?emp.name:'Employee')+' submitted '+LEAVE_TYPES[type].label+' request ('+days+' days)','info');
+  dbAddAudit(CU.name,'Leave request submitted for '+(emp?emp.name:empId)+': '+LEAVE_TYPES[type].label+' '+from+' to '+to);
+  closeModal();
+  renderLeave();
+  toast('Leave request submitted.','success');
+}
+
+async function reviewLeave(reqId, newStatus){
+  const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
+  if(!req) return;
+
+  let note = '';
+  if(newStatus==='rejected'){
+    note = prompt('Reason for rejection (optional):','');
+    if(note===null) return; // cancelled
+  }
+
+  req.status     = newStatus;
+  req.reviewedBy = CU.name;
+  req.reviewNote = note||'';
+  req.updatedAt  = new Date().toISOString();
+
+  showLoader('Saving…');
+  await dbSaveLeaveRequest(req);
+  hideLoader();
+
+  const idx = _leaveRequests.findIndex(r=>String(r.id)===String(reqId));
+  if(idx>=0) _leaveRequests[idx]=req;
+  S.set('leaveRequests', _leaveRequests);
+
+  const emp = gE(req.empId);
+  const action = {approved:'Approved',rejected:'Rejected',cancelled:'Cancelled'}[newStatus]||newStatus;
+  addNotif(`${action}: ${emp?emp.name:'Employee'} leave request (${LEAVE_TYPES[req.type].label})`,newStatus==='approved'?'success':'info');
+  dbAddAudit(CU.name,`${action} leave for ${emp?emp.name:req.empId}: ${req.fromDate} to ${req.toDate}`);
+
+  if(newStatus==='approved'){
+    toast(`Leave approved for ${emp?emp.name:'employee'}.`,'success');
+    // Log as event
+    const evtDesc=`${LEAVE_TYPES[req.type].label} approved: ${fDate(req.fromDate)} – ${fDate(req.toDate)} (${req.days} days)`;
+    const newEvt={id:Date.now(),empId:req.empId,type:'absence',date:req.fromDate,desc:evtDesc,loggedBy:CU.name,notified:true};
+    dbSaveEvent(newEvt).then(ev=>{_cache.evts.unshift(ev||newEvt);saveEvts(_cache.evts);}).catch(()=>{});
+  } else if(newStatus==='rejected'){
+    toast(`Leave rejected.${note?' Reason: '+note:''}`,'info');
+  } else {
+    toast('Leave cancelled.','info');
+  }
+
+  renderLeave();
+}
+
+function openEditBalance(empId){
+  const emp=gE(empId);const b=getEmpBalance(empId);
+  const mb=document.getElementById('mbox');mb.className='modal-box';
+  document.getElementById('mb').classList.add('open');
+  mb.innerHTML=`
+    <div class="modal-title">Leave Balance — ${emp?emp.name:'Employee'} <button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div style="font-size:12.5px;color:var(--text3);margin-bottom:14px">Set the annual entitlement (days per year). Used days are calculated automatically from approved requests.</div>
+    <div class="fr3">
+      <div class="fg"><label class="fl">Annual leave</label>
+        <input class="fi" id="bal-annual" type="number" value="${b.annual}" min="0" max="60">
+        <div class="txs tm" style="margin-top:3px">${b.usedAnnual} used · ${b.remAnnual} remaining</div>
+      </div>
+      <div class="fg"><label class="fl">Sick leave</label>
+        <input class="fi" id="bal-sick" type="number" value="${b.sick}" min="0" max="60">
+        <div class="txs tm" style="margin-top:3px">${b.usedSick} used · ${b.remSick} remaining</div>
+      </div>
+      <div class="fg"><label class="fl">Casual leave</label>
+        <input class="fi" id="bal-casual" type="number" value="${b.casual}" min="0" max="60">
+        <div class="txs tm" style="margin-top:3px">${b.usedCasual} used · ${b.remCasual} remaining</div>
+      </div>
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveBalance('${empId}')">Save</button>
+    </div>`;
+}
+
+async function saveBalance(empId){
+  const annual=parseInt(document.getElementById('bal-annual').value)||20;
+  const sick=parseInt(document.getElementById('bal-sick').value)||15;
+  const casual=parseInt(document.getElementById('bal-casual').value)||10;
+  showLoader('Saving…');
+  await dbSaveLeaveBalance(empId,{annual,sick,casual});
+  hideLoader();
+  closeModal();renderLeaveBalances();
+  toast('Leave balance updated.','success');
+}
+
+function exportLeaveCSV(){
+  const rows=[['Employee','Department','Leave Type','From','To','Days','Status','Reason','Reviewed By','Notes']];
+  _leaveRequests.forEach(r=>{
+    const emp=gE(r.empId);
+    rows.push([emp?emp.name:'',emp?emp.dept:'',LEAVE_TYPES[r.type]?.label||r.type,
+      r.fromDate,r.toDate,r.days,r.status,r.reason||'',r.reviewedBy||'',r.reviewNote||'']);
+  });
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='leave_requests_'+todayStr()+'.csv';a.click();
+  toast('Leave data exported.','success');
+}
+
+// ── Hook into showPage ────────────────────────────────────────────────────────
+const _showPageLeave = window.showPage || showPage;
+window.showPage = function(id, el){
+  _showPageLeave(id, el);
+  if(id==='leave') renderLeave();
+};
+
+// ── Add Leave Request button to employee clock-in screen ─────────────────────
+// Patched in showEmployeeClockInScreen via the "Request Leave" button
+
+
+function empRequestLeave(){
+  // Find this employee's record and open leave request pre-filled
+  const emps = getEmps().filter(e=>e.status!=='offboarded');
+  const me = emps.find(e=>
+    (CU.email&&e.email&&e.email.toLowerCase()===CU.email.toLowerCase())||
+    (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===CU.phone.replace(/[^0-9]/g,''))
+  );
+  // Load leave data if needed
+  if(!_leaveRequests.length){
+    dbGetLeaveRequests().then(reqs=>{_leaveRequests=reqs;openLeaveRequestModal(me?me.id:null);});
+    dbGetLeaveBalances().then(bal=>{_leaveBalances=bal;});
+  } else {
+    openLeaveRequestModal(me?me.id:null);
+  }
 }
 
 </script>
