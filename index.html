@@ -6883,9 +6883,9 @@ function renderLeaveBalances(){
 // ── Actions ───────────────────────────────────────────────────────────────────
 function openLeaveRequestModal(empId){
   if(!empId){
-    // Default to current user's employee record
-    const emps = getEmps().filter(e=>e.status!=='offboarded');
-    const me = emps.find(e=>
+    const emps2 = getEmps().filter(e=>e.status!=='offboarded');
+    const me = emps2.find(e=>
+      (CU.empId && String(e.id)===String(CU.empId))||
       (CU.email&&e.email&&e.email.toLowerCase()===CU.email.toLowerCase())||
       (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===CU.phone.replace(/[^0-9]/g,''))
     );
@@ -6895,34 +6895,32 @@ function openLeaveRequestModal(empId){
   const mb=document.getElementById('mbox');mb.className='modal-box';
   document.getElementById('mb').classList.add('open');
   const emps=getEmps().filter(e=>e.status!=='offboarded');
+  const isHR = CU&&(CU.role==='admin'||CU.role==='hr');
+  const thisEmp = emps.find(e=>String(e.id)===String(empId));
 
   mb.innerHTML=`
     <div class="modal-title">Request Leave <button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="fg"><label class="fl">Employee *</label>
-      <select class="fs" id="lv-emp">
-        ${emps.map(e=>`<option value="${e.id}" ${String(e.id)===String(empId)?'selected':''}>${e.name} — ${e.dept||''}</option>`).join('')}
-      </select>
+      ${isHR
+        ? `<select class="fs" id="lv-emp">
+            ${emps.map(e=>`<option value="${e.id}" ${String(e.id)===String(empId)?'selected':''}>${e.name} — ${e.dept||''}</option>`).join('')}
+           </select>`
+        : `<div style="padding:8px 10px;background:var(--bg2);border-radius:var(--radius);font-size:13px;font-weight:500">${thisEmp?.name||CU?.name||'—'}</div>
+           <input type="hidden" id="lv-emp" value="${empId||''}">`
+      }
     </div>
     <div class="fg"><label class="fl">Leave type *</label>
       <select class="fs" id="lv-type" onchange="updateLeaveBalance()">
         ${Object.entries(LEAVE_TYPES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}
       </select>
     </div>
-    <div id="lv-balance-info" style="background:var(--bg2);border-radius:var(--radius);padding:8px 12px;font-size:12.5px;margin-bottom:12px;color:var(--text2)"></div>
+    <div id="lv-balance-info" style="background:var(--bg2);border-radius:var(--radius);padding:8px 12px;font-size:12.5px;margin-bottom:10px;color:var(--text2)">Select leave type to see balance</div>
     <div class="fr">
-      <div class="fg"><label class="fl">From date *</label>
-        <input class="fi" id="lv-from" type="date" value="${todayStr()}" onchange="updateLeaveDays()">
-      </div>
-      <div class="fg"><label class="fl">To date *</label>
-        <input class="fi" id="lv-to" type="date" value="${todayStr()}" onchange="updateLeaveDays()">
-      </div>
+      <div class="fg"><label class="fl">From date *</label><input class="fi" id="lv-from" type="date" value="${todayStr()}" onchange="updateLeaveDays()"></div>
+      <div class="fg"><label class="fl">To date *</label><input class="fi" id="lv-to" type="date" value="${todayStr()}" onchange="updateLeaveDays()"></div>
     </div>
-    <div id="lv-days-info" style="font-size:12.5px;color:var(--text2);margin-bottom:12px;padding:8px 12px;background:var(--bg2);border-radius:var(--radius)">
-      Select dates to calculate working days
-    </div>
-    <div class="fg"><label class="fl">Reason</label>
-      <textarea class="ft" id="lv-reason" placeholder="Optional reason or notes…" rows="2"></textarea>
-    </div>
+    <div id="lv-days-info" style="font-size:12.5px;color:var(--text2);margin-bottom:12px;padding:8px 12px;background:var(--bg2);border-radius:var(--radius)">Select dates to calculate working days</div>
+    <div class="fg"><label class="fl">Reason</label><textarea class="ft" id="lv-reason" placeholder="Optional reason or notes…" rows="2"></textarea></div>
     <div class="mf">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="submitLeaveRequest()">Submit Request</button>
