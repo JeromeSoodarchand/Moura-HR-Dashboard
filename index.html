@@ -542,6 +542,10 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
     </button>
 
     <div class="sb-section" id="sb-sec-reports">Reports</div>
+    <button class="nav-tab" data-perm="view_analytics" onclick="showPage('payroll',this)">
+      <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div>
+      <span class="tab-label">Payroll</span>
+    </button>
     <button class="nav-tab" data-perm="view_analytics" onclick="showPage('analytics',this)">
       <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
       <span class="tab-label">Analytics</span>
@@ -645,16 +649,17 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
       <div class="ph">
         <div class="ph-title">Attendance</div>
         <div class="ph-actions">
-          <button class="btn" onclick="exportAttendanceCSV()">⬇ Export CSV</button>
-          <button class="btn btn-blue" onclick="openAttendanceModal('scanQR')">📷 Clock In / Out</button>
-          <button class="btn btn-primary ahr-btn" onclick="openAttendanceModal('manageLocations')">🏢 Manage Locations</button>
+          <button class="btn" onclick="exportAttendanceCSV()">&#x2B07; Export CSV</button>
+          <button class="btn btn-blue" onclick="openAttendanceModal('scanQR')">&#128247; Clock In / Out</button>
+          <button class="btn btn-primary ahr-btn" onclick="openAttendanceModal('manageLocations')">&#127970; Manage Locations</button>
+          <button class="btn" onclick="openKiosk()">&#9000; Open Kiosk</button>
         </div>
       </div>
 
       <!-- Live board -->
       <div class="card" style="margin-bottom:14px">
         <div class="ch">
-          <span class="ct"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--green)"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Live — Who is on site right now</span>
+          <span class="ct">&#128339; Live &mdash; Who is on site right now</span>
           <span class="ts tm" id="att-live-count"></span>
         </div>
         <div class="cb" id="att-live-board" style="padding:12px"></div>
@@ -663,11 +668,66 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
       <!-- Today summary metrics -->
       <div class="att-grid" id="att-metrics"></div>
 
+      <!-- Anomaly report -->
+      <div class="card" style="margin-bottom:14px">
+        <div class="ch">
+          <span class="ct" style="color:var(--amber)">&#9888; Attendance Anomalies</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="date" class="si" id="anom-date" style="width:150px">
+            <button class="btn" style="border-color:var(--amber);color:var(--amber)" onclick="runAnomalyCheck()">Check</button>
+          </div>
+        </div>
+        <div id="anomaly-body">
+          <div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Select a date and click Check to scan for anomalies.</div>
+        </div>
+      </div>
+
+      <!-- Overtime report -->
+      <div class="card" style="margin-bottom:14px">
+        <div class="ch">
+          <span class="ct" style="color:var(--navy)">⏰ Overtime Report</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="date" class="si" id="ot-date-from" style="width:140px">
+            <span class="tm txs">to</span>
+            <input type="date" class="si" id="ot-date-to" style="width:140px">
+            <select class="si" id="ot-dept-filter" style="width:130px">
+              <option value="">All departments</option>
+            </select>
+            <button class="btn btn-primary" onclick="runOvertimeReport()">Calculate</button>
+            <button class="btn" onclick="exportOvertimeCSV()">⬇ Export</button>
+          </div>
+        </div>
+        <div id="ot-report-body">
+          <div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Select a date range and click Calculate.</div>
+        </div>
+      </div>
+
+      <!-- Overtime Report -->
+      <div class="card" style="margin-bottom:14px">
+        <div class="ch">
+          <span class="ct">&#9201; Overtime Report</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="date" class="si" id="ot-date-from" style="width:140px">
+            <span class="tm txs">to</span>
+            <input type="date" class="si" id="ot-date-to" style="width:140px">
+            <select class="si" id="ot-dept-filter" style="width:130px">
+              <option value="">All departments</option>
+            </select>
+            <button class="btn btn-primary" onclick="runOvertimeReport()">Calculate</button>
+            <button class="btn" onclick="exportOvertimeCSV()">&#x2B07; Export</button>
+          </div>
+        </div>
+        <div id="ot-summary" style="display:none;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg2)"></div>
+        <div id="ot-body">
+          <div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Select a date range and click Calculate.</div>
+        </div>
+      </div>
+
       <!-- Report filters -->
       <div class="card">
         <div class="ch">
           <span class="ct">Attendance report</span>
-          <div style="display:flex;gap:8px;align-items:center">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <input type="date" class="si" id="att-date-from" style="width:140px">
             <span class="tm txs">to</span>
             <input type="date" class="si" id="att-date-to" style="width:140px">
@@ -831,6 +891,95 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
         </div>
       </div>
       <div class="card"><table><thead><tr><th>Employee</th><th>Department</th><th>Last Day</th><th>Reason</th><th>Checklist</th><th></th></tr></thead><tbody id="off-tbody"></tbody></table></div>
+    </div>
+
+    <!-- PAYROLL -->
+    <div class="page" id="page-payroll">
+      <div class="ph">
+        <div class="ph-title">Payroll Calculator</div>
+        <div class="ph-actions">
+          <button class="btn" onclick="exportPayrollCSV()">&#x2B07; Export CSV</button>
+          <button class="btn btn-primary" onclick="runPayroll()">&#128200; Calculate</button>
+        </div>
+      </div>
+
+      <!-- Pay period settings -->
+      <div class="card" style="margin-bottom:14px">
+        <div class="ch"><span class="ct">Pay Period</span></div>
+        <div class="cb">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px">
+            <div class="fg">
+              <label class="fl">Period start date</label>
+              <input class="fi" id="pay-from" type="date">
+              <div style="font-size:11px;color:var(--text3);margin-top:3px">e.g. 26th of previous month</div>
+            </div>
+            <div class="fg">
+              <label class="fl">Period end date</label>
+              <input class="fi" id="pay-to" type="date">
+              <div style="font-size:11px;color:var(--text3);margin-top:3px">e.g. 25th of current month</div>
+            </div>
+            <div class="fg">
+              <label class="fl">Payment date</label>
+              <input class="fi" id="pay-date" type="date">
+            </div>
+            <div class="fg">
+              <label class="fl">Department filter</label>
+              <select class="fs" id="pay-dept">
+                <option value="">All departments</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="pay-include-ot" checked style="accent-color:var(--gold)">
+              Include overtime
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="pay-include-leave" checked style="accent-color:var(--gold)">
+              Deduct unpaid leave
+            </label>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn btn-xs" onclick="setPayPeriodPreset('last_month')">Last month</button>
+              <button class="btn btn-xs" onclick="setPayPeriodPreset('this_month')">This month</button>
+              <button class="btn btn-xs" onclick="setPayPeriodPreset('custom_26')">26th–25th</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary -->
+      <div class="metrics" id="payroll-metrics" style="margin-bottom:14px"></div>
+
+      <!-- Payroll table -->
+      <div class="card">
+        <div class="ch">
+          <span class="ct">Payroll Summary</span>
+          <span class="ts tm" id="payroll-period-label"></span>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;font-size:13px;border-collapse:collapse">
+            <thead>
+              <tr style="background:var(--bg2)">
+                <th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Employee</th>
+                <th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Dept</th>
+                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Base Salary</th>
+                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Period Pay</th>
+                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Days Worked</th>
+                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">OT Hours</th>
+                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">OT Pay</th>
+                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Leave Deduction</th>
+                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2);color:var(--navy)">Net Pay</th>
+                <th style="padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Notes</th>
+              </tr>
+            </thead>
+            <tbody id="payroll-tbody">
+              <tr><td colspan="10" style="text-align:center;color:var(--text3);padding:32px;font-size:13px">
+                Set the pay period and click Calculate.
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- ANALYTICS -->
@@ -1030,6 +1179,48 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
           </div>
 
           <!-- Onboarding defaults -->
+          <div class="card" style="margin-bottom:14px">
+            <div class="ch"><span class="ct">⏱ Working Hours &amp; Overtime</span></div>
+            <div class="cb">
+              <div class="fr3">
+                <div class="fg"><label class="fl">Work start time</label>
+                  <input class="fi" id="settings-work-start" type="time" value="08:00">
+                </div>
+                <div class="fg"><label class="fl">Work end time</label>
+                  <input class="fi" id="settings-work-end" type="time" value="17:00">
+                </div>
+                <div class="fg"><label class="fl">Normal hours/day</label>
+                  <input class="fi" id="settings-work-hours" type="number" min="1" max="24" step="0.5" value="8">
+                </div>
+              </div>
+              <div class="fg" style="margin-top:8px"><label class="fl">Working days</label>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
+                  <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="checkbox" id="work-day-1" checked style="accent-color:var(--gold)"> Mon</label>
+                  <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="checkbox" id="work-day-2" checked style="accent-color:var(--gold)"> Tue</label>
+                  <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="checkbox" id="work-day-3" checked style="accent-color:var(--gold)"> Wed</label>
+                  <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="checkbox" id="work-day-4" checked style="accent-color:var(--gold)"> Thu</label>
+                  <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="checkbox" id="work-day-5" checked style="accent-color:var(--gold)"> Fri</label>
+                  <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="checkbox" id="work-day-6" style="accent-color:var(--gold)"> Sat</label>
+                  <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="checkbox" id="work-day-0" style="accent-color:var(--gold)"> Sun</label>
+                </div>
+              </div>
+              <div class="fsec">Overtime Rates</div>
+              <div class="fr3">
+                <div class="fg"><label class="fl">Weekday OT rate (&times;)</label>
+                  <input class="fi" id="settings-ot-weekday" type="number" min="1" max="5" step="0.25" value="1.5">
+                  <div style="font-size:11px;color:var(--text3);margin-top:3px">e.g. 1.5 = time &amp; a half</div>
+                </div>
+                <div class="fg"><label class="fl">Weekend OT rate (&times;)</label>
+                  <input class="fi" id="settings-ot-weekend" type="number" min="1" max="5" step="0.25" value="2.0">
+                </div>
+                <div class="fg"><label class="fl">Holiday OT rate (&times;)</label>
+                  <input class="fi" id="settings-ot-holiday" type="number" min="1" max="5" step="0.25" value="2.5">
+                </div>
+              </div>
+              <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="saveWorkingHoursSettings()">Save working hours</button>
+            </div>
+          </div>
+
           <div class="card" style="margin-bottom:14px">
             <div class="ch"><span class="ct">✅ Onboarding Checklist Defaults</span></div>
             <div class="cb">
@@ -1923,7 +2114,7 @@ async function managerClockInChoice(){
 }
 
 async function showEmployeeClockInScreen(user){
-  // Load locations in background
+  // Load locations
   if(!_attLocations||!_attLocations.length) _attLocations = await dbGetLocations();
   if(!_cache.emps.length){ try{ _cache.emps=await dbGetEmployees(); }catch(e){} }
 
@@ -1931,12 +2122,30 @@ async function showEmployeeClockInScreen(user){
   const emps = getEmps().filter(e=>e.status!=='offboarded');
   let emp = emps.find(e=>
     (user.email&&e.email&&e.email.toLowerCase()===user.email.toLowerCase())||
-    (user.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===user.phone.replace(/[^0-9]/g,''))
+    (user.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===user.phone.replace(/[^0-9]/g,''))||
+    (user.empId&&String(e.id)===String(user.empId))
   );
 
-  // Check if already clocked in today
-  const localAtt = S.get('attendance',[]);
-  const openRec = emp ? localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut) : null;
+  // ── Fetch today's attendance from Supabase (not just localStorage) ──────────
+  // This ensures clock-in status persists across logouts and different devices
+  let todayAtt = [];
+  try{
+    todayAtt = await dbGetAttendance(todayStr(), todayStr());
+    // Sync back to localStorage so offline works too
+    const localAtt = S.get('attendance',[]);
+    todayAtt.forEach(rec=>{
+      const idx = localAtt.findIndex(r=>String(r.id)===String(rec.id));
+      if(idx>=0) localAtt[idx]=rec; else localAtt.push(rec);
+    });
+    S.set('attendance', localAtt);
+  } catch(e){
+    // Fallback to localStorage if Supabase not available
+    todayAtt = S.get('attendance',[]).filter(r=>r.date===todayStr());
+  }
+
+  const openRec = emp
+    ? todayAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut)
+    : null;
 
   // Build minimal employee screen
   const app = document.getElementById('app');
@@ -1959,13 +2168,15 @@ async function showEmployeeClockInScreen(user){
       <div id="emp-clock-time" style="font-size:48px;font-weight:200;color:var(--navy);font-variant-numeric:tabular-nums;margin-bottom:4px"></div>
       <div id="emp-clock-date" style="font-size:13px;color:var(--text3);margin-bottom:32px;text-transform:uppercase;letter-spacing:.05em"></div>
 
-      ${emp ? `<div style="display:flex;align-items:center;gap:12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:24px;text-align:left">
+      ${emp ? `<div style="display:flex;align-items:center;gap:12px;background:var(--bg);border:2px solid ${openRec?'var(--green)':'var(--border)'};border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:20px;text-align:left">
         <div class="avatar avatar-lg" style="background:${c}22;color:${c}">${inits(emp.name)}</div>
         <div style="flex:1">
           <div style="font-weight:600;font-size:15px">${emp.name}</div>
           <div style="font-size:12.5px;color:var(--text3)">${emp.role||''} · ${emp.dept||''}</div>
-          ${openRec ? `<div style="font-size:12px;color:var(--green);margin-top:3px;font-weight:500">● On site since ${fmtTime(openRec.clockIn)} · ${fmtDuration(elapsed)}</div>`
-                    : '<div style="font-size:12px;color:var(--text3);margin-top:3px">Not clocked in today</div>'}
+          ${openRec
+            ? `<div id="emp-elapsed" data-clockin="${openRec.clockIn}" style="font-size:12px;color:var(--green);margin-top:3px;font-weight:500">● On site · ${fmtDuration(elapsed)}</div>
+               <div style="font-size:11px;color:var(--text3);margin-top:1px">Since ${fmtTime(openRec.clockIn)} at ${openRec.location||'site'}</div>`
+            : '<div style="font-size:12px;color:var(--text3);margin-top:3px">○ Not clocked in today</div>'}
         </div>
       </div>` : ''}
 
@@ -2003,6 +2214,8 @@ async function showEmployeeClockInScreen(user){
 }
 
 let _empClockTick = null;
+let _empStatusTick = null; // separate ticker for elapsed time display
+
 function startEmpClockTick(){
   clearInterval(_empClockTick);
   _empClockTick = setInterval(()=>{
@@ -2012,18 +2225,43 @@ function startEmpClockTick(){
     if(tc) tc.textContent = now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     if(dc) dc.textContent = now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
   },1000);
+
+  // Also update elapsed time every 30 seconds
+  clearInterval(_empStatusTick);
+  _empStatusTick = setInterval(()=>{
+    const elapsed = document.getElementById('emp-elapsed');
+    if(!elapsed) return;
+    const clockInTime = elapsed.dataset.clockin;
+    if(clockInTime){
+      const mins = calcDuration(clockInTime, new Date().toISOString());
+      elapsed.textContent = '● On site · ' + fmtDuration(mins);
+    }
+  }, 30000);
 }
 
 async function empClockIn(empId, locationId, locationName){
   if(!empId){ toast('Employee record not found. Contact HR.','error'); return; }
+  // Show loading state on the button
+  event?.target?.closest('button')?.setAttribute('disabled','true');
   await processClockAction(locationId, locationName, false, empId);
-  // Refresh the screen
-  showEmployeeClockInScreen(CU);
+  // Refresh the screen with fresh data from Supabase
+  await showEmployeeClockInScreen(CU);
+  // Also sync the Attendance page if it's currently open
+  if(document.getElementById('page-attendance')?.classList.contains('active')){
+    renderAttendance();
+  }
 }
 
 async function empClockOut(recId){
+  const btn = event?.target?.closest('button');
+  if(btn){ btn.disabled=true; btn.textContent='Clocking out…'; }
   await manualClockOut(recId);
-  showEmployeeClockInScreen(CU);
+  // Refresh the screen with fresh data from Supabase
+  await showEmployeeClockInScreen(CU);
+  // Also sync the Attendance page if it's currently open
+  if(document.getElementById('page-attendance')?.classList.contains('active')){
+    renderAttendance();
+  }
 }
 
 function openFullHRPlatform(){
@@ -2070,13 +2308,25 @@ async function promptLoginClockIn(user){
   // 3. No match — show picker so user selects themselves (no auto-guess)
   // emp stays null → needsPicker = true
 
-  // Check already clocked in today
+  // Check if already clocked in today — fetch from Supabase for accuracy
   if(emp){
-    const localAtt = S.get('attendance',[]);
-    const alreadyIn = localAtt.find(r=>
+    let todayAtt = [];
+    try{
+      todayAtt = await dbGetAttendance(todayStr(), todayStr());
+      // Sync to localStorage
+      const localAtt = S.get('attendance',[]);
+      todayAtt.forEach(rec=>{
+        const idx = localAtt.findIndex(r=>String(r.id)===String(rec.id));
+        if(idx>=0) localAtt[idx]=rec; else localAtt.push(rec);
+      });
+      S.set('attendance', localAtt);
+    } catch(e){
+      todayAtt = S.get('attendance',[]).filter(r=>r.date===todayStr());
+    }
+    const alreadyIn = todayAtt.find(r=>
       String(r.empId)===String(emp.id) && r.date===todayStr() && !r.clockOut
     );
-    if(alreadyIn) return;
+    if(alreadyIn) return; // already clocked in today — don't prompt again
   }
 
   const modal   = document.getElementById('att-modal');
@@ -2209,31 +2459,10 @@ async function loginClockIn(empId, locationId, locationName){
 
 function doLogout(){
   clearInactivityTimers();
-  // Auto clock-out if still clocked in — only for non-admin/HR users
-  try{
-    if(CU){
-      const emps = getEmps();
-      let emp = null;
-      if(CU.email) emp = emps.find(e=>e.email&&e.email.toLowerCase()===CU.email.toLowerCase());
-      if(!emp&&CU.phone){
-        const p=CU.phone.replace(/[^0-9]/g,'');
-        if(p.length>=7) emp=emps.find(e=>e.phone&&e.phone.replace(/[^0-9]/g,'')===p);
-      }
-      if(emp){
-        const localAtt = S.get('attendance',[]);
-        const openRec = localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
-        if(openRec){
-          openRec.clockOut = new Date().toISOString();
-          openRec.durationMinutes = calcDuration(openRec.clockIn, openRec.clockOut);
-          openRec.notes = (openRec.notes?openRec.notes+' | ':'')+'Auto clock-out on logout';
-          const idx = localAtt.findIndex(r=>String(r.id)===String(openRec.id));
-          if(idx>=0) localAtt[idx]=openRec;
-          S.set('attendance', localAtt);
-          dbSaveAttendance(openRec).catch(()=>{});
-        }
-      }
-    }
-  } catch(e){ console.warn('Auto clock-out error:', e); }
+  // NOTE: We do NOT auto clock-out on voluntary logout.
+  // Employees remain clocked in when they log out — their status is preserved
+  // and shown correctly when they log back in.
+  // Auto clock-out only happens on session TIMEOUT (15 min inactivity).
   addAudit(CU?.name||'User','Logged out');
   CU=null;S.set('session',null);
   location.reload();
@@ -5171,20 +5400,38 @@ function renderAttLiveBoard(){
   if(lc) lc.textContent = clockedIn.length+' on site';
   const board = document.getElementById('att-live-board');
   if(!board) return;
-  board.innerHTML = '<div class="att-live">'+emps.map(emp=>{
-    const rec = getEmployeeActiveRecord(emp.id);
-    const c = aColor(emp.name);
-    const since = rec ? fmtTime(rec.clockIn) : null;
-    const elapsed = rec ? calcDuration(rec.clockIn,new Date().toISOString()) : null;
-    return '<div class="att-emp-card '+(rec?'clocked-in':'clocked-out')+'">'+
-      '<div class="att-status-dot '+(rec?'in':'out')+'"></div>'+
-      '<div class="avatar" style="background:'+c+'22;color:'+c+';width:28px;height:28px;font-size:10px;flex-shrink:0">'+inits(emp.name)+'</div>'+
-      '<div class="att-emp-info">'+
-        '<div class="att-emp-name">'+emp.name+'</div>'+
-        '<div class="att-emp-time">'+(rec?'In since '+since:'Not clocked in')+'</div>'+
-        (rec&&elapsed?'<div class="att-emp-hours">'+fmtDuration(elapsed)+'</div>':'')+
-      '</div></div>';
-  }).join('')+'</div>';
+
+  // Group by department, sorted alphabetically
+  const depts = [...new Set(emps.map(e=>e.dept||'No department'))].sort();
+
+  board.innerHTML = depts.map(dept=>{
+    const deptEmps = emps.filter(e=>(e.dept||'No department')===dept);
+    const deptOnSite = deptEmps.filter(e=>!!getEmployeeActiveRecord(e.id)).length;
+    return '<div style="margin-bottom:18px">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">'+
+        '<span style="font-size:12px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.05em">'+dept+'</span>'+
+        '<span style="font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;background:'+(deptOnSite?'var(--green-light)':'var(--bg2)')+';color:'+(deptOnSite?'var(--green-deep)':'var(--text3)')+'">'+
+          deptOnSite+'/'+deptEmps.length+' on site'+
+        '</span>'+
+      '</div>'+
+      '<div class="att-live">'+
+        deptEmps.map(emp=>{
+          const rec = getEmployeeActiveRecord(emp.id);
+          const c = aColor(emp.name);
+          const since = rec ? fmtTime(rec.clockIn) : null;
+          const elapsed = rec ? calcDuration(rec.clockIn,new Date().toISOString()) : null;
+          return '<div class="att-emp-card '+(rec?'clocked-in':'clocked-out')+'">'+
+            '<div class="att-status-dot '+(rec?'in':'out')+'"></div>'+
+            '<div class="avatar" style="background:'+c+'22;color:'+c+';width:28px;height:28px;font-size:10px;flex-shrink:0">'+inits(emp.name)+'</div>'+
+            '<div class="att-emp-info">'+
+              '<div class="att-emp-name">'+emp.name+'</div>'+
+              '<div class="att-emp-time">'+(rec?'In since '+since:'Not clocked in')+'</div>'+
+              (rec&&elapsed?'<div class="att-emp-hours">'+fmtDuration(elapsed)+'</div>':'')+
+            '</div></div>';
+        }).join('')+
+      '</div>'+
+    '</div>';
+  }).join('');
 }
 
 function renderAttMetrics(){
@@ -7222,6 +7469,1159 @@ async function confirmPinLogin(empId, pin){
     showEmployeeClockInScreen(user);
   }
 }
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// ATTENDANCE ANOMALY MODULE
+// ════════════════════════════════════════════════════════════════════════════
+
+const ANOMALY_TYPES = {
+  no_clockout:   { label:'Not clocked out',    color:'var(--red)',   bg:'var(--red-light)',   icon:'🔴' },
+  short_shift:   { label:'Very short shift',   color:'var(--amber)', bg:'var(--amber-light)', icon:'🟡' },
+  long_shift:    { label:'Very long shift',    color:'var(--amber)', bg:'var(--amber-light)', icon:'🟡' },
+  late_arrival:  { label:'Late arrival',       color:'var(--blue)',  bg:'var(--blue-light)',  icon:'🔵' },
+  missing:       { label:'No attendance',      color:'var(--text2)', bg:'var(--bg2)',          icon:'⚪' },
+  duplicate:     { label:'Duplicate record',   color:'var(--red)',   bg:'var(--red-light)',   icon:'🔴' },
+};
+
+const ANOMALY_THRESHOLDS = {
+  short_shift_mins:  60,   // under 1 hour
+  long_shift_mins:   720,  // over 12 hours
+  late_hour:         9,    // 09:00
+  late_minute:       0,
+};
+
+async function runAnomalyCheck(){
+  const dateEl = document.getElementById('anom-date');
+  const date   = dateEl?.value || todayStr();
+  if(!dateEl?.value) dateEl.value = date;
+
+  const body = document.getElementById('anomaly-body');
+  if(!body) return;
+  body.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Scanning...</div>';
+
+  // Load attendance for the selected date
+  let recs = [];
+  try{
+    recs = await dbGetAttendance(date, date);
+    // Sync to localStorage
+    const local = S.get('attendance',[]);
+    recs.forEach(r=>{ const i=local.findIndex(x=>String(x.id)===String(r.id)); if(i>=0)local[i]=r; else local.push(r); });
+    S.set('attendance', local);
+  } catch(e){
+    recs = S.get('attendance',[]).filter(r=>r.date===date);
+  }
+
+  const emps     = getEmps().filter(e=>e.status!=='offboarded');
+  const isToday  = date === todayStr();
+  const isWeekend= [0,6].includes(new Date(date+'T00:00:00').getDay());
+  const isHoliday= MAURITIUS_HOLIDAYS_2025.includes(date);
+  const anomalies = [];
+
+  emps.forEach(emp=>{
+    const empRecs = recs.filter(r=>String(r.empId)===String(emp.id));
+
+    // Missing attendance (not a weekend/holiday, not today still in progress)
+    if(empRecs.length===0 && !isWeekend && !isHoliday){
+      // Check if there's an approved leave for this date
+      const onLeave = (_leaveRequests||[]).find(r=>
+        String(r.empId)===String(emp.id) &&
+        r.status==='approved' &&
+        r.fromDate<=date && r.toDate>=date
+      );
+      if(!onLeave){
+        anomalies.push({ type:'missing', emp, rec:null, date, note:'' });
+      }
+    }
+
+    // Duplicate records on same day
+    if(empRecs.length > 1){
+      anomalies.push({ type:'duplicate', emp, rec:empRecs[0], date,
+        note:'Found '+empRecs.length+' records on this date' });
+    }
+
+    empRecs.forEach(rec=>{
+      // Not clocked out (only flag previous days, not today's open records)
+      if(!rec.clockOut && !isToday){
+        anomalies.push({ type:'no_clockout', emp, rec, date, note:'' });
+      }
+
+      // Short shift
+      if(rec.clockOut && rec.durationMinutes!==null && rec.durationMinutes < ANOMALY_THRESHOLDS.short_shift_mins){
+        anomalies.push({ type:'short_shift', emp, rec, date,
+          note: fmtDuration(rec.durationMinutes)+' recorded' });
+      }
+
+      // Long shift
+      if(rec.clockOut && rec.durationMinutes!==null && rec.durationMinutes > ANOMALY_THRESHOLDS.long_shift_mins){
+        anomalies.push({ type:'long_shift', emp, rec, date,
+          note: fmtDuration(rec.durationMinutes)+' recorded' });
+      }
+
+      // Late arrival (only flag if clocked in)
+      if(rec.clockIn){
+        const ci = new Date(rec.clockIn);
+        const h = ci.getHours(), m = ci.getMinutes();
+        if(h > ANOMALY_THRESHOLDS.late_hour || (h===ANOMALY_THRESHOLDS.late_hour && m > ANOMALY_THRESHOLDS.late_minute)){
+          anomalies.push({ type:'late_arrival', emp, rec, date,
+            note: 'Clocked in at '+fmtTime(rec.clockIn) });
+        }
+      }
+    });
+  });
+
+  renderAnomalyList(anomalies, date);
+}
+
+function renderAnomalyList(anomalies, date){
+  const body = document.getElementById('anomaly-body');
+  if(!body) return;
+
+  if(!anomalies.length){
+    body.innerHTML = '<div style="padding:24px;text-align:center">'+
+      '<div style="font-size:32px;margin-bottom:8px">✅</div>'+
+      '<div style="font-size:14px;font-weight:500;color:var(--green)">No anomalies found</div>'+
+      '<div style="font-size:12.5px;color:var(--text3);margin-top:4px">All attendance records for '+fDate(date)+' look normal.</div>'+
+    '</div>';
+    return;
+  }
+
+  // Group by type
+  const byType = {};
+  anomalies.forEach(a=>{ if(!byType[a.type]) byType[a.type]=[]; byType[a.type].push(a); });
+
+  const summary = Object.entries(byType).map(([type,items])=>{
+    const cfg = ANOMALY_TYPES[type];
+    return '<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;background:'+cfg.bg+';color:'+cfg.color+';margin-right:6px;margin-bottom:6px">'+
+      cfg.icon+' '+cfg.label+': '+items.length+'</span>';
+  }).join('');
+
+  const rows = anomalies.map((a,idx)=>{
+    const cfg  = ANOMALY_TYPES[a.type];
+    const c    = aColor(a.emp.name);
+    const recId = a.rec ? String(a.rec.id) : '';
+    return '<tr id="anom-row-'+idx+'">'+
+      '<td><div class="emp-cell">'+
+        '<div class="avatar" style="background:'+c+'22;color:'+c+';width:26px;height:26px;font-size:10px">'+inits(a.emp.name)+'</div>'+
+        '<div><div style="font-weight:500">'+a.emp.name+'</div><div class="txs tm">'+( a.emp.dept||'')+'</div></div>'+
+      '</div></td>'+
+      '<td><span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:500;background:'+cfg.bg+';color:'+cfg.color+'">'+cfg.icon+' '+cfg.label+'</span></td>'+
+      '<td class="tm txs">'+( a.rec ? fmtTime(a.rec.clockIn) : '—')+'</td>'+
+      '<td class="tm txs">'+( a.rec && a.rec.clockOut ? fmtTime(a.rec.clockOut) : a.rec ? '<span style="color:var(--red)">Open</span>' : '—')+'</td>'+
+      '<td class="tm txs">'+( a.rec && a.rec.durationMinutes ? fmtDuration(a.rec.durationMinutes) : '—')+'</td>'+
+      '<td class="txs tm">'+( a.note||'')+'</td>'+
+      '<td>'+
+        (canEdit() ?
+          '<div style="display:flex;gap:4px;flex-wrap:wrap">'+
+          (a.rec && !a.rec.clockOut && a.type==='no_clockout' ? '<button class="btn btn-xs btn-primary" onclick="anomalyClockOut('+JSON.stringify(recId)+','+idx+')">Set clock-out</button>' : '')+
+          (a.type==='missing' ? '<button class="btn btn-xs btn-blue" onclick="anomalyAddRecord('+JSON.stringify(a.emp.id)+','+JSON.stringify(a.date)+','+idx+')">Add record</button>' : '')+
+          (a.rec ? '<button class="btn btn-xs" onclick="anomalyEditRecord('+JSON.stringify(recId)+','+idx+')">Edit</button>' : '')+
+          '<input id="anom-note-'+idx+'" class="fi" placeholder="HR note…" style="width:140px;padding:4px 8px;font-size:12px" value="'+(a.rec?.notes||'').replace(/"/g,'&quot;')+'">'+
+          '<button class="btn btn-xs" onclick="anomalySaveNote('+JSON.stringify(recId)+','+idx+','+JSON.stringify(a.emp.id)+','+JSON.stringify(a.type)+','+JSON.stringify(a.date)+')">Save</button>'+
+          '</div>'
+        : '—')+
+      '</td>'+
+    '</tr>';
+  }).join('');
+
+  body.innerHTML =
+    '<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:4px;align-items:center">'+
+      '<span style="font-size:12px;font-weight:600;color:var(--text2);margin-right:6px">'+anomalies.length+' anomaly'+(anomalies.length!==1?'ies':'')+' on '+fDate(date)+':</span>'+
+      summary+
+    '</div>'+
+    '<div style="overflow-x:auto">'+
+    '<table style="width:100%;font-size:13px;border-collapse:collapse">'+
+      '<thead><tr style="background:var(--bg2)">'+
+        '<th style="text-align:left;padding:10px 14px;font-size:12px;font-weight:600;color:var(--text2)">Employee</th>'+
+        '<th style="text-align:left;padding:10px 14px;font-size:12px;font-weight:600;color:var(--text2)">Anomaly</th>'+
+        '<th style="text-align:left;padding:10px 14px;font-size:12px;font-weight:600;color:var(--text2)">Clock In</th>'+
+        '<th style="text-align:left;padding:10px 14px;font-size:12px;font-weight:600;color:var(--text2)">Clock Out</th>'+
+        '<th style="text-align:left;padding:10px 14px;font-size:12px;font-weight:600;color:var(--text2)">Duration</th>'+
+        '<th style="text-align:left;padding:10px 14px;font-size:12px;font-weight:600;color:var(--text2)">Detail</th>'+
+        '<th style="text-align:left;padding:10px 14px;font-size:12px;font-weight:600;color:var(--text2)">HR Action</th>'+
+      '</tr></thead>'+
+      '<tbody>'+rows+'</tbody>'+
+    '</table></div>';
+}
+
+async function anomalyClockOut(recId, rowIdx){
+  const local = S.get('attendance',[]);
+  const rec = local.find(r=>String(r.id)===String(recId));
+  if(!rec){ toast('Record not found.','error'); return; }
+
+  const dateStr = document.getElementById('anom-date')?.value || todayStr();
+  // Prompt for clock-out time
+  const timeInput = prompt('Enter clock-out time (HH:MM):', '17:00');
+  if(!timeInput) return;
+  const [h,m] = timeInput.split(':').map(Number);
+  if(isNaN(h)||isNaN(m)||h<0||h>23||m<0||m>59){ toast('Invalid time.','error'); return; }
+
+  const coDate = new Date(rec.clockIn);
+  coDate.setHours(h,m,0,0);
+  if(coDate <= new Date(rec.clockIn)){ toast('Clock-out must be after clock-in.','error'); return; }
+
+  rec.clockOut = coDate.toISOString();
+  rec.durationMinutes = calcDuration(rec.clockIn, rec.clockOut);
+  rec.notes = (rec.notes?rec.notes+' | ':'')+'Clock-out set by HR ('+CU.name+')';
+  const idx = local.findIndex(r=>String(r.id)===String(recId));
+  if(idx>=0) local[idx]=rec;
+  S.set('attendance', local);
+  showLoader('Saving…');
+  await dbSaveAttendance(rec);
+  hideLoader();
+  toast('Clock-out set: '+fmtTime(rec.clockOut)+' ('+fmtDuration(rec.durationMinutes)+')','success');
+  dbAddAudit(CU.name,'Anomaly fix: set clock-out for '+gE(rec.empId)?.name+' on '+rec.date);
+  runAnomalyCheck(); // refresh
+}
+
+async function anomalyAddRecord(empId, date, rowIdx){
+  const emp = gE(empId);
+  const inTime  = prompt('Clock-in time (HH:MM):', '08:00');
+  if(!inTime) return;
+  const outTime = prompt('Clock-out time (HH:MM, or leave blank if still open):', '17:00');
+
+  const [ih,im] = inTime.split(':').map(Number);
+  if(isNaN(ih)||isNaN(im)){ toast('Invalid time.','error'); return; }
+
+  const ci = new Date(date+'T'+String(ih).padStart(2,'0')+':'+String(im).padStart(2,'0')+':00');
+  let co = null, dur = null;
+  if(outTime){
+    const [oh,om] = outTime.split(':').map(Number);
+    if(!isNaN(oh)&&!isNaN(om)){
+      co = new Date(date+'T'+String(oh).padStart(2,'0')+':'+String(om).padStart(2,'0')+':00');
+      dur = calcDuration(ci.toISOString(), co.toISOString());
+    }
+  }
+
+  const rec = {
+    id:Date.now(), empId, clockIn:ci.toISOString(),
+    clockOut:co?co.toISOString():null,
+    date, durationMinutes:dur,
+    location:'Manual entry', notes:'Added manually by HR ('+CU.name+')'
+  };
+  showLoader('Saving…');
+  const saved = await dbSaveAttendance(rec);
+  hideLoader();
+  const local = S.get('attendance',[]);
+  local.push(saved||rec);
+  S.set('attendance', local);
+  toast('Record added for '+emp?.name+'.','success');
+  dbAddAudit(CU.name,'Anomaly fix: added attendance record for '+(emp?.name||empId)+' on '+date);
+  runAnomalyCheck();
+}
+
+function anomalyEditRecord(recId, rowIdx){
+  // Open the standard attendance edit modal
+  openAttendanceEditModal(recId, ()=>runAnomalyCheck());
+}
+
+function openAttendanceEditModal(recId, onSave){
+  const local = S.get('attendance',[]);
+  const rec = local.find(r=>String(r.id)===String(recId));
+  if(!rec){ toast('Record not found.','error'); return; }
+  const emp = gE(rec.empId);
+  const mb = document.getElementById('mbox');
+  mb.className = 'modal-box';
+  document.getElementById('mb').classList.add('open');
+
+  // Parse existing times
+  const ciDate = new Date(rec.clockIn);
+  const ciStr  = ciDate.toTimeString().slice(0,5);
+  const coStr  = rec.clockOut ? new Date(rec.clockOut).toTimeString().slice(0,5) : '';
+
+  mb.innerHTML = `
+    <div class="modal-title">Edit Attendance — ${emp?emp.name:'Employee'} (${fDate(rec.date)})
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">Clock-in time</label>
+        <input class="fi" id="att-edit-ci" type="time" value="${ciStr}">
+      </div>
+      <div class="fg"><label class="fl">Clock-out time (blank = open)</label>
+        <input class="fi" id="att-edit-co" type="time" value="${coStr}">
+      </div>
+    </div>
+    <div class="fg"><label class="fl">Location</label>
+      <input class="fi" id="att-edit-loc" value="${rec.location||''}" placeholder="Location">
+    </div>
+    <div class="fg"><label class="fl">Notes</label>
+      <textarea class="ft" id="att-edit-notes" rows="2">${rec.notes||''}</textarea>
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveAttendanceEdit('${recId}', ${JSON.stringify(rec.date)}, ${JSON.stringify(rec.empId)})">Save</button>
+    </div>`;
+
+  window._anomalyOnSave = onSave;
+}
+
+async function saveAttendanceEdit(recId, date, empId){
+  const local = S.get('attendance',[]);
+  const rec = local.find(r=>String(r.id)===String(recId));
+  if(!rec){ toast('Record not found.','error'); return; }
+
+  const ciTime = document.getElementById('att-edit-ci').value;
+  const coTime = document.getElementById('att-edit-co').value;
+  const loc    = document.getElementById('att-edit-loc').value;
+  const notes  = document.getElementById('att-edit-notes').value;
+
+  if(!ciTime){ toast('Clock-in time required.','error'); return; }
+
+  rec.clockIn  = new Date(date+'T'+ciTime+':00').toISOString();
+  rec.clockOut = coTime ? new Date(date+'T'+coTime+':00').toISOString() : null;
+  rec.durationMinutes = rec.clockOut ? calcDuration(rec.clockIn, rec.clockOut) : null;
+  rec.location = loc || rec.location;
+  rec.notes    = notes;
+
+  if(rec.clockOut && new Date(rec.clockOut)<=new Date(rec.clockIn)){
+    toast('Clock-out must be after clock-in.','error'); return;
+  }
+
+  const idx = local.findIndex(r=>String(r.id)===String(recId));
+  if(idx>=0) local[idx]=rec;
+  S.set('attendance', local);
+  showLoader('Saving…');
+  await dbSaveAttendance(rec);
+  hideLoader();
+  closeModal();
+  toast('Attendance record updated.','success');
+  dbAddAudit(CU.name,'Edited attendance record for '+(gE(rec.empId)?.name||empId)+' on '+date);
+  if(window._anomalyOnSave) window._anomalyOnSave();
+  renderAttendanceReport();
+}
+
+async function anomalySaveNote(recId, rowIdx, empId, anomType, date){
+  const noteEl = document.getElementById('anom-note-'+rowIdx);
+  const note   = noteEl?.value||'';
+
+  if(recId && recId!==''){
+    // Update note on existing record
+    const local = S.get('attendance',[]);
+    const rec = local.find(r=>String(r.id)===String(recId));
+    if(rec){
+      rec.notes = note;
+      const idx = local.findIndex(r=>String(r.id)===String(recId));
+      if(idx>=0) local[idx]=rec;
+      S.set('attendance', local);
+      showLoader('Saving…');
+      await dbSaveAttendance(rec);
+      hideLoader();
+    }
+  }
+
+  // Also log as an HR event on the employee record
+  if(note.trim()){
+    const evt = {
+      id:Date.now(), empId:empId, type:'absence',
+      date:date,
+      desc:'Attendance anomaly ('+( ANOMALY_TYPES[anomType]?.label||anomType)+'): '+note,
+      loggedBy:CU.name, notified:false
+    };
+    dbSaveEvent(evt).then(saved=>{ _cache.evts.unshift(saved||evt); saveEvts(_cache.evts); }).catch(()=>{});
+  }
+
+  toast('Note saved.','success');
+  dbAddAudit(CU.name,'Anomaly note on '+(gE(empId)?.name||empId)+' ('+date+'): '+note);
+}
+
+// Set today as default anomaly date when attendance page opens
+const _origRenderAtt = window.showPage || function(){};
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// WORKING HOURS & OVERTIME MODULE
+// ════════════════════════════════════════════════════════════════════════════
+
+function getWorkingHoursSettings(){
+  const cs = getSettings();
+  return {
+    workStart:    cs.workStart    || '08:00',
+    workEnd:      cs.workEnd      || '17:00',
+    workHours:    cs.workHours    || 8,
+    workDays:     cs.workDays     || [1,2,3,4,5], // 0=Sun..6=Sat
+    otWeekday:    cs.otWeekday    || 1.5,
+    otWeekend:    cs.otWeekend    || 2.0,
+    otHoliday:    cs.otHoliday    || 2.5,
+  };
+}
+
+function saveWorkingHoursSettings(){
+  const cs = getSettings();
+  cs.workStart  = document.getElementById('settings-work-start')?.value || '08:00';
+  cs.workEnd    = document.getElementById('settings-work-end')?.value   || '17:00';
+  cs.workHours  = parseFloat(document.getElementById('settings-work-hours')?.value) || 8;
+  cs.workDays   = [0,1,2,3,4,5,6].filter(d=>document.getElementById('work-day-'+d)?.checked);
+  cs.otWeekday  = parseFloat(document.getElementById('settings-ot-weekday')?.value) || 1.5;
+  cs.otWeekend  = parseFloat(document.getElementById('settings-ot-weekend')?.value) || 2.0;
+  cs.otHoliday  = parseFloat(document.getElementById('settings-ot-holiday')?.value) || 2.5;
+  saveSettings(cs);
+  toast('Working hours saved.','success');
+  dbAddAudit(CU.name,'Updated working hours settings');
+}
+
+// Patch renderSettings to load working hours values
+const _origRenderSettings = renderSettings;
+function renderSettings(){
+  _origRenderSettings();
+  const wh = getWorkingHoursSettings();
+  const ws = document.getElementById('settings-work-start');
+  const we = document.getElementById('settings-work-end');
+  const whr = document.getElementById('settings-work-hours');
+  const wwd = document.getElementById('settings-ot-weekday');
+  const wwe = document.getElementById('settings-ot-weekend');
+  const who = document.getElementById('settings-ot-holiday');
+  if(ws)  ws.value  = wh.workStart;
+  if(we)  we.value  = wh.workEnd;
+  if(whr) whr.value = wh.workHours;
+  if(wwd) wwd.value = wh.otWeekday;
+  if(wwe) wwe.value = wh.otWeekend;
+  if(who) who.value = wh.otHoliday;
+  [0,1,2,3,4,5,6].forEach(d=>{
+    const el = document.getElementById('work-day-'+d);
+    if(el) el.checked = wh.workDays.includes(d);
+  });
+  // Populate OT dept filter
+  const df = document.getElementById('ot-dept-filter');
+  if(df){
+    const depts = [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept||'').filter(Boolean))].sort();
+    df.innerHTML = '<option value="">All departments</option>'+depts.map(d=>'<option>'+d+'</option>').join('');
+  }
+}
+
+// ── Overtime calculation ──────────────────────────────────────────────────────
+let _otReportData = [];
+
+function calcOvertimeForRecord(rec, wh){
+  if(!rec.durationMinutes) return {normalMins:0, otMins:0, type:'normal'};
+  const date    = rec.date || rec.clockIn?.slice(0,10);
+  const dow     = new Date(date+'T00:00:00').getDay(); // 0=Sun
+  const isHol   = MAURITIUS_HOLIDAYS_2025.includes(date);
+  const isWkend = !wh.workDays.includes(dow);
+  const normalMins = wh.workHours * 60;
+  const workedMins = rec.durationMinutes;
+  const otMins  = Math.max(0, workedMins - normalMins);
+  const type    = isHol ? 'holiday' : isWkend ? 'weekend' : 'weekday';
+  const rate    = isHol ? wh.otHoliday : isWkend ? wh.otWeekend : wh.otWeekday;
+  return { normalMins: Math.min(workedMins, normalMins), otMins, type, rate, workedMins };
+}
+
+async function runOvertimeReport(){
+  const from   = document.getElementById('ot-date-from')?.value;
+  const to     = document.getElementById('ot-date-to')?.value;
+  const deptF  = document.getElementById('ot-dept-filter')?.value||'';
+  if(!from||!to){ toast('Select a date range.','error'); return; }
+
+  const body = document.getElementById('ot-report-body');
+  if(body) body.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Calculating…</div>';
+
+  const wh   = getWorkingHoursSettings();
+  let recs   = [];
+  try{
+    recs = await dbGetAttendance(from, to);
+    const local = S.get('attendance',[]);
+    recs.forEach(r=>{ const i=local.findIndex(x=>String(x.id)===String(r.id)); if(i>=0)local[i]=r; else local.push(r); });
+    S.set('attendance', local);
+  } catch(e){
+    recs = S.get('attendance',[]).filter(r=>r.date>=from&&r.date<=to);
+  }
+
+  const emps = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF));
+
+  // Group by employee
+  const empMap = {};
+  emps.forEach(emp=>{
+    const empRecs = recs.filter(r=>String(r.empId)===String(emp.id)&&r.clockOut&&r.durationMinutes);
+    let totalWorked=0, totalNormal=0, totalOT=0, totalOTCost=0;
+    const days = [];
+
+    empRecs.forEach(rec=>{
+      const ot = calcOvertimeForRecord(rec, wh);
+      totalWorked += ot.workedMins;
+      totalNormal += ot.normalMins;
+      totalOT     += ot.otMins;
+      if(ot.otMins>0) days.push({...rec, ...ot});
+    });
+
+    // Get hourly rate from salary
+    let hourlyRate = null;
+    if(emp.salary?.amount){
+      const freq = emp.salary.frequency||'Annual';
+      const annual = freq==='Annual' ? emp.salary.amount :
+                     freq==='Monthly' ? emp.salary.amount*12 :
+                     freq==='Hourly' ? emp.salary.amount*2080 : emp.salary.amount;
+      hourlyRate = annual / 2080; // 2080 = 52 weeks × 40 hours
+    }
+
+    empMap[emp.id] = { emp, totalWorked, totalNormal, totalOT, hourlyRate, days };
+  });
+
+  _otReportData = Object.values(empMap);
+  renderOTReport(_otReportData, wh, from, to);
+}
+
+
+
+function calcOTCost(d){
+  const hrateEl = document.getElementById('ot-rate-'+d.emp.id);
+  const rate = hrateEl ? parseFloat(hrateEl.value) : d.hourlyRate;
+  if(!rate||!d.totalOT) return null;
+  // Calculate weighted OT cost (may have weekday, weekend, holiday OT at different rates)
+  const wh = getWorkingHoursSettings();
+  let cost = 0;
+  d.days.forEach(day=>{
+    const otHrs = day.otMins / 60;
+    cost += otHrs * rate * (day.rate||wh.otWeekday);
+  });
+  return cost;
+}
+
+function recalcOTRow(empId){
+  const d = _otReportData.find(x=>String(x.emp.id)===String(empId));
+  if(!d) return;
+  const cost = calcOTCost(d);
+  const el = document.getElementById('ot-cost-'+empId);
+  if(el) el.textContent = cost!==null ? fCur(cost, d.emp.salary?.currency||'MUR') : '—';
+}
+
+function showOTDayBreakdown(empId){
+  const d = _otReportData.find(x=>String(x.emp.id)===String(empId));
+  if(!d||!d.days.length) return;
+  const wh = getWorkingHoursSettings();
+  const hrateEl = document.getElementById('ot-rate-'+empId);
+  const rate = hrateEl ? parseFloat(hrateEl.value)||null : d.hourlyRate;
+
+  const mb = document.getElementById('mbox');
+  mb.className = 'modal-box wide';
+  document.getElementById('mb').classList.add('open');
+  mb.innerHTML = '<div class="modal-title">OT Breakdown — '+d.emp.name+'<button class="modal-close" onclick="closeModal()">✕</button></div>'+
+    '<table><thead><tr><th>Date</th><th>Type</th><th>Worked</th><th>Normal</th><th>OT</th><th>Rate</th><th>OT Cost</th></tr></thead><tbody>'+
+    d.days.map(day=>{
+      const otHrs = day.otMins/60;
+      const otCost = rate ? otHrs*rate*day.rate : null;
+      const typeLabel = day.type==='holiday'?'Public Holiday':day.type==='weekend'?'Weekend':'Weekday';
+      const typeColor = day.type==='holiday'?'var(--red)':day.type==='weekend'?'var(--purple)':'var(--text2)';
+      return '<tr>'+
+        '<td>'+fDate(day.date)+'</td>'+
+        '<td style="color:'+typeColor+';font-weight:500">'+typeLabel+'</td>'+
+        '<td>'+fmtDuration(day.workedMins)+'</td>'+
+        '<td class="tm">'+fmtDuration(day.normalMins)+'</td>'+
+        '<td style="font-weight:600;color:var(--amber)">'+fmtDuration(day.otMins)+'</td>'+
+        '<td class="tm">×'+day.rate+'</td>'+
+        '<td style="font-weight:500;color:var(--gold)">'+(otCost!==null?fCur(otCost,d.emp.salary?.currency||'MUR'):'—')+'</td>'+
+      '</tr>';
+    }).join('')+
+    '</tbody></table>'+
+    '<div class="mf"><button class="btn btn-primary" onclick="closeModal()">Close</button></div>';
+}
+
+function exportOvertimeCSV(){
+  if(!_otReportData.length){ toast('Run the report first.','error'); return; }
+  const wh = getWorkingHoursSettings();
+  const rows = [['Employee','Department','Total Worked (h)','Normal Hours (h)','Overtime (h)','Hourly Rate','OT Cost','Currency']];
+  _otReportData.forEach(d=>{
+    const hrateEl = document.getElementById('ot-rate-'+d.emp.id);
+    const rate = hrateEl ? parseFloat(hrateEl.value)||'' : d.hourlyRate||'';
+    const cost = calcOTCost(d);
+    rows.push([
+      d.emp.name, d.emp.dept||'',
+      (d.totalWorked/60).toFixed(2), (d.totalNormal/60).toFixed(2), (d.totalOT/60).toFixed(2),
+      rate, cost!==null?cost.toFixed(2):'', d.emp.salary?.currency||'MUR'
+    ]);
+  });
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='overtime_report_'+todayStr()+'.csv';a.click();
+  toast('Overtime report exported.','success');
+}
+
+// Populate OT dept filter when attendance page loads
+const _origShowPageAtt2 = window.showPage;
+window.showPage = function(id, el){
+  _origShowPageAtt2(id, el);
+  if(id==='attendance'){
+    const df = document.getElementById('ot-dept-filter');
+    if(df){
+      const depts=[...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept||'').filter(Boolean))].sort();
+      df.innerHTML='<option value="">All departments</option>'+depts.map(d=>'<option>'+d+'</option>').join('');
+    }
+    // Set default OT date range (current month)
+    const from = document.getElementById('ot-date-from');
+    const to   = document.getElementById('ot-date-to');
+    if(from&&!from.value){ const d=new Date(); from.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-01'; }
+    if(to&&!to.value){ to.value=todayStr(); }
+  }
+};
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// OVERTIME REPORT MODULE
+// ════════════════════════════════════════════════════════════════════════════
+
+let _otData = []; // cached calculated OT rows
+
+function getOTSettings(){
+  const s = getSettings();
+  return {
+    workHours:  s.workHours  || 8,
+    workStart:  s.workStart  || '08:00',
+    workEnd:    s.workEnd    || '17:00',
+    otWeekday:  s.otWeekday  || 1.5,
+    otWeekend:  s.otWeekend  || 2.0,
+    otHoliday:  s.otHoliday  || 2.5,
+  };
+}
+
+function isDayWeekend(dateStr){
+  const d = new Date(dateStr+'T00:00:00').getDay();
+  return d===0||d===6;
+}
+function isDayHoliday(dateStr){
+  return (MAURITIUS_HOLIDAYS_2025||[]).includes(dateStr);
+}
+
+function calcOTMins(rec, settings){
+  if(!rec.clockOut || !rec.durationMinutes) return {otMins:0, regularMins:0, type:'weekday'};
+  const normalMins = settings.workHours * 60;
+  const worked     = rec.durationMinutes;
+  const date       = rec.date;
+  let type = 'weekday';
+  if(isDayHoliday(date))       type = 'holiday';
+  else if(isDayWeekend(date))  type = 'weekend';
+  // On weekends/holidays, ALL hours are OT
+  if(type!=='weekday'){
+    return { otMins:worked, regularMins:0, type };
+  }
+  const otMins      = Math.max(0, worked - normalMins);
+  const regularMins = Math.min(worked, normalMins);
+  return { otMins, regularMins, type };
+}
+
+async function runOvertimeReport(){
+  const from   = document.getElementById('ot-date-from')?.value;
+  const to     = document.getElementById('ot-date-to')?.value;
+  const deptF  = document.getElementById('ot-dept-filter')?.value||'';
+  if(!from||!to){ toast('Select a date range.','error'); return; }
+
+  // Populate dept filter
+  const deptSel = document.getElementById('ot-dept-filter');
+  if(deptSel && deptSel.options.length<=1){
+    const depts = [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
+    depts.forEach(d=>{ const o=document.createElement('option'); o.value=d; o.textContent=d; deptSel.appendChild(o); });
+  }
+
+  const body = document.getElementById('ot-body');
+  if(body) body.innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:13px">Calculating...</div>';
+
+  // Fetch attendance
+  let recs = [];
+  try{ recs = await dbGetAttendance(from, to); } catch(e){ recs = S.get('attendance',[]).filter(r=>r.date>=from&&r.date<=to); }
+
+  const settings = getOTSettings();
+  const emps = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF));
+
+  // Build per-employee summary
+  const rows = emps.map(emp=>{
+    const empRecs = recs.filter(r=>String(r.empId)===String(emp.id));
+    let totalRegMins=0, totalOTMins=0;
+    const dayBreakdown = {};
+
+    empRecs.forEach(rec=>{
+      if(!rec.clockOut) return; // skip open records
+      const {otMins,regularMins,type} = calcOTMins(rec, settings);
+      totalRegMins += regularMins;
+      totalOTMins  += otMins;
+      if(otMins>0){
+        dayBreakdown[rec.date] = { otMins, type, location:rec.location||'' };
+      }
+    });
+
+    // Hourly rate from salary (annual ÷ 52 weeks ÷ 5 days ÷ workHours)
+    const annualSalary = emp.salary?.amount||0;
+    const currency     = emp.salary?.currency||'USD';
+    const hourlyRate   = annualSalary>0 ? annualSalary/(52*5*settings.workHours) : 0;
+
+    return { emp, totalRegMins, totalOTMins, hourlyRate, currency, dayBreakdown, annualSalary };
+  }).filter(e=>e.totalOTMins>0 || e.totalRegMins>0); // only show employees with records
+
+  _otData = rows;
+  renderOTTable(rows, settings, from, to);
+}
+
+function renderOTTable(rows, settings, from, to){
+  const body    = document.getElementById('ot-body');
+  const summary = document.getElementById('ot-summary');
+  if(!body) return;
+
+  const otRows = rows.filter(r=>r.totalOTMins>0);
+  const totalOTMins = rows.reduce((s,r)=>s+r.totalOTMins, 0);
+
+  // Summary strip
+  if(summary){
+    summary.style.display='block';
+    const totalCost = rows.reduce((s,r)=>{
+      const h = r.totalOTMins/60;
+      const rate = r.hourlyRate * (settings.otWeekday||1.5);
+      return s+(h*rate);
+    }, 0);
+    summary.innerHTML =
+      '<div style="display:flex;gap:20px;flex-wrap:wrap;font-size:13px">'+
+      '<span>Period: <strong>'+fDate(from)+' – '+fDate(to)+'</strong></span>'+
+      '<span>Employees with OT: <strong>'+otRows.length+'</strong></span>'+
+      '<span>Total OT hours: <strong>'+fmtDuration(totalOTMins)+'</strong></span>'+
+      (totalCost>0?'<span>Est. OT cost: <strong>'+fCur(totalCost)+'</strong></span>':'')+
+      '</div>';
+  }
+
+  if(!rows.length){
+    body.innerHTML='<div style="padding:24px;text-align:center;color:var(--text3)">No attendance records found for this period.</div>';
+    return;
+  }
+
+  body.innerHTML =
+    '<div style="overflow-x:auto"><table style="width:100%;font-size:13px;border-collapse:collapse">'+
+    '<thead><tr style="background:var(--bg2)">'+
+      '<th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Employee</th>'+
+      '<th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Dept</th>'+
+      '<th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Regular</th>'+
+      '<th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">OT Hours</th>'+
+      '<th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Hourly Rate</th>'+
+      '<th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">OT Pay (est.)</th>'+
+      '<th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">OT Days</th>'+
+      '<th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Override Rate</th>'+
+    '</tr></thead>'+
+    '<tbody>'+
+    rows.map((row,idx)=>{
+      const c = aColor(row.emp.name);
+      const otH = row.totalOTMins/60;
+      const rate = row.hourlyRate;
+      // Default OT pay = hours × rate × multiplier (weekday rate as default)
+      const otPay = otH * rate * settings.otWeekday;
+      const otDaysSummary = Object.entries(row.dayBreakdown).sort((a,b)=>a[0].localeCompare(b[0])).map(([d,info])=>
+        '<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:10.5px;margin:1px;background:'+(info.type==='holiday'?'var(--red-light)':info.type==='weekend'?'var(--amber-light)':'var(--blue-light)')+';color:'+(info.type==='holiday'?'var(--red-deep)':info.type==='weekend'?'var(--amber-deep)':'var(--blue-deep)')+'" title="'+info.type+'">'+
+          fDate(d)+' +'+fmtDuration(info.otMins)+'</span>'
+      ).join('');
+      return '<tr style="border-bottom:1px solid var(--border)">'+
+        '<td style="padding:10px 12px"><div class="emp-cell">'+
+          '<div class="avatar" style="background:'+c+'22;color:'+c+';width:26px;height:26px;font-size:10px">'+inits(row.emp.name)+'</div>'+
+          '<div style="font-weight:500">'+row.emp.name+'</div>'+
+        '</div></td>'+
+        '<td style="padding:10px 12px;color:var(--text3);font-size:12px">'+( row.emp.dept||'—')+'</td>'+
+        '<td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--text2)">'+fmtDuration(row.totalRegMins)+'</td>'+
+        '<td style="padding:10px 12px;text-align:right;font-weight:600;color:'+(row.totalOTMins>0?'var(--amber)':'var(--text3)')+'">'+
+          (row.totalOTMins>0?fmtDuration(row.totalOTMins):'—')+
+        '</td>'+
+        '<td style="padding:10px 12px;text-align:right;font-size:12px">'+
+          '<input id="ot-rate-'+idx+'" type="number" step="0.01" value="'+(rate>0?rate.toFixed(2):'')+'" placeholder="Enter rate" '+
+          'style="width:90px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:right" '+
+          'onchange="recalcOTRow('+idx+')">'+
+          '<div style="font-size:10px;color:var(--text3);margin-top:2px">'+( row.currency)+'/hr</div>'+
+        '</td>'+
+        '<td id="ot-pay-'+idx+'" style="padding:10px 12px;text-align:right;font-weight:600;color:var(--green)">'+
+          (otPay>0?fCur(otPay,row.currency):'—')+
+        '</td>'+
+        '<td style="padding:10px 12px;font-size:11px;max-width:200px">'+otDaysSummary+'</td>'+
+        '<td style="padding:10px 12px">'+
+          '<div style="display:flex;align-items:center;gap:4px">'+
+          '<span style="font-size:11px;color:var(--text3)">×</span>'+
+          '<input id="ot-mult-'+idx+'" type="number" step="0.25" value="'+settings.otWeekday+'" '+
+          'style="width:60px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:center" '+
+          'onchange="recalcOTRow('+idx+')">'+
+          '</div>'+
+        '</td>'+
+      '</tr>';
+    }).join('')+
+    '</tbody></table></div>';
+}
+
+function recalcOTRow(idx){
+  const row     = _otData[idx];
+  if(!row) return;
+  const rateEl  = document.getElementById('ot-rate-'+idx);
+  const multEl  = document.getElementById('ot-mult-'+idx);
+  const payEl   = document.getElementById('ot-pay-'+idx);
+  if(!rateEl||!multEl||!payEl) return;
+  const rate    = parseFloat(rateEl.value)||0;
+  const mult    = parseFloat(multEl.value)||1.5;
+  const otH     = row.totalOTMins/60;
+  const otPay   = otH * rate * mult;
+  payEl.textContent = otPay>0 ? fCur(otPay, row.currency) : '—';
+  payEl.style.color = otPay>0?'var(--green)':'var(--text3)';
+  // Store for export
+  row.overrideRate = rate;
+  row.overrideMult = mult;
+  row.calculatedPay = otPay;
+}
+
+function exportOvertimeCSV(){
+  if(!_otData.length){ toast('Run the report first.','error'); return; }
+  const settings = getOTSettings();
+  const from = document.getElementById('ot-date-from')?.value||'';
+  const to   = document.getElementById('ot-date-to')?.value||'';
+  const rows = [['Employee','Department','Period','Regular Hours','OT Hours','Hourly Rate','OT Multiplier','OT Pay (est.)','Currency','OT Days']];
+  _otData.forEach((row,idx)=>{
+    const rate = row.overrideRate ?? row.hourlyRate;
+    const mult = row.overrideMult ?? settings.otWeekday;
+    const otPay = row.calculatedPay ?? (row.totalOTMins/60*rate*mult);
+    const otDays = Object.keys(row.dayBreakdown).join(', ');
+    rows.push([
+      row.emp.name, row.emp.dept||'',
+      from+' to '+to,
+      (row.totalRegMins/60).toFixed(2),
+      (row.totalOTMins/60).toFixed(2),
+      rate.toFixed(2),
+      mult.toFixed(2),
+      otPay.toFixed(2),
+      row.currency,
+      otDays
+    ]);
+  });
+  const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download = 'overtime_'+from+'_to_'+to+'.csv';
+  a.click();
+  toast('Overtime report exported.','success');
+}
+
+// Set default OT date range (current month) when attendance page renders
+function initOTDateRange(){
+  const from = document.getElementById('ot-date-from');
+  const to   = document.getElementById('ot-date-to');
+  if(!from||!to||from.value) return;
+  const now  = new Date();
+  const y    = now.getFullYear();
+  const m    = String(now.getMonth()+1).padStart(2,'0');
+  from.value = y+'-'+m+'-01';
+  to.value   = todayStr();
+  // Populate dept filter
+  const deptSel = document.getElementById('ot-dept-filter');
+  if(deptSel && deptSel.options.length<=1){
+    const depts = [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
+    depts.forEach(d=>{ const o=document.createElement('option'); o.value=d; o.textContent=d; deptSel.appendChild(o); });
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// PAYROLL CALCULATOR MODULE
+// ════════════════════════════════════════════════════════════════════════════
+
+let _payrollData = []; // cached last calculation
+
+function initPayroll(){
+  // Set default pay period (current month 1st to today)
+  const from = document.getElementById('pay-from');
+  const to   = document.getElementById('pay-to');
+  const pd   = document.getElementById('pay-date');
+  if(!from||from.value) return;
+
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth()+1).padStart(2,'0');
+  const lastDay = new Date(y, now.getMonth()+1, 0).getDate();
+
+  from.value = y+'-'+m+'-01';
+  to.value   = y+'-'+m+'-'+String(lastDay).padStart(2,'0');
+  pd.value   = y+'-'+m+'-'+String(lastDay).padStart(2,'0');
+
+  // Populate dept filter
+  const sel = document.getElementById('pay-dept');
+  if(sel && sel.options.length<=1){
+    const depts = [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
+    depts.forEach(d=>{ const o=document.createElement('option'); o.value=d; o.textContent=d; sel.appendChild(o); });
+  }
+}
+
+function setPayPeriodPreset(preset){
+  const from = document.getElementById('pay-from');
+  const to   = document.getElementById('pay-to');
+  const pd   = document.getElementById('pay-date');
+  if(!from||!to) return;
+
+  const now  = new Date();
+  const y    = now.getFullYear();
+  const m    = now.getMonth(); // 0-indexed
+
+  if(preset==='last_month'){
+    const lastM  = new Date(y, m, 0); // last day of prev month
+    const lastMY = lastM.getFullYear();
+    const lastMM = String(lastM.getMonth()+1).padStart(2,'0');
+    const lastMD = String(lastM.getDate()).padStart(2,'0');
+    from.value = lastMY+'-'+lastMM+'-01';
+    to.value   = lastMY+'-'+lastMM+'-'+lastMD;
+    if(pd) pd.value = y+'-'+String(m+1).padStart(2,'0')+'-28'; // pay on 28th of current
+  } else if(preset==='this_month'){
+    const lastDay = new Date(y, m+1, 0).getDate();
+    from.value = y+'-'+String(m+1).padStart(2,'0')+'-01';
+    to.value   = y+'-'+String(m+1).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
+    if(pd) pd.value = to.value;
+  } else if(preset==='custom_26'){
+    // 26th of prev month to 25th of current month
+    const prevM = m===0 ? 12 : m;
+    const prevY = m===0 ? y-1 : y;
+    from.value = prevY+'-'+String(prevM).padStart(2,'0')+'-26';
+    to.value   = y+'-'+String(m+1).padStart(2,'0')+'-25';
+    if(pd) pd.value = y+'-'+String(m+1).padStart(2,'0')+'-28';
+  }
+}
+
+function countWorkingDaysInRange(from, to){
+  let count=0, cur=new Date(from+'T00:00:00');
+  const end=new Date(to+'T00:00:00');
+  while(cur<=end){
+    const dow=cur.getDay();
+    const ds=cur.toISOString().slice(0,10);
+    if(dow!==0&&dow!==6&&!(MAURITIUS_HOLIDAYS_2025||[]).includes(ds)) count++;
+    cur.setDate(cur.getDate()+1);
+  }
+  return count;
+}
+
+async function runPayroll(){
+  const from = document.getElementById('pay-from')?.value;
+  const to   = document.getElementById('pay-to')?.value;
+  const pd   = document.getElementById('pay-date')?.value;
+  const deptF= document.getElementById('pay-dept')?.value||'';
+  const inclOT    = document.getElementById('pay-include-ot')?.checked!==false;
+  const inclLeave = document.getElementById('pay-include-leave')?.checked!==false;
+
+  if(!from||!to){ toast('Please set the pay period dates.','error'); return; }
+  if(to<from){ toast('End date must be after start date.','error'); return; }
+
+  showLoader('Calculating payroll…');
+
+  // Fetch attendance for period
+  let attRecs = [];
+  try{ attRecs = await dbGetAttendance(from, to); }
+  catch(e){ attRecs = S.get('attendance',[]).filter(r=>r.date>=from&&r.date<=to); }
+
+  // Fetch leave requests for period
+  let leaveRecs = [];
+  try{ leaveRecs = await dbGetLeaveRequests(); }
+  catch(e){ leaveRecs = S.get('leaveRequests',[]); }
+  leaveRecs = leaveRecs.filter(r=>r.status==='approved'&&r.fromDate<=to&&r.toDate>=from);
+
+  const settings      = getOTSettings();
+  const totalWorkDays = countWorkingDaysInRange(from, to);
+  const emps = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF)&&e.salary?.amount);
+
+  const rows = emps.map(emp=>{
+    const sal      = emp.salary;
+    const annual   = sal.amount||0;
+    const currency = sal.currency||'USD';
+    const freq     = sal.frequency||'Annual';
+
+    // Period base pay = daily rate × working days in period
+    const dailyRate  = annual / (52 * 5); // annual / 260 working days
+    const hourlyRate = dailyRate / settings.workHours;
+    const periodPay  = dailyRate * totalWorkDays;
+
+    // Count days actually worked from attendance
+    const empAtt   = attRecs.filter(r=>String(r.empId)===String(emp.id)&&r.clockOut);
+    const daysWorked = [...new Set(empAtt.map(r=>r.date))].length;
+
+    // OT calculation
+    let otMins=0, otPay=0;
+    if(inclOT){
+      empAtt.forEach(rec=>{
+        const {otMins:om, type} = calcOTMins(rec, settings);
+        if(om>0){
+          const mult = type==='holiday' ? settings.otHoliday : type==='weekend' ? settings.otWeekend : settings.otWeekday;
+          otMins += om;
+          otPay  += (om/60) * hourlyRate * mult;
+        }
+      });
+    }
+
+    // Leave deduction — unpaid leave days × daily rate
+    let leaveDeduct=0, leaveNote='';
+    if(inclLeave){
+      const empLeaves = leaveRecs.filter(r=>String(r.empId)===String(emp.id));
+      empLeaves.forEach(req=>{
+        // Count leave days within this pay period
+        let days=0, cur=new Date(req.fromDate+'T00:00:00');
+        const end=new Date(req.toDate+'T00:00:00');
+        const periodStart=new Date(from+'T00:00:00');
+        const periodEnd=new Date(to+'T00:00:00');
+        while(cur<=end){
+          if(cur>=periodStart&&cur<=periodEnd){
+            const dow=cur.getDay();
+            const ds=cur.toISOString().slice(0,10);
+            if(dow!==0&&dow!==6&&!(MAURITIUS_HOLIDAYS_2025||[]).includes(ds)) days++;
+          }
+          cur.setDate(cur.getDate()+1);
+        }
+        // Only deduct if leave type has no pay (sick/casual/annual are usually paid)
+        // Mark as info only — HR can override
+        if(days>0) leaveNote += (leaveNote?', ':'')+days+'d '+req.type;
+      });
+    }
+
+    const netPay = periodPay + otPay - leaveDeduct;
+
+    return {
+      emp, annual, currency, periodPay, dailyRate, hourlyRate,
+      daysWorked, totalWorkDays, otMins, otPay, leaveDeduct, leaveNote,
+      netPay, overridePeriodPay:null, overrideOTPay:null, overrideDeduct:null,
+      hrNote:''
+    };
+  });
+
+  _payrollData = rows;
+  hideLoader();
+
+  // Update period label
+  const lbl = document.getElementById('payroll-period-label');
+  if(lbl) lbl.textContent = fDate(from)+' – '+fDate(to)+(pd?' · Pay date: '+fDate(pd):'');
+
+  renderPayrollMetrics(rows);
+  renderPayrollTable(rows, settings);
+}
+
+function renderPayrollMetrics(rows){
+  const el = document.getElementById('payroll-metrics');
+  if(!el) return;
+  const totalNet  = rows.reduce((s,r)=>s+(r.overridePeriodPay??r.netPay),0);
+  const totalOT   = rows.reduce((s,r)=>s+(r.overrideOTPay??r.otPay),0);
+  const totalBase = rows.reduce((s,r)=>s+(r.overridePeriodPay??r.periodPay),0);
+  const cur       = rows[0]?.currency||'USD';
+  el.innerHTML =
+    '<div class="mc"><div class="mc-label">Employees on payroll</div><div class="mc-value">'+rows.length+'</div></div>'+
+    '<div class="mc"><div class="mc-label">Total base pay</div><div class="mc-value" style="font-size:20px">'+fCur(totalBase,cur)+'</div></div>'+
+    '<div class="mc"><div class="mc-label">Total overtime</div><div class="mc-value" style="font-size:20px;color:var(--amber)">'+fCur(totalOT,cur)+'</div></div>'+
+    '<div class="mc"><div class="mc-label">Total net payroll</div><div class="mc-value" style="font-size:20px;color:var(--navy)">'+fCur(totalNet,cur)+'</div></div>';
+}
+
+function renderPayrollTable(rows, settings){
+  const tbody = document.getElementById('payroll-tbody');
+  if(!tbody) return;
+
+  if(!rows.length){
+    tbody.innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--text3);padding:24px">No employees with salary data found for this period.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((row,idx)=>{
+    const c   = aColor(row.emp.name);
+    const basePay = row.overridePeriodPay ?? row.periodPay;
+    const otPay   = row.overrideOTPay    ?? row.otPay;
+    const deduct  = row.overrideDeduct   ?? row.leaveDeduct;
+    const net     = basePay + otPay - deduct;
+
+    return '<tr style="border-bottom:1px solid var(--border)">'+
+      '<td style="padding:10px 12px"><div class="emp-cell">'+
+        '<div class="avatar" style="background:'+c+'22;color:'+c+';width:26px;height:26px;font-size:10px">'+inits(row.emp.name)+'</div>'+
+        '<div><div style="font-weight:500">'+row.emp.name+'</div>'+
+        '<div class="txs tm">'+fCur(row.annual,row.currency)+'/yr</div></div>'+
+      '</div></td>'+
+      '<td style="padding:10px 12px;color:var(--text3);font-size:12px">'+( row.emp.dept||'—')+'</td>'+
+
+      // Base pay — editable
+      '<td style="padding:10px 12px;text-align:right">'+
+        '<input id="pay-base-'+idx+'" type="number" step="0.01" value="'+basePay.toFixed(2)+'" '+
+        'style="width:100px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:right" '+
+        'onchange="recalcPayrollRow('+idx+')">'+
+      '</td>'+
+
+      // Period Pay (calculated, read-only display)
+      '<td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--text3)">'+
+        row.daysWorked+'/'+row.totalWorkDays+' days'+
+      '</td>'+
+
+      // Days worked
+      '<td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--text2)">'+
+        row.daysWorked+
+      '</td>'+
+
+      // OT hours
+      '<td style="padding:10px 12px;text-align:right;font-size:12px;color:'+(row.otMins>0?'var(--amber)':'var(--text3)')+'">'+
+        (row.otMins>0?fmtDuration(row.otMins):'—')+
+      '</td>'+
+
+      // OT pay — editable
+      '<td style="padding:10px 12px;text-align:right">'+
+        '<input id="pay-ot-'+idx+'" type="number" step="0.01" value="'+otPay.toFixed(2)+'" '+
+        'style="width:90px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:right" '+
+        'onchange="recalcPayrollRow('+idx+')">'+
+      '</td>'+
+
+      // Leave deduction — editable
+      '<td style="padding:10px 12px;text-align:right">'+
+        '<input id="pay-deduct-'+idx+'" type="number" step="0.01" value="'+deduct.toFixed(2)+'" '+
+        'style="width:90px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:right" '+
+        'onchange="recalcPayrollRow('+idx+')">'+
+        (row.leaveNote?'<div style="font-size:10px;color:var(--text3);margin-top:2px">'+row.leaveNote+'</div>':'')+
+      '</td>'+
+
+      // Net pay — auto-calculated
+      '<td id="pay-net-'+idx+'" style="padding:10px 12px;text-align:right;font-weight:700;color:var(--navy);font-size:14px">'+
+        fCur(net, row.currency)+
+      '</td>'+
+
+      // HR notes
+      '<td style="padding:10px 12px">'+
+        '<input id="pay-note-'+idx+'" class="fi" placeholder="Note…" style="width:120px;padding:4px 6px;font-size:12px" value="'+( row.hrNote||'')+'">'+
+      '</td>'+
+    '</tr>';
+  }).join('');
+}
+
+function recalcPayrollRow(idx){
+  const row    = _payrollData[idx];
+  if(!row) return;
+  const base   = parseFloat(document.getElementById('pay-base-'+idx)?.value)||0;
+  const ot     = parseFloat(document.getElementById('pay-ot-'+idx)?.value)||0;
+  const deduct = parseFloat(document.getElementById('pay-deduct-'+idx)?.value)||0;
+  const net    = base + ot - deduct;
+
+  row.overridePeriodPay = base;
+  row.overrideOTPay     = ot;
+  row.overrideDeduct    = deduct;
+
+  const netEl = document.getElementById('pay-net-'+idx);
+  if(netEl) netEl.textContent = fCur(net, row.currency);
+
+  renderPayrollMetrics(_payrollData);
+}
+
+function exportPayrollCSV(){
+  if(!_payrollData.length){ toast('Run payroll first.','error'); return; }
+  const from = document.getElementById('pay-from')?.value||'';
+  const to   = document.getElementById('pay-to')?.value||'';
+  const pd   = document.getElementById('pay-date')?.value||'';
+
+  const rows = [['Employee','Department','Annual Salary','Currency','Period','Payment Date',
+    'Base Pay','Days Worked','Total Working Days','OT Hours','OT Pay','Leave Deduction','Net Pay','Notes']];
+
+  _payrollData.forEach((row,idx)=>{
+    const base   = row.overridePeriodPay ?? row.periodPay;
+    const ot     = row.overrideOTPay    ?? row.otPay;
+    const deduct = row.overrideDeduct   ?? row.leaveDeduct;
+    const net    = base + ot - deduct;
+    const note   = document.getElementById('pay-note-'+idx)?.value||row.hrNote||'';
+    rows.push([
+      row.emp.name, row.emp.dept||'', row.annual, row.currency,
+      from+' to '+to, pd,
+      base.toFixed(2), row.daysWorked, row.totalWorkDays,
+      (row.otMins/60).toFixed(2), ot.toFixed(2),
+      deduct.toFixed(2), net.toFixed(2), note
+    ]);
+  });
+
+  const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download = 'payroll_'+from+'_to_'+to+'.csv';
+  a.click();
+  toast('Payroll exported.','success');
+}
+
+// Hook into showPage
+const _showPagePayroll = window.showPage;
+window.showPage = function(id, el){
+  _showPagePayroll(id, el);
+  if(id==='payroll') initPayroll();
+};
 
 </script>
 
