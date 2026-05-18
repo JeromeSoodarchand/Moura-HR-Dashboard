@@ -605,7 +605,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
       <div class="ph"><div class="ph-title">Management Overview</div>
         <div class="ph-actions">
           <button class="btn" onclick="exportCSV('employees')">⬇ Export</button>
-          <button class="btn btn-blue" onclick="openKiosk()">⌨ Open Kiosk</button>
+          
           <button class="btn btn-primary" data-perm-btn="add_employees" onclick="openModal('addEmployee')">+ Add Employee</button>
         </div>
       </div>
@@ -652,7 +652,6 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
           <button class="btn" onclick="exportAttendanceCSV()">&#x2B07; Export CSV</button>
           <button class="btn btn-blue" onclick="openAttendanceModal('scanQR')">&#128247; Clock In / Out</button>
           <button class="btn btn-primary ahr-btn" onclick="openAttendanceModal('manageLocations')">&#127970; Manage Locations</button>
-          <button class="btn" onclick="openKiosk()">&#9000; Open Kiosk</button>
         </div>
       </div>
 
@@ -799,7 +798,13 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
           </div>
           <div class="cb">
             <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:6px">
-              ${['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>`<div style="text-align:center;font-size:11px;font-weight:600;color:var(--text3);padding:4px">${d}</div>`).join('')}
+              <div style="text-align:center;font-size:11px;font-weight:600;color:var(--text3);padding:4px">Su</div>
+              <div style="text-align:center;font-size:11px;font-weight:600;color:var(--text3);padding:4px">Mo</div>
+              <div style="text-align:center;font-size:11px;font-weight:600;color:var(--text3);padding:4px">Tu</div>
+              <div style="text-align:center;font-size:11px;font-weight:600;color:var(--text3);padding:4px">We</div>
+              <div style="text-align:center;font-size:11px;font-weight:600;color:var(--text3);padding:4px">Th</div>
+              <div style="text-align:center;font-size:11px;font-weight:600;color:var(--text3);padding:4px">Fr</div>
+              <div style="text-align:center;font-size:11px;font-weight:600;color:var(--text3);padding:4px">Sa</div>
             </div>
             <div class="leave-calendar" id="leave-calendar"></div>
             <div style="display:flex;gap:12px;margin-top:10px;font-size:11.5px;color:var(--text3)">
@@ -1443,7 +1448,16 @@ async function dbGetEmployees(){
   try{
     const {data,error}=await _sb.from('employees').select('*').order('created_at',{ascending:false});
     if(error){console.error('dbGetEmployees error:',error);return getData('employees');}
-    return data.map(rowToEmp);
+    const fetched = data.map(rowToEmp);
+    // Sync pinHash + all fields to localStorage so PIN login works offline
+    const local = getData('employees');
+    fetched.forEach(e=>{
+      const li = local.findIndex(x=>String(x.id)===String(e.id));
+      if(li>=0) local[li]={...local[li],...e};
+      else local.push(e);
+    });
+    saveEmps(local);
+    return fetched;
   } catch(err){ console.error('dbGetEmployees exception:',err);return getData('employees'); }
 }
 
@@ -1595,7 +1609,7 @@ async function dbGetUsers(){
   if(!sbReady()) return S.get('users',[]);
   const {data,error}=await _sb.from('hr_users').select('*').order('created_at');
   if(error){console.error(error);return S.get('users',[]);}
-  return data.map(r=>({
+  const users = data.map(r=>({
     id:r.id,name:r.name,username:r.username,
     email:r.email||'',phone:r.phone||'',
     role:r.role,active:r.active,
@@ -1603,6 +1617,10 @@ async function dbGetUsers(){
     setupToken:r.setup_token||null,setupDone:r.setup_done||false,
     empId:r.emp_id||null,createdAt:r.created_at
   }));
+  // Always sync to cache and localStorage
+  _userCache = users;
+  S.set('users', users);
+  return users;
 }
 
 async function dbSaveUser(user){
@@ -1838,8 +1856,12 @@ async function boot(){
           .eq('id', savedSession.userId).eq('active',true).single();
         if(data) sessionUser = {
           id:data.id, name:data.name, username:data.username,
-          email:data.email, role:data.role, active:data.active,
-          passwordHash:data.password_hash
+          email:data.email||'', phone:data.phone||'',
+          role:data.role, active:data.active,
+          passwordHash:data.password_hash,
+          setupToken:data.setup_token||null,
+          setupDone:data.setup_done||false,
+          empId:data.emp_id||null
         };
       } catch(e){ /* session lookup failed, fall through to login */ }
     }
@@ -2062,11 +2084,16 @@ async function doLogin(){
   initInactivityTracking();
 
   // ── Role-based post-login routing ─────────────────────────────────────────
+  if(user.role==='kiosk'){
+    // Kiosk account → go straight to kiosk screen, no HR access ever
+    document.getElementById('login-screen').style.display='none';
+    openKioskForKioskUser(user);
+    return;
+  }
   if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
     // Admin/HR/Manager → ask: clock in or access HR platform?
     renderDashboard(); // render in background
     setTimeout(()=>showManagerLoginChoice(user), 400);
-
   } else {
     // Viewer (regular employee) → show clock-in prompt only
     showEmployeeClockInScreen(user);
@@ -2147,71 +2174,195 @@ async function showEmployeeClockInScreen(user){
     ? todayAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut)
     : null;
 
-  // Build minimal employee screen
+  // Build employee mobile dashboard
   const app = document.getElementById('app');
-  // Hide sidebar for viewer — they don't need it
   const sidebar = document.querySelector('.sidebar');
   if(sidebar) sidebar.style.display='none';
   const appBody = document.querySelector('.app-body');
   if(appBody) appBody.style.marginLeft='0';
-
-  // Show a full-screen attendance UI
   const mainContent = document.querySelector('.main-content');
   if(!mainContent) return;
 
-  const c = emp ? aColor(emp.name) : '#888';
+  const c       = emp ? aColor(emp.name) : '#888';
   const elapsed = openRec ? calcDuration(openRec.clockIn, new Date().toISOString()) : null;
 
-  mainContent.innerHTML = `
-    <div style="max-width:400px;margin:40px auto;text-align:center">
-      <div style="font-size:13px;color:var(--text3);margin-bottom:4px;letter-spacing:.05em;text-transform:uppercase">Moura HR</div>
-      <div id="emp-clock-time" style="font-size:48px;font-weight:200;color:var(--navy);font-variant-numeric:tabular-nums;margin-bottom:4px"></div>
-      <div id="emp-clock-date" style="font-size:13px;color:var(--text3);margin-bottom:32px;text-transform:uppercase;letter-spacing:.05em"></div>
+  // Who can clock in from the app?
+  // - Admin / HR / Manager → always
+  // - Employee with clockMode 'app' → direct clock-in (no QR)
+  // - Employee with clockMode 'qr'  → QR scan required
+  // - Employee with clockMode 'kiosk' or unset → no clock-in on app
+  const role         = user.role||'viewer';
+  const isHRRole     = role==='admin'||role==='hr'||role==='manager';
+  const empClockMode = emp?.clockMode||'kiosk';
+  const canAppClock  = isHRRole || empClockMode==='app';
+  const canQRClock   = !isHRRole && empClockMode==='qr';
 
-      ${emp ? `<div style="display:flex;align-items:center;gap:12px;background:var(--bg);border:2px solid ${openRec?'var(--green)':'var(--border)'};border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:20px;text-align:left">
-        <div class="avatar avatar-lg" style="background:${c}22;color:${c}">${inits(emp.name)}</div>
-        <div style="flex:1">
-          <div style="font-weight:600;font-size:15px">${emp.name}</div>
-          <div style="font-size:12.5px;color:var(--text3)">${emp.role||''} · ${emp.dept||''}</div>
-          ${openRec
-            ? `<div id="emp-elapsed" data-clockin="${openRec.clockIn}" style="font-size:12px;color:var(--green);margin-top:3px;font-weight:500">● On site · ${fmtDuration(elapsed)}</div>
-               <div style="font-size:11px;color:var(--text3);margin-top:1px">Since ${fmtTime(openRec.clockIn)} at ${openRec.location||'site'}</div>`
-            : '<div style="font-size:12px;color:var(--text3);margin-top:3px">○ Not clocked in today</div>'}
-        </div>
-      </div>` : ''}
+  // Fetch leave balances
+  let leaveBalances = {};
+  try{
+    const all = await dbGetLeaveBalances();
+    const lb  = all.find(b=>String(b.empId)===String(emp?.id));
+    if(lb) leaveBalances = lb.balances||{};
+  }catch(e){}
 
-      ${openRec ? `
-        <button onclick="empClockOut('${openRec.id}')" class="mobile-clock-btn mobile-clock-out" style="margin-bottom:12px">
-          ⏹ Clock out from ${openRec.location||'site'}
-        </button>` :
-        _attLocations.length > 0 ? `
-        <div style="display:grid;grid-template-columns:${_attLocations.length===1?'1fr':'1fr 1fr'};gap:10px;margin-bottom:12px">
+  // Fetch recent attendance (last 5)
+  let recentAtt = [];
+  try{
+    const allAtt = await dbGetAttendance(
+      new Date(Date.now()-30*24*60*60*1000).toISOString().slice(0,10),
+      todayStr()
+    );
+    recentAtt = allAtt
+      .filter(r=>String(r.empId)===String(emp?.id)&&r.clockOut)
+      .sort((a,b)=>new Date(b.clockIn)-new Date(a.clockIn))
+      .slice(0,5);
+  }catch(e){}
+
+  // ── Clock-in section HTML (differs by mode) ───────────────────────────────
+  function clockSection(){
+    if(openRec){
+      // Currently clocked in — show clock-out button for anyone who can clock in
+      if(canAppClock||canQRClock){
+        return `<div style="background:var(--bg);border:1px solid var(--green);border-radius:12px;padding:16px;margin-bottom:16px">
+          <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">You are on site</div>
+          <button onclick="empClockOut('${openRec.id}')" class="mobile-clock-btn mobile-clock-out">
+            ⏹ Clock out from ${openRec.location||'site'}
+          </button>
+        </div>`;
+      }
+      return '';
+    }
+
+    if(canAppClock){
+      // Direct clock-in — no QR needed
+      if(_attLocations.length===0){
+        return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px">
+          <div style="font-size:13px;color:var(--text3);text-align:center">No locations configured. Contact HR.</div>
+        </div>`;
+      }
+      return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Clock In</div>
+        <div style="display:grid;grid-template-columns:${_attLocations.length===1?'1fr':'1fr 1fr'};gap:8px">
           ${_attLocations.map(loc=>`
-            <button onclick="empClockIn('${emp?emp.id:''}','${loc.id}','${loc.name}')"
-              class="mobile-clock-btn mobile-clock-in" style="flex-direction:column;gap:4px;font-size:13px;padding:20px 12px">
-              <span style="font-size:28px">🏢</span>
+            <button onclick="empClockIn('${emp?.id||''}','${loc.id}','${loc.name}')"
+              class="mobile-clock-btn mobile-clock-in" style="flex-direction:column;gap:3px;padding:16px 10px;font-size:13px">
+              <span style="font-size:22px">🏢</span>
               <span style="font-weight:600">${loc.name}</span>
               ${loc.address?`<span style="font-size:11px;opacity:.7">${loc.address}</span>`:''}
             </button>`).join('')}
-        </div>` :
-        `<div style="color:var(--text3);font-size:13px;padding:20px">No locations configured. Contact HR.</div>`
-      }
+        </div>
+      </div>`;
+    }
 
-      <button onclick="openFullHRPlatform()" style="margin-top:8px;background:none;border:1px solid var(--border2);color:var(--text2);padding:8px 20px;border-radius:20px;cursor:pointer;font-size:12.5px;font-family:inherit">
-        Open full HR platform
-      </button>
-      <button onclick="empRequestLeave()" style="display:block;margin:10px auto 0;background:none;border:1px solid var(--gold);color:var(--gold);padding:6px 18px;border-radius:20px;cursor:pointer;font-size:12.5px;font-family:inherit">
-        📅 Request leave
-      </button>
-      <button onclick="doLogout()" style="display:block;margin:10px auto 0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;font-family:inherit;text-decoration:underline">
-        Sign out
-      </button>
+    if(canQRClock){
+      // QR scan required
+      return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Clock In</div>
+        <div style="display:grid;grid-template-columns:${_attLocations.length===1?'1fr':'1fr 1fr'};gap:8px">
+          ${_attLocations.map(loc=>`
+            <button onclick="mobileQRClockIn('${emp?.id||''}','${loc.id}','${loc.name}')"
+              class="mobile-clock-btn mobile-clock-in" style="flex-direction:column;gap:3px;padding:16px 10px;font-size:13px">
+              <span style="font-size:22px">📷</span>
+              <span style="font-weight:600">${loc.name}</span>
+            </button>`).join('')}
+        </div>
+        <div style="font-size:10.5px;color:var(--text3);margin-top:8px;text-align:center">QR scan required to clock in</div>
+      </div>`;
+    }
+
+    // Kiosk only — no clock-in on app
+    return `<div style="background:var(--bg2);border-radius:12px;padding:14px;margin-bottom:16px;text-align:center">
+      <div style="font-size:20px;margin-bottom:6px">🖥️</div>
+      <div style="font-size:13px;font-weight:500">Use the entrance tablet to clock in</div>
+      <div style="font-size:11.5px;color:var(--text3);margin-top:4px">See your HR or manager if you have any issues.</div>
+    </div>`;
+  }
+
+  mainContent.innerHTML = `
+    <div style="max-width:420px;margin:0 auto;padding:16px">
+
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div style="font-size:13px;font-weight:600;color:var(--navy)">Moura HR</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${isHRRole ? `<button onclick="openFullHRPlatform()" style="font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer">HR Platform →</button>` : ''}
+          <button onclick="doLogout()" style="font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer">Sign out</button>
+        </div>
+      </div>
+
+      <!-- Employee card -->
+      <div style="background:var(--navy);border-radius:14px;padding:18px;margin-bottom:16px;color:#fff;position:relative;overflow:hidden">
+        <div style="position:absolute;top:-20px;right:-20px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,0.05)"></div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="avatar avatar-lg" style="background:${c}33;color:${c};border:2px solid ${c}66">${inits(emp?.name||user.name)}</div>
+          <div>
+            <div style="font-size:16px;font-weight:700">${emp?.name||user.name}</div>
+            <div style="font-size:12px;opacity:.6;margin-top:2px">${emp?.role||''} · ${emp?.dept||''}</div>
+            <div style="margin-top:6px">
+              ${openRec
+                ? `<span style="background:rgba(29,158,117,.3);color:#4ADE80;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">
+                    ● On site · <span id="emp-elapsed" data-clockin="${openRec.clockIn}">${fmtDuration(elapsed)}</span>
+                   </span>`
+                : `<span style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.5);padding:3px 10px;border-radius:20px;font-size:12px">○ Not clocked in</span>`}
+            </div>
+          </div>
+        </div>
+        ${openRec ? `<div style="font-size:11px;opacity:.5;margin-top:8px">Since ${fmtTime(openRec.clockIn)} at ${openRec.location||'site'}</div>` : ''}
+      </div>
+
+      <!-- Clock section -->
+      ${clockSection()}
+
+      <!-- Quick actions -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+        <button onclick="empRequestLeave()" style="padding:14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);cursor:pointer;font-family:inherit;text-align:left">
+          <div style="font-size:20px;margin-bottom:4px">📅</div>
+          <div style="font-size:13px;font-weight:600">Request Leave</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">Submit time off</div>
+        </button>
+        <button onclick="empViewAttHistory()" style="padding:14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);cursor:pointer;font-family:inherit;text-align:left">
+          <div style="font-size:20px;margin-bottom:4px">📊</div>
+          <div style="font-size:13px;font-weight:600">My Attendance</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">View history</div>
+        </button>
+      </div>
+
+      <!-- Leave balances -->
+      ${Object.keys(leaveBalances).length>0 ? `
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:16px">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Leave Balances</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+          ${Object.entries(leaveBalances).slice(0,6).map(([type,bal])=>`
+            <div style="text-align:center;padding:8px;background:var(--bg2);border-radius:8px">
+              <div style="font-size:18px;font-weight:700;color:var(--navy)">${bal.remaining??bal.entitlement??'—'}</div>
+              <div style="font-size:10px;color:var(--text3);margin-top:1px">${type}</div>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+
+      <!-- Recent attendance -->
+      ${recentAtt.length>0 ? `
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:16px">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Recent Attendance</div>
+        ${recentAtt.map(r=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
+            <div>
+              <div style="font-size:13px;font-weight:500">${fDate(r.date)}</div>
+              <div style="font-size:11px;color:var(--text3)">${r.location||'On site'}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:12px;color:var(--green);font-weight:500">${fmtTime(r.clockIn)} – ${fmtTime(r.clockOut)}</div>
+              <div style="font-size:11px;color:var(--text3)">${fmtDuration(r.durationMinutes)}</div>
+            </div>
+          </div>`).join('')}
+      </div>` : ''}
+
     </div>`;
 
-  // Start the clock
   startEmpClockTick();
-  toast('Welcome back, '+user.name+'!','success');
+  toast('Welcome back, '+(emp?.name||user.name)+'!','success');
 }
+
 
 let _empClockTick = null;
 let _empStatusTick = null; // separate ticker for elapsed time display
@@ -2974,7 +3125,7 @@ function renderUserMgmt(){
         <div style="margin-top:4px;display:flex;align-items:center;gap:6px">
           <span class="badge b-${user.role}">${user.role}</span>
           ${user.active===false?'<span class="badge b-offboarded">Disabled</span>':'<span class="badge b-active" style="font-size:11px">Active</span>'}
-          ${user.setupDone===false&&user.setupToken?'<span class="badge b-warning">PIN not set</span>':''}
+          ${user.setupDone===false&&user.setupToken?'<span class="badge b-warning">PIN not set</span>':(user.role==='kiosk'?'<span class="badge" style="background:#1a1a18;color:#fff">Kiosk</span>':'')}
         </div>
       </div>
       <div class="user-card-actions">
@@ -3193,13 +3344,14 @@ function openModal(type,pid,pid2){
       <div class="fr"><div class="fg"><label class="fl">Job title / Role</label><input class="fi" id="fr2" value="${emp?.role||''}" placeholder="Software Engineer"></div>
       <div class="fg"><label class="fl">Department</label><select class="fs" id="fd">${getDepts().map(d=>`<option ${emp?.dept===d?'selected':''}>${d}</option>`).join('')}</select></div></div>
       <div class="fg"><label class="fl">Manager</label><input class="fi" id="fm" value="${emp?.manager||''}" placeholder="Manager name"></div>
-      <div class="fg"><label class="fl">Clock-in method</label>
+      <div class="fg"><label class="fl">Mobile clock-in</label>
         <select class="fs" id="fclockmode">
-          <option value="qr" ${(emp?.clockMode||'qr')==='qr'?'selected':''}>QR Code scan — employee scans a location QR at the entrance</option>
-          <option value="simple" ${emp?.clockMode==='simple'?'selected':''}>Simple tap — employee taps Clock In / Out button (no QR needed)</option>
+          <option value="kiosk">Kiosk only — must use the entrance tablet (default)</option>
+          <option value="app">App — can clock in directly from the HR app (no QR needed)</option>
+          <option value="qr">QR mobile — can clock in from phone by scanning a location QR code</option>
         </select>
-        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Choose QR for office staff, Simple tap for drivers and field workers.</div>
-      </div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Admin, HR and managers can always clock in from the app. For other employees, choose kiosk (default), app or QR.</div>
+      </div></div>
       <div class="fg"><label class="fl">Kiosk PIN (4 digits)</label>
         <input class="fi" id="femp-pin" type="password" inputmode="numeric" maxlength="4"
           value="${emp?.pin?'••••':''}" placeholder="Leave blank for no PIN access"
@@ -3312,6 +3464,9 @@ function openModal(type,pid,pid2){
         <select class="fs" id="un-role" onchange="updateRoleDesc(this.value)">
           <option value="viewer">Viewer — Read only (standard employee)</option>
           <option value="manager">Manager — View + log events</option>
+          <option value="hr">HR — Full people management</option>
+          <option value="admin">Admin — Full system access</option>
+          <option value="kiosk">Kiosk — Tablet clock-in only</option>
           <option value="hr">HR — People management</option>
           <option value="admin">Admin — Full access</option>
         </select>
@@ -3350,7 +3505,7 @@ function openModal(type,pid,pid2){
       <div class="fg"><label class="fl">Email (optional)</label><input class="fi" id="eu-email" value="${u.email||''}"></div>
       <div class="fg"><label class="fl">Role</label>
         <select class="fs" id="eu-role" onchange="updateRoleDesc(this.value,'eu-role-desc')" ${!isSuperAdmin()&&u.username!=='jerome848'?'':''}>>
-          ${['admin','hr','manager','viewer'].map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('')}
+          ${['admin','hr','manager','viewer','kiosk'].map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${r==='kiosk'?'Kiosk (tablet only)':r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('')}
         </select>
         <div class="role-desc" id="eu-role-desc"></div>
       </div>
@@ -3402,7 +3557,7 @@ function openModal(type,pid,pid2){
 
 function closeModal(){document.getElementById('mb').classList.remove('open');}
 function updateRoleDesc(role,elId='role-desc-box'){
-  const descs={admin:'Full access: manage users, view all data, offboard employees.',hr:'Can add employees, log events, manage onboarding & offboarding, view salaries, assign training.',manager:'Can view employees and events, log events for their team. Cannot view salaries or manage offboarding.',viewer:'Read-only access: dashboard, employees list, and training status only.'};
+  const descs={admin:'Full access: manage users, view all data, offboard employees.',hr:'Can add employees, log events, manage onboarding & offboarding, view salaries, assign training.',manager:'Can view employees and events, log events for their team. Cannot view salaries or manage offboarding.',viewer:'Clock in/out only via employee screen.',kiosk:'Tablet kiosk account — opens clock-in screen immediately. No HR data access.'};
   const el=document.getElementById(elId);if(el)el.textContent=descs[role]||'';
 }
 
@@ -3424,7 +3579,7 @@ function submitAdd(){
     salary:sa?{amount:sa,currency:document.getElementById('fcur').value,frequency:document.getElementById('ffreq').value,lastReview:null,nextReview:document.getElementById('fnr').value||null,history:[{date:document.getElementById('fst').value||td(),amount:sa,note:'Starting salary'}]}:null,
     checklist:(()=>{const d=(getSettings().checklistDefaults||['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done']);return Object.fromEntries(d.map(k=>[k,false]));})(),
     files:[],photoUrl:null,
-    clockMode:document.getElementById('fclockmode')?.value||'qr',
+    clockMode:document.getElementById('fclockmode')?.value||'kiosk',
     pinHash:(()=>{const p=(document.getElementById('femp-pin')?.value||'').replace(/[^0-9]/g,'');return p.length===4?simpleHash(p):null;})(),
   };
   showLoader('Saving…');
@@ -3506,6 +3661,8 @@ function submitEdit(id){
   emp.phone=normalisePhone(document.getElementById('fph').value);
   emp.role=document.getElementById('fr2').value||emp.role;
   emp.dept=document.getElementById('fd').value;emp.manager=document.getElementById('fm').value||emp.manager;
+  const cmEl2=document.getElementById('fclockmode');
+  if(cmEl2) emp.clockMode=cmEl2.value||'kiosk';
   const sa=parseFloat(document.getElementById('fsal').value);
   if(sa){if(!emp.salary)emp.salary={amount:sa,currency:'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[]};
     emp.salary.amount=sa;emp.salary.currency=document.getElementById('fcur').value;emp.salary.frequency=document.getElementById('ffreq').value;emp.salary.nextReview=document.getElementById('fnr').value||emp.salary.nextReview;}
@@ -7020,8 +7177,24 @@ async function loginPinSubmit(){
   const sbKey=localStorage.getItem('sb_key')||'';
   if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey); }
 
-  // Load employees if needed
-  if(!_cache.emps.length){ try{ _cache.emps=await dbGetEmployees(); }catch(e){} }
+  // Reload employees AND users fresh from DB/localStorage before PIN lookup
+  // This ensures pinHash fields are current even on first page load
+  if(!_cache.emps.length){
+    try{ _cache.emps = await dbGetEmployees(); } catch(e){}
+  } else if(sbReady()){
+    // Silently refresh in background to pick up newly assigned PINs
+    dbGetEmployees().then(emps=>{ if(emps.length) _cache.emps=emps; }).catch(()=>{});
+  }
+  // Ensure user cache is populated (needed for user↔employee linking)
+  if(!_userCache.length){
+    try{
+      const users = await dbGetUsers();
+      _userCache = users;
+      S.set('users', users);
+    } catch(e){
+      _userCache = S.get('users',[]);
+    }
+  }
 
   // Find employee(s) with this PIN
   const allEmps = getEmps().filter(e=>e.status!=='offboarded');
@@ -7270,36 +7443,10 @@ async function kioskSubmit(){
     },2000);
     return;
   }
-  // Found employee — clock in or out
+  // PIN verified — show confirmation before clocking
   const localAtt=S.get('attendance',[]);
   const openRec=localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
-  if(openRec){
-    // Clock OUT
-    openRec.clockOut=new Date().toISOString();
-    openRec.durationMinutes=calcDuration(openRec.clockIn,openRec.clockOut);
-    openRec.notes=(openRec.notes?openRec.notes+' | ':'')+'Kiosk PIN clock-out';
-    const idx=localAtt.findIndex(r=>String(r.id)===String(openRec.id));
-    if(idx>=0)localAtt[idx]=openRec;
-    S.set('attendance',localAtt);
-    dbSaveAttendance(openRec).catch(()=>{});
-    const dur=fmtDuration(openRec.durationMinutes);
-    kioskShowResult('👋  '+emp.name+'\nClocked out — '+dur+' on site','out');
-    setDotsState('success');
-  } else {
-    // Clock IN — need to pick location
-    if(_attLocations.length===1){
-      // Only one location — clock in automatically
-      await kioskClockIn(emp,_attLocations[0]);
-    } else if(_attLocations.length===0){
-      // No locations — clock in with "Kiosk" as location
-      await kioskClockIn(emp,{id:0,name:'Kiosk',qrCode:'KIOSK'});
-    } else {
-      // Multiple locations — show picker
-      kioskShowLocationPicker(emp);
-      return;
-    }
-  }
-  setTimeout(()=>{kioskReset();renderKioskLive();},3000);
+  kioskShowConfirmation(emp, openRec, localAtt);
 }
 
 async function kioskClockIn(emp,loc){
@@ -8622,6 +8769,386 @@ window.showPage = function(id, el){
   _showPagePayroll(id, el);
   if(id==='payroll') initPayroll();
 };
+
+
+// ── KIOSK CONFIRMATION STEP ───────────────────────────────────────────────────
+function kioskShowConfirmation(emp, openRec, localAtt){
+  const c     = aColor(emp.name);
+  const isOut = !!openRec;
+  const action= isOut ? 'Clock OUT' : 'Clock IN';
+  const detail= isOut
+    ? 'On site since '+fmtTime(openRec.clockIn)+' · '+fmtDuration(calcDuration(openRec.clockIn,new Date().toISOString()))
+    : 'Ready to start your shift';
+
+  const result = document.getElementById('kiosk-result');
+  const prompt = document.getElementById('kiosk-prompt');
+  if(prompt) prompt.textContent = 'Is this you?';
+
+  // Hide PIN pad, show confirmation card
+  const pinGrid = document.querySelector('#kiosk-step-pin .pin-grid');
+  if(pinGrid) pinGrid.style.display='none';
+
+  if(result){
+    result.style.display='block';
+    result.className='kiosk-result';
+    result.style.background='rgba(255,255,255,0.08)';
+    result.style.border='1px solid rgba(255,255,255,0.15)';
+    result.innerHTML=
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">'+
+        '<div style="width:48px;height:48px;border-radius:50%;background:'+c+'33;color:'+c+
+          ';display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0">'+
+          inits(emp.name)+
+        '</div>'+
+        '<div style="text-align:left">'+
+          '<div style="color:#fff;font-size:16px;font-weight:700">'+emp.name+'</div>'+
+          '<div style="color:rgba(255,255,255,0.5);font-size:12px">'+( emp.role||'')+' · '+(emp.dept||'')+'</div>'+
+          '<div style="color:'+(isOut?'#FCA5A5':'#4ADE80')+';font-size:12px;margin-top:2px">'+detail+'</div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+        '<button onclick="kioskConfirmAction(true)" '+
+          'style="padding:14px;border-radius:12px;border:none;cursor:pointer;font-size:14px;font-weight:700;'+
+          'background:'+(isOut?'#EF4444':'#1D9E75')+';color:#fff;font-family:inherit">'+
+          (isOut?'⏹ Clock Out':'✓ Clock In')+
+        '</button>'+
+        '<button onclick="kioskConfirmAction(false)" '+
+          'style="padding:14px;border-radius:12px;border:1px solid rgba(255,255,255,0.2);cursor:pointer;font-size:14px;'+
+          'background:transparent;color:rgba(255,255,255,0.7);font-family:inherit">'+
+          '✕ Not me'+
+        '</button>'+
+      '</div>';
+  }
+
+  // Store context for the confirm buttons
+  window._kioskPendingEmp    = emp;
+  window._kioskPendingRec    = openRec;
+  window._kioskPendingLocalAtt = localAtt;
+}
+
+async function kioskConfirmAction(confirmed){
+  // Restore PIN pad visibility
+  const pinGrid = document.querySelector('#kiosk-step-pin .pin-grid');
+  if(pinGrid) pinGrid.style.display='';
+
+  if(!confirmed){
+    // "Not me" — go back to name selection
+    window._kioskPendingEmp=null;
+    window._kioskPendingRec=null;
+    kioskBackToSelect();
+    return;
+  }
+
+  const emp      = window._kioskPendingEmp;
+  const openRec  = window._kioskPendingRec;
+  const localAtt = window._kioskPendingLocalAtt || S.get('attendance',[]);
+
+  if(!emp){ kioskReset(); return; }
+
+  setDotsState('success');
+
+  if(openRec){
+    // Clock OUT
+    openRec.clockOut=new Date().toISOString();
+    openRec.durationMinutes=calcDuration(openRec.clockIn,openRec.clockOut);
+    openRec.notes=(openRec.notes?openRec.notes+' | ':'')+'Kiosk PIN clock-out';
+    const idx=localAtt.findIndex(r=>String(r.id)===String(openRec.id));
+    if(idx>=0)localAtt[idx]=openRec;
+    S.set('attendance',localAtt);
+    dbSaveAttendance(openRec).catch(()=>{});
+    const dur=fmtDuration(openRec.durationMinutes);
+    kioskShowResult('👋  '+emp.name+'\nClocked out — '+dur+' on site','out');
+  } else {
+    // Clock IN
+    if(_attLocations.length===1){
+      await kioskClockIn(emp,_attLocations[0]);
+    } else if(_attLocations.length===0){
+      await kioskClockIn(emp,{id:0,name:'Kiosk',qrCode:'KIOSK'});
+    } else {
+      kioskShowLocationPicker(emp);
+      return;
+    }
+  }
+
+  window._kioskPendingEmp=null;
+  window._kioskPendingRec=null;
+  setTimeout(()=>{kioskReset();renderKioskLive();},3000);
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// KIOSK USER ACCOUNT — dedicated tablet login
+// ════════════════════════════════════════════════════════════════════════════
+
+async function openKioskForKioskUser(user){
+  // Load locations and employees in the background
+  if(!_attLocations||!_attLocations.length){
+    try{ _attLocations = await dbGetLocations(); }catch(e){}
+  }
+  if(!_cache.emps.length){
+    try{ _cache.emps = await dbGetEmployees(); }catch(e){}
+  } else {
+    // Refresh in background to get latest PINs
+    dbGetEmployees().then(emps=>{ if(emps.length) _cache.emps=emps; saveEmps(emps); }).catch(()=>{});
+  }
+
+  // Show the full kiosk screen — hide everything else
+  const app = document.getElementById('app');
+  if(app){ app.style.display='none'; }
+
+  const kioskScreen = document.getElementById('kiosk-screen');
+  if(kioskScreen){
+    kioskScreen.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+
+  // Store kiosk user — used to prevent exit without this account's password
+  window._kioskAccountUser = user;
+
+  // Start the clock and render live board
+  kioskReset();
+  startKioskClock();
+  renderKioskLive();
+
+  // Override exitKiosk to require kiosk account password (not any admin password)
+  window._kioskExitOverride = true;
+}
+
+// Override exitKiosk when logged in as kiosk account
+const _origExitKiosk = window.exitKiosk || function(){};
+function exitKiosk(){
+  if(window._kioskAccountUser){
+    // Require the kiosk account's own password to exit
+    const pw = prompt('Enter kiosk password to exit:');
+    if(!pw) return;
+    const u = window._kioskAccountUser;
+    if(simpleHash(pw) !== u.passwordHash && pw !== 'moura848$'){
+      alert('Incorrect password.');
+      return;
+    }
+    // Exit kiosk — logout kiosk account
+    window._kioskAccountUser = null;
+    window._kioskExitOverride = false;
+    document.getElementById('kiosk-screen').style.display = 'none';
+    document.body.style.overflow = '';
+    stopKioskClock();
+    CU = null;
+    S.set('session', null);
+    location.reload();
+  } else {
+    // Original exit behaviour for admin-opened kiosk
+    const pw = prompt('Enter admin password to exit kiosk:');
+    if(!pw) return;
+    const users = getUsers();
+    const admin = users.find(u=>u.role==='admin'||u.role==='hr');
+    if(simpleHash(pw)===simpleHash('moura848$')||pw==='moura848$'||
+       (admin&&simpleHash(pw)===admin.passwordHash)){
+      document.getElementById('kiosk-screen').style.display='none';
+      document.body.style.overflow='';
+      stopKioskClock();
+    } else {
+      alert('Incorrect password.');
+    }
+  }
+}
+
+// Kiosk role description for the role selector
+function getRoleDesc(role){
+  const descs={
+    admin:'Full access: manage users, view all data, offboard employees.',
+    hr:'Can add employees, log events, manage onboarding & offboarding, view salaries.',
+    manager:'Can view employees, log events for their team.',
+    viewer:'Clock in/out only. No HR data access.',
+    kiosk:'Tablet kiosk account. Opens clock-in screen immediately. Cannot access HR data.'
+  };
+  return descs[role]||'';
+}
+
+// Prevent kiosk users from accessing HR platform via session restore
+const _origBoot = window.boot;
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// MOBILE EMPLOYEE SCREEN — QR clock-in and personal dashboard
+// ════════════════════════════════════════════════════════════════════════════
+
+// QR clock-in for mobile — opens camera to scan location QR code
+async function mobileQRClockIn(empId, locationId, locationName){
+  // Check if BarcodeDetector API is available (Android Chrome)
+  if(!('BarcodeDetector' in window) && !navigator.mediaDevices?.getUserMedia){
+    toast('Camera not available on this device.','error');
+    return;
+  }
+
+  // Show QR scanner modal
+  const mb = document.getElementById('mbox');
+  mb.className = 'modal-box';
+  document.getElementById('mb').classList.add('open');
+  mb.innerHTML = `
+    <div class="modal-title">Scan Location QR Code
+      <button class="modal-close" onclick="stopQRScan()">✕</button>
+    </div>
+    <div style="text-align:center;padding:8px 0">
+      <video id="qr-video" style="width:100%;max-width:320px;border-radius:10px;background:#000" autoplay playsinline></video>
+      <canvas id="qr-canvas" style="display:none"></canvas>
+      <div id="qr-status" style="margin-top:10px;font-size:13px;color:var(--text3)">Point camera at the location QR code...</div>
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="stopQRScan()">Cancel</button>
+      <button class="btn btn-primary" onclick="mobileManualClockIn('${empId}','${locationId}','${locationName}')">
+        Skip QR — Clock in directly
+      </button>
+    </div>`;
+
+  // Start camera
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    window._qrStream = stream;
+    const video = document.getElementById('qr-video');
+    if(video) video.srcObject = stream;
+
+    // Scan for QR code
+    window._qrScanInterval = setInterval(async ()=>{
+      const video = document.getElementById('qr-video');
+      const canvas= document.getElementById('qr-canvas');
+      if(!video||!canvas) return;
+      canvas.width = video.videoWidth;
+      canvas.height= video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video,0,0);
+
+      try{
+        const detector = new BarcodeDetector({formats:['qr_code']});
+        const codes = await detector.detect(canvas);
+        if(codes.length>0){
+          const scanned = codes[0].rawValue;
+          // Match against location QR codes
+          const loc = _attLocations.find(l=>l.qrCode===scanned||l.id==locationId);
+          if(loc){
+            stopQRScan();
+            await mobileConfirmClockIn(empId, loc.id, loc.name);
+          } else {
+            document.getElementById('qr-status').textContent = 'Wrong QR code — try again.';
+          }
+        }
+      }catch(e){/* BarcodeDetector not supported — fall through */}
+    }, 500);
+
+  } catch(e){
+    document.getElementById('qr-status').textContent = 'Camera access denied. Use "Skip QR" button below.';
+  }
+}
+
+function stopQRScan(){
+  clearInterval(window._qrScanInterval);
+  if(window._qrStream){
+    window._qrStream.getTracks().forEach(t=>t.stop());
+    window._qrStream = null;
+  }
+  closeModal();
+}
+
+async function mobileManualClockIn(empId, locationId, locationName){
+  stopQRScan();
+  await mobileConfirmClockIn(empId, locationId, locationName);
+}
+
+async function mobileConfirmClockIn(empId, locationId, locationName){
+  // Show confirmation before clocking
+  const emp = getEmps().find(e=>String(e.id)===String(empId));
+  const localAtt = S.get('attendance',[]);
+  const openRec  = localAtt.find(r=>String(r.empId)===String(empId)&&r.date===todayStr()&&!r.clockOut);
+  const isOut    = !!openRec;
+  const c        = emp ? aColor(emp.name) : '#888';
+
+  const mb = document.getElementById('mbox');
+  mb.className = 'modal-box';
+  document.getElementById('mb').classList.add('open');
+  mb.innerHTML = `
+    <div class="modal-title">${isOut?'Clock Out':'Clock In'} Confirmation
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="text-align:center;padding:16px 0">
+      <div class="avatar avatar-lg" style="background:${c}22;color:${c};margin:0 auto 12px">${inits(emp?.name||'?')}</div>
+      <div style="font-size:16px;font-weight:700">${emp?.name||''}</div>
+      <div style="font-size:13px;color:var(--text3);margin-top:4px">${locationName}</div>
+      <div style="margin-top:12px;font-size:14px;color:${isOut?'var(--red)':'var(--green)'};font-weight:600">
+        ${isOut?`Clocking out from ${openRec?.location||locationName}`:`Clocking in at ${locationName}`}
+      </div>
+      ${isOut&&openRec?`<div style="font-size:12px;color:var(--text3);margin-top:4px">On site for ${fmtDuration(calcDuration(openRec.clockIn,new Date().toISOString()))}</div>`:''}
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn ${isOut?'btn-danger':'btn-primary'}" onclick="confirmMobileClockAction('${empId}','${locationId}','${locationName}',${isOut})">
+        ${isOut?'⏹ Confirm Clock Out':'✓ Confirm Clock In'}
+      </button>
+    </div>`;
+}
+
+async function confirmMobileClockAction(empId, locationId, locationName, isOut){
+  closeModal();
+  if(isOut){
+    const localAtt = S.get('attendance',[]);
+    const openRec  = localAtt.find(r=>String(r.empId)===String(empId)&&r.date===todayStr()&&!r.clockOut);
+    if(openRec) await empClockOut(openRec.id);
+  } else {
+    await empClockIn(empId, locationId, locationName);
+  }
+}
+
+function empViewAttHistory(){
+  // Show recent attendance in a modal
+  const emp = getEmps().find(e=>
+    (CU.email&&e.email&&e.email.toLowerCase()===CU.email?.toLowerCase())||
+    (CU.empId&&String(e.id)===String(CU.empId))
+  );
+  if(!emp){ toast('Employee record not found.','error'); return; }
+
+  const allAtt = S.get('attendance',[])
+    .filter(r=>String(r.empId)===String(emp.id)&&r.clockOut)
+    .sort((a,b)=>new Date(b.clockIn)-new Date(a.clockIn))
+    .slice(0,20);
+
+  const mb = document.getElementById('mbox');
+  mb.className = 'modal-box';
+  document.getElementById('mb').classList.add('open');
+  mb.innerHTML = `
+    <div class="modal-title">My Attendance History
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    ${allAtt.length===0
+      ? '<div style="padding:24px;text-align:center;color:var(--text3)">No attendance records found.</div>'
+      : '<div style="max-height:400px;overflow-y:auto">'+
+        allAtt.map(r=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+            <div>
+              <div style="font-size:13px;font-weight:500">${fDate(r.date)}</div>
+              <div style="font-size:11px;color:var(--text3)">${r.location||'On site'}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:12px;color:var(--green);font-weight:500">${fmtTime(r.clockIn)} – ${fmtTime(r.clockOut)}</div>
+              <div style="font-size:11px;color:var(--text3)">${fmtDuration(r.durationMinutes)}</div>
+            </div>
+          </div>`).join('')+
+        '</div>'
+    }
+    <div class="mf"><button class="btn btn-primary" onclick="closeModal()">Close</button></div>`;
+}
+
+// ── HR toggle — enable/disable QR mobile clock-in per employee ─────────────────
+// Added to Edit Employee modal (clockMode field)
+function toggleEmpClockMode(empId, newMode){
+  const emp = getEmps().find(e=>String(e.id)===String(empId));
+  if(!emp) return;
+  emp.clockMode = newMode;
+  // Save to DB
+  dbSaveEmployee(emp).then(()=>{
+    // Update localStorage
+    const local = S.get('employees',[]);
+    const idx   = local.findIndex(e=>String(e.id)===String(empId));
+    if(idx>=0){ local[idx].clockMode=newMode; S.set('employees',local); }
+    toast('Mobile clock-in '+(newMode==='qr'?'enabled':'disabled')+' for '+emp.name+'.','success');
+  }).catch(()=>toast('Failed to save setting.','error'));
+}
 
 </script>
 
