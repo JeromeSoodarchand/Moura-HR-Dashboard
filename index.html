@@ -3650,6 +3650,15 @@ function submitEditUser(id){
     const rawPin=(document.getElementById('eu-pin')?.value||'').replace(/[^0-9]/g,'');
     if(rawPin.length===4){
       const pinHash=simpleHash(rawPin);
+      // Check no other active employee already uses this PIN
+      const pinConflict = getEmps().filter(e=>e.status!=='offboarded').find(e=>{
+        const linkedUser = findUserForEmployee(e, getUsers());
+        return e.pinHash===pinHash && String(linkedUser?.id||e.id)!==String(u.id);
+      });
+      if(pinConflict){
+        toast('PIN '+rawPin+' is already used by '+pinConflict.name+'. Choose a different PIN.','error');
+        hideLoader();return;
+      }
       // Find and update employee record
       const emps=getEmps();
       const emp=emps.find(e=>
@@ -5577,13 +5586,29 @@ async function submitSetupPin(){
   }
 
   const user = window._setupUser;
+  // Check PIN not already used by another employee
+  const pinHash = simpleHash(pin);
+  if(!_cache.emps.length){ try{ _cache.emps=await dbGetEmployees(); }catch(e){} }
+  const pinConflict = getEmps().filter(e=>e.status!=='offboarded').find(e=>{
+    const linkedUser = (S.get('users',[])||[]).find(u=>
+      (u.empId&&String(u.empId)===String(e.id))||
+      (e.phone&&u.phone&&u.phone.replace(/[^0-9]/g,'')===e.phone.replace(/[^0-9]/g,''))
+    );
+    return e.pinHash===pinHash && String(linkedUser?.id||'')!==String(user.id);
+  });
+  if(pinConflict){
+    if(errEl){ errEl.textContent='This PIN is already taken. Choose a different 4-digit PIN.'; errEl.style.display='block'; }
+    window._setupPinEntry='';
+    updateSetupPinDots();
+    return;
+  }
   if(!user){
     if(errEl){ errEl.textContent='Session error. Please use the link again.'; errEl.style.display='block'; }
     return;
   }
 
   // Save PIN hash on the employee record (not user record)
-  const pinHash = simpleHash(pin);
+  // pinHash already computed above for duplicate check
   user.setupDone = true;
 
   // Update user in localStorage and Supabase
@@ -6751,14 +6776,25 @@ async function loginPinSubmit(){
   // Load employees if needed
   if(!_cache.emps.length){ try{ _cache.emps=await dbGetEmployees(); }catch(e){} }
 
-  // Find employee with this PIN
-  const emp = getEmps().filter(e=>e.status!=='offboarded').find(e=>e.pinHash===pinHash);
-  if(!emp){
+  // Find employee(s) with this PIN
+  const allEmps = getEmps().filter(e=>e.status!=='offboarded');
+  const matches = allEmps.filter(e=>e.pinHash===pinHash);
+  if(!matches.length){
     _loginPin='';
     updateLoginDots();
-    const e=document.getElementById('lerr-pin');
-    if(e){e.textContent='PIN not recognised. Try again.';e.style.display='block';}
-    setTimeout(()=>{ if(e)e.style.display='none'; },3000);
+    const errEl=document.getElementById('lerr-pin');
+    if(errEl){errEl.textContent='PIN not recognised. Try again.';errEl.style.display='block';}
+    setTimeout(()=>{ if(errEl)errEl.style.display='none'; },3000);
+    return;
+  }
+  // If multiple matches (duplicate PIN — shouldn't happen but handle gracefully)
+  let emp = matches[0];
+  if(matches.length > 1){
+    // Show name picker so employee can confirm who they are
+    const pinCode = _loginPin;
+    _loginPin='';
+    updateLoginDots();
+    showPinAmbiguityPicker(matches, pinCode);
     return;
   }
 
@@ -7125,6 +7161,66 @@ async function dbFindUserByPhone(phone){
     };
   } catch(e){}
   return null;
+}
+
+
+function showPinAmbiguityPicker(emps, pin){
+  // Two employees have the same PIN — ask user to confirm who they are
+  const mb = document.getElementById('mbox');
+  mb.className = 'modal-box';
+  document.getElementById('mb').classList.add('open');
+  mb.innerHTML = `
+    <div class="modal-title">Confirm your identity</div>
+    <div style="font-size:13px;color:var(--text3);margin-bottom:14px">
+      Multiple accounts match this PIN. Please select your name:
+    </div>
+    ${emps.map(emp=>{
+      const c=aColor(emp.name);
+      return `<div onclick="confirmPinLogin('${emp.id}','${pin}')"
+        style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-lg);cursor:pointer;margin-bottom:8px;transition:all .15s"
+        onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
+        <div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div>
+        <div>
+          <div style="font-weight:500">${emp.name}</div>
+          <div class="txs tm">${emp.dept||emp.role||''}</div>
+        </div>
+      </div>`;
+    }).join('')}
+    <div style="margin-top:12px;font-size:12px;color:var(--amber);text-align:center">
+      ⚠ Please ask your admin to assign you a unique PIN to avoid this.
+    </div>
+    <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button></div>`;
+}
+
+async function confirmPinLogin(empId, pin){
+  closeModal();
+  const emp = gE(empId);
+  if(!emp) return;
+  // Verify the pin matches THIS specific employee
+  const pinHash = simpleHash(pin);
+  if(emp.pinHash !== pinHash){ toast('PIN verification failed.','error'); return; }
+
+  const users = getUsers();
+  const user = users.find(u=>
+    (u.empId&&String(u.empId)===String(emp.id))||
+    (emp.userId&&String(u.id)===String(emp.userId))||
+    (emp.phone&&u.phone&&u.phone.replace(/[^0-9]/g,'')===emp.phone.replace(/[^0-9]/g,''))
+  )||{id:emp.id,name:emp.name,username:emp.phone||String(emp.id),
+      phone:emp.phone||'',email:emp.email||'',role:'viewer',active:true,empId:emp.id};
+
+  CU=user;
+  S.set('session',{userId:user.id,username:user.username,loginAt:new Date().toISOString()});
+  addAudit(user.name,'Logged in via PIN (disambiguated)');
+  document.getElementById('login-screen').style.display='none';
+  const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
+  const org=S.get('org','Moura HR');
+  const nel=document.getElementById('org-name-nav');if(nel)nel.textContent=org;
+  applyPermissions();applyStoredBranding();initInactivityTracking();
+  if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
+    renderDashboard();setTimeout(()=>showManagerLoginChoice(user),400);
+  } else {
+    showEmployeeClockInScreen(user);
+  }
 }
 
 </script>
