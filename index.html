@@ -893,92 +893,114 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
     <!-- PAYROLL -->
     <div class="page" id="page-payroll">
       <div class="ph">
-        <div class="ph-title">Payroll Calculator</div>
-        <div class="ph-actions">
+        <div class="ph-title">Payroll</div>
+        <div class="ph-actions" id="payroll-actions">
           <button class="btn" onclick="exportPayrollCSV()">&#x2B07; Export CSV</button>
-          <button class="btn btn-primary" onclick="runPayroll()">&#128200; Calculate</button>
         </div>
       </div>
 
-      <!-- Pay period settings -->
+      <!-- Workflow stepper -->
       <div class="card" style="margin-bottom:14px">
-        <div class="ch"><span class="ct">Pay Period</span></div>
+        <div class="cb" style="padding:12px 18px">
+          <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap" id="payroll-stepper">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Pay period setup (Step 0) -->
+      <div id="payroll-step-period" class="card" style="margin-bottom:14px">
+        <div class="ch"><span class="ct">1. Set Pay Period</span></div>
         <div class="cb">
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px">
             <div class="fg">
-              <label class="fl">Period start date</label>
+              <label class="fl">Period start *</label>
               <input class="fi" id="pay-from" type="date">
               <div style="font-size:11px;color:var(--text3);margin-top:3px">e.g. 26th of previous month</div>
             </div>
             <div class="fg">
-              <label class="fl">Period end date</label>
+              <label class="fl">Period end *</label>
               <input class="fi" id="pay-to" type="date">
-              <div style="font-size:11px;color:var(--text3);margin-top:3px">e.g. 25th of current month</div>
             </div>
             <div class="fg">
               <label class="fl">Payment date</label>
               <input class="fi" id="pay-date" type="date">
             </div>
             <div class="fg">
-              <label class="fl">Department filter</label>
+              <label class="fl">Department</label>
               <select class="fs" id="pay-dept">
                 <option value="">All departments</option>
               </select>
             </div>
           </div>
-          <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center">
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-              <input type="checkbox" id="pay-include-ot" checked style="accent-color:var(--gold)">
-              Include overtime
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-              <input type="checkbox" id="pay-include-leave" checked style="accent-color:var(--gold)">
-              Deduct unpaid leave
-            </label>
-            <div style="margin-left:auto;display:flex;gap:8px">
-              <button class="btn btn-xs" onclick="setPayPeriodPreset('last_month')">Last month</button>
-              <button class="btn btn-xs" onclick="setPayPeriodPreset('this_month')">This month</button>
-              <button class="btn btn-xs" onclick="setPayPeriodPreset('custom_26')">26th–25th</button>
+          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-xs" onclick="setPayPeriodPreset('last_month')">Last month</button>
+            <button class="btn btn-xs" onclick="setPayPeriodPreset('this_month')">This month</button>
+            <button class="btn btn-xs" onclick="setPayPeriodPreset('custom_26')">26th&#8211;25th</button>
+            <div style="margin-left:auto">
+              <button class="btn btn-primary" onclick="startPayrollReview()">&#128269; Review Attendance &#8594;</button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Summary -->
-      <div class="metrics" id="payroll-metrics" style="margin-bottom:14px"></div>
-
-      <!-- Payroll table -->
-      <div class="card">
-        <div class="ch">
-          <span class="ct">Payroll Summary</span>
-          <span class="ts tm" id="payroll-period-label"></span>
+      <!-- Step 1: Attendance Review (HR) -->
+      <div id="payroll-step-review" style="display:none;margin-bottom:14px">
+        <div class="card" style="margin-bottom:10px">
+          <div class="ch">
+            <span class="ct">2. Attendance Review <span id="review-period-lbl" class="tm ts"></span></span>
+            <div style="display:flex;gap:8px">
+              <span id="review-progress" class="ts tm"></span>
+              <button class="btn btn-xs" onclick="markAllReviewed()">Mark all reviewed</button>
+              <button class="btn btn-xs btn-primary" onclick="submitAttReview()">Submit for HOD validation &#8594;</button>
+            </div>
+          </div>
+          <div id="att-review-body"></div>
         </div>
-        <div style="overflow-x:auto">
-          <table style="width:100%;font-size:13px;border-collapse:collapse">
-            <thead>
-              <tr style="background:var(--bg2)">
-                <th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Employee</th>
-                <th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Dept</th>
-                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Base Salary</th>
-                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Period Pay</th>
-                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Days Worked</th>
-                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">OT Hours</th>
-                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">OT Pay</th>
-                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Leave Deduction</th>
-                <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2);color:var(--navy)">Net Pay</th>
-                <th style="padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Notes</th>
-              </tr>
-            </thead>
-            <tbody id="payroll-tbody">
-              <tr><td colspan="10" style="text-align:center;color:var(--text3);padding:32px;font-size:13px">
-                Set the pay period and click Calculate.
-              </td></tr>
-            </tbody>
-          </table>
+      </div>
+
+      <!-- Step 2: HOD Validation -->
+      <div id="payroll-step-hod" style="display:none;margin-bottom:14px">
+        <div class="card" style="margin-bottom:10px">
+          <div class="ch">
+            <span class="ct">3. Department Validation</span>
+            <div style="display:flex;gap:8px" id="hod-actions"></div>
+          </div>
+          <div id="hod-validation-body"></div>
+        </div>
+      </div>
+
+      <!-- Step 3: HR Confirmation & Payroll -->
+      <div id="payroll-step-confirm" style="display:none;margin-bottom:14px">
+        <div class="metrics" id="payroll-metrics" style="margin-bottom:14px"></div>
+        <div class="card">
+          <div class="ch">
+            <span class="ct">4. Payroll Summary</span>
+            <span class="ts tm" id="payroll-period-label"></span>
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;font-size:13px;border-collapse:collapse">
+              <thead>
+                <tr style="background:var(--bg2)">
+                  <th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Employee</th>
+                  <th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Dept</th>
+                  <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Base Pay</th>
+                  <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Days</th>
+                  <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">OT Hours</th>
+                  <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">OT Pay</th>
+                  <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Deductions</th>
+                  <th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2);color:var(--navy)">Net Pay</th>
+                  <th style="padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Notes</th>
+                </tr>
+              </thead>
+              <tbody id="payroll-tbody">
+                <tr><td colspan="9" style="text-align:center;color:var(--text3);padding:32px;font-size:13px">Complete attendance review and HOD validation first.</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
-
     <!-- ANALYTICS -->
     <div class="page" id="page-analytics">
       <div class="ph"><div class="ph-title">Analytics</div><div class="ph-actions"><button class="btn" onclick="exportCSV('employees')">⬇ Export</button></div></div>
@@ -3549,6 +3571,23 @@ function openModal(type,pid,pid2){
       <div style="background:var(--bg2);border-radius:var(--radius);padding:10px 12px;margin-top:8px;font-size:12px;color:var(--text3)">
         🔒 Username, password and PIN can only be changed by the super admin.
       </div>`}
+      <div class="fsec">Leave Approval Settings</div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding:10px;background:var(--bg2);border-radius:var(--radius);margin-bottom:10px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="eu-senior-hod" style="width:15px;height:15px;accent-color:var(--gold)" ${u.seniorHOD?'checked':''}>
+          <div>
+            <div style="font-weight:500">Senior HOD</div>
+            <div style="font-size:11.5px;color:var(--text3)">Can approve other HODs' leave requests</div>
+          </div>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="eu-cross-leave" style="width:15px;height:15px;accent-color:var(--gold)" ${u.crossLeaveVisibility?'checked':''}>
+          <div>
+            <div style="font-weight:500">Cross-department leave visibility</div>
+            <div style="font-size:11.5px;color:var(--text3)">Can see all HODs' leave on the team calendar</div>
+          </div>
+        </label>
+      </div>
       <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEditUser(${u.id})">Save changes</button></div>`;
 
   // ── CSV IMPORT ──
@@ -6915,46 +6954,6 @@ function renderLeaveCalendar(){
 function leaveCalPrev(){ _leaveCalMonth--; if(_leaveCalMonth<0){_leaveCalMonth=11;_leaveCalYear--;} renderLeaveCalendar(); }
 function leaveCalNext(){ _leaveCalMonth++; if(_leaveCalMonth>11){_leaveCalMonth=0;_leaveCalYear++;} renderLeaveCalendar(); }
 
-function renderLeaveTable(){
-  const tbody = document.getElementById('leave-tbody');
-  if(!tbody) return;
-  const typeF   = document.getElementById('leave-filter-type')?.value||'';
-  const statusF = document.getElementById('leave-filter-status')?.value||'';
-  let list = [..._leaveRequests];
-  if(typeF)   list=list.filter(r=>r.type===typeF);
-  if(statusF) list=list.filter(r=>r.status===statusF);
-  list.sort((a,b)=>new Date(b.createdAt||b.fromDate)-new Date(a.createdAt||a.fromDate));
-
-  if(!list.length){
-    tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:20px">No leave requests found.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = list.map(req=>{
-    const emp=gE(req.empId),c=emp?aColor(emp.name):'#888';
-    return `<tr>
-      <td><div class="emp-cell">
-        <div class="avatar" style="background:${c}22;color:${c};width:26px;height:26px;font-size:10px">${emp?inits(emp.name):'?'}</div>
-        <div style="font-weight:500">${emp?emp.name:'Unknown'}</div>
-      </div></td>
-      <td>${leaveTypeBadge(req.type)}</td>
-      <td class="tm">${fDate(req.fromDate)}</td>
-      <td class="tm">${fDate(req.toDate)}</td>
-      <td style="font-weight:500">${req.days}</td>
-      <td class="tm txs">${req.reason||'—'}</td>
-      <td>${leaveBadge(req.status)}</td>
-      <td>
-        ${req.status==='pending'&&canEdit()?`
-          <div style="display:flex;gap:4px">
-            <button class="btn btn-xs btn-primary" onclick="reviewLeave('${req.id}','approved')">✓</button>
-            <button class="btn btn-xs btn-danger" onclick="reviewLeave('${req.id}','rejected')">✕</button>
-          </div>`:
-          req.status==='approved'&&canEdit()?`<button class="btn btn-xs" onclick="reviewLeave('${req.id}','cancelled')">Cancel</button>`:'—'
-        }
-      </td>
-    </tr>`;
-  }).join('');
-}
-
 function renderLeaveBalances(){
   const tbody = document.getElementById('leave-balances-tbody');
   if(!tbody) return;
@@ -7083,10 +7082,26 @@ async function submitLeaveRequest(){
   );
   if(overlap){ toast('Employee already has approved leave overlapping these dates.','error'); return; }
 
+  // Determine if requester is a HOD (manager role)
+  const requesterUser = getUsers().find(u=>
+    (CU.empId&&String(u.empId)===String(CU.empId))||
+    (CU.id&&String(u.id)===String(CU.id))
+  );
+  const requesterIsHOD = requesterUser?.role==='manager';
+  const requesterIsHR  = CU.role==='admin'||CU.role==='hr';
+
   const req = {
     id:Date.now(), empId, type, fromDate:from, toDate:to,
-    days, reason, status:'pending',
-    reviewedBy:'', reviewNote:'', createdAt:new Date().toISOString()
+    days, reason,
+    // Two-stage approval for regular employees, one-stage for HODs
+    status:'pending',
+    hodStatus: requesterIsHOD ? 'needs_senior_hod' : requesterIsHR ? 'approved' : 'pending',
+    hodApprovedBy: requesterIsHR ? CU.name : '',
+    hodApprovedAt: requesterIsHR ? new Date().toISOString() : '',
+    hrStatus: 'pending',
+    hrApprovedBy:'', hrApprovedAt:'',
+    reviewedBy:'', reviewNote:'', createdAt:new Date().toISOString(),
+    requesterIsHOD
   };
 
   showLoader('Submitting…');
@@ -8385,67 +8400,600 @@ function initOTDateRange(){
 
 
 // ════════════════════════════════════════════════════════════════════════════
-// PAYROLL CALCULATOR MODULE
+// PAYROLL WORKFLOW MODULE — Review → HOD Validate → HR Confirm → Calculate
 // ════════════════════════════════════════════════════════════════════════════
 
-let _payrollData = []; // cached last calculation
+// State
+let _payrollPeriod    = null;  // {from, to, payDate, dept}
+let _attReviewData    = [];    // [{emp, recs, reviewed, hrNote, anomalies}]
+let _deptValidations  = {};    // {deptName: {validatedBy, validatedAt, comment, overriddenByHR}}
+let _periodLocked     = false;
+let _payrollData      = [];
+
+const PAYROLL_STEPS = ['Period','Attendance Review','HOD Validation','Payroll'];
+
+function renderPayrollStepper(activeStep){
+  const el = document.getElementById('payroll-stepper');
+  if(!el) return;
+  el.innerHTML = PAYROLL_STEPS.map((s,i)=>{
+    const done    = i < activeStep;
+    const active  = i === activeStep;
+    const col     = done ? 'var(--green)' : active ? 'var(--navy)' : 'var(--text3)';
+    const bg      = done ? 'var(--green)' : active ? 'var(--navy)' : 'var(--bg2)';
+    const connector = i < PAYROLL_STEPS.length-1
+      ? `<div style="flex:1;height:2px;background:${done?'var(--green)':'var(--border)'};min-width:16px;margin:0 4px"></div>`
+      : '';
+    return `<div style="display:flex;align-items:center;flex:1;min-width:0">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+        <div style="width:28px;height:28px;border-radius:50%;background:${bg};color:#fff;
+          display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">
+          ${done?'✓':(i+1)}
+        </div>
+        <div style="font-size:11px;font-weight:${active?'600':'400'};color:${col};white-space:nowrap">${s}</div>
+      </div>${connector}
+    </div>`;
+  }).join('');
+}
 
 function initPayroll(){
-  // Set default pay period (current month 1st to today)
   const from = document.getElementById('pay-from');
   const to   = document.getElementById('pay-to');
   const pd   = document.getElementById('pay-date');
   if(!from||from.value) return;
 
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth()+1).padStart(2,'0');
-  const lastDay = new Date(y, now.getMonth()+1, 0).getDate();
+  const now  = new Date();
+  const y    = now.getFullYear();
+  const m    = String(now.getMonth()+1).padStart(2,'0');
+  const last = new Date(y, now.getMonth()+1, 0).getDate();
+  from.value = `${y}-${m}-01`;
+  to.value   = `${y}-${m}-${String(last).padStart(2,'0')}`;
+  if(pd) pd.value = to.value;
 
-  from.value = y+'-'+m+'-01';
-  to.value   = y+'-'+m+'-'+String(lastDay).padStart(2,'0');
-  pd.value   = y+'-'+m+'-'+String(lastDay).padStart(2,'0');
-
-  // Populate dept filter
   const sel = document.getElementById('pay-dept');
   if(sel && sel.options.length<=1){
-    const depts = [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
-    depts.forEach(d=>{ const o=document.createElement('option'); o.value=d; o.textContent=d; sel.appendChild(o); });
+    [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort()
+      .forEach(d=>{ const o=document.createElement('option');o.value=d;o.textContent=d;sel.appendChild(o); });
   }
+  renderPayrollStepper(0);
 }
 
 function setPayPeriodPreset(preset){
-  const from = document.getElementById('pay-from');
-  const to   = document.getElementById('pay-to');
-  const pd   = document.getElementById('pay-date');
+  const from=document.getElementById('pay-from');
+  const to=document.getElementById('pay-to');
+  const pd=document.getElementById('pay-date');
   if(!from||!to) return;
-
-  const now  = new Date();
-  const y    = now.getFullYear();
-  const m    = now.getMonth(); // 0-indexed
-
+  const now=new Date(), y=now.getFullYear(), m=now.getMonth();
   if(preset==='last_month'){
-    const lastM  = new Date(y, m, 0); // last day of prev month
-    const lastMY = lastM.getFullYear();
-    const lastMM = String(lastM.getMonth()+1).padStart(2,'0');
-    const lastMD = String(lastM.getDate()).padStart(2,'0');
-    from.value = lastMY+'-'+lastMM+'-01';
-    to.value   = lastMY+'-'+lastMM+'-'+lastMD;
-    if(pd) pd.value = y+'-'+String(m+1).padStart(2,'0')+'-28'; // pay on 28th of current
+    const lm=new Date(y,m,0);
+    const ly=lm.getFullYear(), lmm=String(lm.getMonth()+1).padStart(2,'0'), ld=String(lm.getDate()).padStart(2,'0');
+    from.value=`${ly}-${lmm}-01`; to.value=`${ly}-${lmm}-${ld}`;
+    if(pd) pd.value=`${y}-${String(m+1).padStart(2,'0')}-28`;
   } else if(preset==='this_month'){
-    const lastDay = new Date(y, m+1, 0).getDate();
-    from.value = y+'-'+String(m+1).padStart(2,'0')+'-01';
-    to.value   = y+'-'+String(m+1).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
-    if(pd) pd.value = to.value;
+    const last=new Date(y,m+1,0).getDate();
+    from.value=`${y}-${String(m+1).padStart(2,'0')}-01`;
+    to.value=`${y}-${String(m+1).padStart(2,'0')}-${String(last).padStart(2,'0')}`;
+    if(pd) pd.value=to.value;
   } else if(preset==='custom_26'){
-    // 26th of prev month to 25th of current month
-    const prevM = m===0 ? 12 : m;
-    const prevY = m===0 ? y-1 : y;
-    from.value = prevY+'-'+String(prevM).padStart(2,'0')+'-26';
-    to.value   = y+'-'+String(m+1).padStart(2,'0')+'-25';
-    if(pd) pd.value = y+'-'+String(m+1).padStart(2,'0')+'-28';
+    const pm=m===0?12:m, py=m===0?y-1:y;
+    from.value=`${py}-${String(pm).padStart(2,'0')}-26`;
+    to.value=`${y}-${String(m+1).padStart(2,'0')}-25`;
+    if(pd) pd.value=`${y}-${String(m+1).padStart(2,'0')}-28`;
   }
 }
+
+// ── STEP 1: Start Attendance Review ──────────────────────────────────────────
+async function startPayrollReview(){
+  const from  = document.getElementById('pay-from')?.value;
+  const to    = document.getElementById('pay-to')?.value;
+  const payDt = document.getElementById('pay-date')?.value;
+  const dept  = document.getElementById('pay-dept')?.value||'';
+  if(!from||!to){ toast('Set the pay period dates first.','error'); return; }
+  if(to<from){ toast('End date must be after start date.','error'); return; }
+
+  _payrollPeriod = {from, to, payDate:payDt, dept};
+  _deptValidations = {};
+  _periodLocked = false;
+  showLoader('Loading attendance…');
+
+  let attRecs = [];
+  try{ attRecs = await dbGetAttendance(from, to); }
+  catch(e){ attRecs = S.get('attendance',[]).filter(r=>r.date>=from&&r.date<=to); }
+
+  const settings = getOTSettings();
+  const emps = getEmps().filter(e=>
+    e.status!=='offboarded' && e.salary?.amount && (!dept||e.dept===dept)
+  );
+
+  _attReviewData = emps.map(emp=>{
+    const recs = attRecs.filter(r=>String(r.empId)===String(emp.id));
+    const anomalies = detectEmpAnomalies(emp, recs, from, to, settings);
+    return { emp, recs, reviewed:anomalies.length===0, hrNote:'', anomalies };
+  });
+
+  hideLoader();
+  document.getElementById('payroll-step-period').style.display = 'none';
+  document.getElementById('payroll-step-review').style.display = 'block';
+  document.getElementById('review-period-lbl').textContent = fDate(from)+' – '+fDate(to);
+  renderPayrollStepper(1);
+  renderAttReview();
+}
+
+function detectEmpAnomalies(emp, recs, from, to, settings){
+  const issues = [];
+  const workDays = getAllWorkingDays(from, to);
+  workDays.forEach(date=>{
+    const dayRecs = recs.filter(r=>r.date===date);
+    if(!dayRecs.length){
+      // Check approved leave
+      const onLeave = (_leaveRequests||[]).find(r=>
+        String(r.empId)===String(emp.id)&&r.status==='approved'&&r.fromDate<=date&&r.toDate>=date);
+      if(!onLeave) issues.push({type:'missing', date, desc:'No attendance record'});
+    }
+    dayRecs.forEach(rec=>{
+      if(!rec.clockOut) issues.push({type:'no_clockout', date, desc:'Not clocked out', rec});
+      else if(rec.durationMinutes<60) issues.push({type:'short', date, desc:'Short shift ('+fmtDuration(rec.durationMinutes)+')', rec});
+      else if(rec.durationMinutes>720) issues.push({type:'long', date, desc:'Long shift ('+fmtDuration(rec.durationMinutes)+')', rec});
+    });
+    if(dayRecs.length>1) issues.push({type:'duplicate', date, desc:'Duplicate records ('+dayRecs.length+')'});
+  });
+  return issues;
+}
+
+function getAllWorkingDays(from, to){
+  const days=[], cur=new Date(from+'T00:00:00'), end=new Date(to+'T00:00:00');
+  while(cur<=end){
+    const dow=cur.getDay(), ds=cur.toISOString().slice(0,10);
+    if(dow!==0&&dow!==6&&!(MAURITIUS_HOLIDAYS_2025||[]).includes(ds)) days.push(ds);
+    cur.setDate(cur.getDate()+1);
+  }
+  return days;
+}
+
+function renderAttReview(){
+  const body = document.getElementById('att-review-body');
+  if(!body) return;
+  const reviewed = _attReviewData.filter(r=>r.reviewed).length;
+  const total    = _attReviewData.length;
+  const prog     = document.getElementById('review-progress');
+  if(prog) prog.textContent = `${reviewed}/${total} reviewed`;
+
+  if(!_attReviewData.length){
+    body.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3)">No employees found for this period.</div>';
+    return;
+  }
+
+  body.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;font-size:13px;border-collapse:collapse">
+    <thead><tr style="background:var(--bg2)">
+      <th style="text-align:left;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">Employee</th>
+      <th style="text-align:left;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">Dept</th>
+      <th style="text-align:center;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">Days</th>
+      <th style="text-align:left;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">Anomalies</th>
+      <th style="text-align:left;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">HR Note</th>
+      <th style="text-align:center;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">Reviewed</th>
+      <th style="text-align:left;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">Actions</th>
+    </tr></thead>
+    <tbody>${_attReviewData.map((row,idx)=>{
+      const c = aColor(row.emp.name);
+      const daysWorked = [...new Set(row.recs.filter(r=>r.clockOut).map(r=>r.date))].length;
+      const anom = row.anomalies;
+      const anomHtml = anom.length===0
+        ? '<span style="color:var(--green);font-size:12px">✓ Clean</span>'
+        : anom.map(a=>{
+            const col = a.type==='missing'||a.type==='no_clockout'||a.type==='duplicate'?'var(--red)':'var(--amber)';
+            return `<div style="font-size:11.5px;color:${col}">${a.date} — ${a.desc}</div>`;
+          }).join('');
+      return `<tr style="border-bottom:1px solid var(--border);background:${row.reviewed?'':anom.length?'#fffbf0':''}">
+        <td style="padding:10px 12px"><div class="emp-cell">
+          <div class="avatar" style="background:${c}22;color:${c};width:26px;height:26px;font-size:10px">${inits(row.emp.name)}</div>
+          <div style="font-weight:500">${row.emp.name}</div>
+        </div></td>
+        <td style="padding:10px 12px;color:var(--text3);font-size:12px">${row.emp.dept||'—'}</td>
+        <td style="padding:10px 12px;text-align:center;font-size:13px">${daysWorked}</td>
+        <td style="padding:10px 12px">${anomHtml}</td>
+        <td style="padding:10px 12px">
+          <input id="hr-note-${idx}" class="fi" value="${row.hrNote||''}" placeholder="Note…"
+            style="width:140px;padding:4px 8px;font-size:12px" onchange="updateHRNote(${idx},this.value)">
+        </td>
+        <td style="padding:10px 12px;text-align:center">
+          <input type="checkbox" ${row.reviewed?'checked':''} style="width:16px;height:16px;accent-color:var(--green);cursor:pointer"
+            onchange="toggleReviewed(${idx},this.checked)">
+        </td>
+        <td style="padding:10px 12px">
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button class="btn btn-xs" onclick="openAttendanceEditModal('${row.emp.id}','${_payrollPeriod?.from}','${_payrollPeriod?.to}',${idx})">Edit Att.</button>
+            ${anom.length?`<button class="btn btn-xs btn-primary" onclick="quickFixAnomalies(${idx})">Fix issues</button>`:''}
+          </div>
+        </td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+}
+
+function toggleReviewed(idx, val){
+  if(_attReviewData[idx]) _attReviewData[idx].reviewed = val;
+  const prog = document.getElementById('review-progress');
+  if(prog){
+    const reviewed = _attReviewData.filter(r=>r.reviewed).length;
+    prog.textContent = `${reviewed}/${_attReviewData.length} reviewed`;
+  }
+}
+
+function updateHRNote(idx, val){
+  if(_attReviewData[idx]) _attReviewData[idx].hrNote = val;
+}
+
+function markAllReviewed(){
+  _attReviewData.forEach(r=>r.reviewed=true);
+  renderAttReview();
+  toast('All employees marked as reviewed.','success');
+}
+
+async function updateAttRec(recId, field, timeVal, date, reviewIdx){
+  const local = S.get('attendance',[]);
+  const rec   = local.find(r=>String(r.id)===String(recId));
+  if(!rec) return;
+  if(timeVal){
+    const dt = new Date(date+'T'+timeVal+':00');
+    rec[field==='clockIn'?'clockIn':'clockOut'] = dt.toISOString();
+    if(rec.clockIn&&rec.clockOut) rec.durationMinutes=calcDuration(rec.clockIn,rec.clockOut);
+  } else if(field==='clockOut'){
+    rec.clockOut=null; rec.durationMinutes=null;
+  }
+  rec.notes = (rec.notes?rec.notes.replace(/\s*\|\s*HR amended.*/,''):'')+' | HR amended by '+CU.name;
+  const idx=local.findIndex(r=>String(r.id)===String(recId));
+  if(idx>=0) local[idx]=rec;
+  S.set('attendance',local);
+  try{ await dbSaveAttendance(rec); }catch(e){}
+  refreshReviewRow(reviewIdx);
+}
+
+async function updateAttNote(recId, note, reviewIdx){
+  const local=S.get('attendance',[]);
+  const rec=local.find(r=>String(r.id)===String(recId));
+  if(!rec) return;
+  rec.notes=note;
+  const idx=local.findIndex(r=>String(r.id)===String(recId));
+  if(idx>=0) local[idx]=rec;
+  S.set('attendance',local);
+  try{ await dbSaveAttendance(rec); }catch(e){}
+}
+
+async function addAttRecord(empId, periodFrom, reviewIdx){
+  const date  = prompt('Date (YYYY-MM-DD):');
+  if(!date) return;
+  const ciStr = prompt('Clock-in time (HH:MM):','08:00');
+  if(!ciStr) return;
+  const coStr = prompt('Clock-out time (HH:MM, blank if open):','17:00');
+  const ci = new Date(date+'T'+ciStr+':00').toISOString();
+  const co = coStr ? new Date(date+'T'+coStr+':00').toISOString() : null;
+  const rec = {id:Date.now(),empId,clockIn:ci,clockOut:co,
+    durationMinutes:co?calcDuration(ci,co):null,
+    date,location:'Manual entry',notes:'Added by HR ('+CU.name+')'};
+  const local=S.get('attendance',[]);
+  local.push(rec);
+  S.set('attendance',local);
+  try{ await dbSaveAttendance(rec); }catch(e){}
+  toast('Record added.','success');
+  refreshReviewRow(reviewIdx);
+  closeModal();
+}
+
+async function quickFixAnomalies(idx){
+  const row = _attReviewData[idx];
+  if(!row) return;
+  // Auto-set clock-out to end of normal working hours for open records
+  const settings = getOTSettings();
+  const local = S.get('attendance',[]);
+  let fixed = 0;
+  for(const anom of row.anomalies){
+    if(anom.type==='no_clockout'&&anom.rec){
+      const endTime = new Date(anom.date+'T'+settings.workEnd+':00').toISOString();
+      const rec=local.find(r=>String(r.id)===String(anom.rec.id));
+      if(rec){
+        rec.clockOut=endTime;
+        rec.durationMinutes=calcDuration(rec.clockIn,endTime);
+        rec.notes=(rec.notes?rec.notes+' | ':'')+'Auto clock-out set by HR ('+CU.name+')';
+        const li=local.findIndex(r=>String(r.id)===String(rec.id));
+        if(li>=0) local[li]=rec;
+        try{ await dbSaveAttendance(rec); }catch(e){}
+        fixed++;
+      }
+    }
+  }
+  S.set('attendance',local);
+  if(fixed) toast(`${fixed} clock-out(s) auto-set to ${settings.workEnd}.`,'success');
+  refreshReviewRow(idx);
+}
+
+function refreshReviewRow(idx){
+  if(idx===undefined||!_attReviewData[idx]) return;
+  const row = _attReviewData[idx];
+  const local = S.get('attendance',[]);
+  row.recs = local.filter(r=>String(r.empId)===String(row.emp.id)&&r.date>=_payrollPeriod.from&&r.date<=_payrollPeriod.to);
+  row.anomalies = detectEmpAnomalies(row.emp, row.recs, _payrollPeriod.from, _payrollPeriod.to, getOTSettings());
+  if(row.anomalies.length===0) row.reviewed=true;
+  renderAttReview();
+}
+
+function submitAttReview(){
+  const unreviewed = _attReviewData.filter(r=>!r.reviewed);
+  if(unreviewed.length>0){
+    const names = unreviewed.slice(0,3).map(r=>r.emp.name).join(', ');
+    if(!confirm(`${unreviewed.length} employee(s) not yet marked as reviewed (${names}${unreviewed.length>3?'…':''}). Submit anyway?`)) return;
+  }
+  document.getElementById('payroll-step-review').style.display='none';
+  document.getElementById('payroll-step-hod').style.display='block';
+  renderPayrollStepper(2);
+  renderHODValidation();
+}
+
+// ── STEP 2: HOD Validation ────────────────────────────────────────────────────
+function renderHODValidation(){
+  const body    = document.getElementById('hod-validation-body');
+  const actions = document.getElementById('hod-actions');
+  if(!body) return;
+
+  const isHR   = CU&&(CU.role==='admin'||CU.role==='hr');
+  const isMgr  = CU&&CU.role==='manager';
+
+  // Group employees by department
+  const depts = [...new Set(_attReviewData.map(r=>r.emp.dept||'No department'))].sort();
+
+  // If manager — show only their department
+  const visibleDepts = isMgr
+    ? depts.filter(d=>{
+        const myEmps = getEmps().filter(e=>e.manager===CU.name||String(e.managerId)===String(CU.empId));
+        return _attReviewData.some(r=>r.emp.dept===d&&myEmps.find(e=>String(e.id)===String(r.emp.id)));
+      })
+    : depts;
+
+  const allValidated = depts.every(d=>_deptValidations[d]);
+  if(actions) actions.innerHTML = isHR
+    ? `<button class="btn btn-xs" onclick="hrOverrideAllDepts()" ${allValidated?'disabled':''}>Validate all on behalf of HODs</button>
+       <button class="btn btn-primary btn-xs" onclick="confirmAndRunPayroll()" ${!allValidated?'style="opacity:.5"':''}>Confirm &amp; Run Payroll &#8594;</button>`
+    : '';
+
+  body.innerHTML = visibleDepts.map(dept=>{
+    const deptRows = _attReviewData.filter(r=>(r.emp.dept||'No department')===dept);
+    const val      = _deptValidations[dept];
+    const anomCount= deptRows.reduce((s,r)=>s+r.anomalies.length,0);
+    const totalDays= deptRows.reduce((s,r)=>s+[...new Set(r.recs.filter(x=>x.clockOut).map(x=>x.date))].length,0);
+    const isMyDept = isMgr && visibleDepts.includes(dept);
+
+    return `<div style="border:1px solid ${val?'var(--green)':'var(--border)'};border-radius:var(--radius-lg);margin:12px 16px;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:${val?'var(--green-light)':'var(--bg2)'}">
+        <div>
+          <span style="font-size:13px;font-weight:700;color:var(--text)">${dept}</span>
+          <span style="font-size:12px;color:var(--text3);margin-left:8px">${deptRows.length} employees · ${totalDays} days total</span>
+          ${anomCount?`<span style="font-size:11.5px;color:var(--amber);margin-left:8px">⚠ ${anomCount} anomaly note(s)</span>`:''}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${val
+            ? `<span style="font-size:12px;color:var(--green);font-weight:500">✓ Validated by ${val.validatedBy}${val.overriddenByHR?' (HR override)':''}</span>`
+            : (isMyDept||isHR)
+              ? `<input id="val-comment-${dept.replace(/\s/g,'-')}" class="fi" placeholder="Comment (optional)"
+                   style="width:180px;padding:4px 8px;font-size:12px">
+                 <button class="btn btn-xs btn-primary" onclick="submitDeptValidation('${dept}')">
+                   ✓ Validate ${dept}
+                 </button>`
+              : `<span style="font-size:12px;color:var(--text3)">Awaiting HOD</span>`
+          }
+        </div>
+      </div>
+      <div style="padding:0 16px 12px">
+        <table style="width:100%;font-size:12.5px;border-collapse:collapse;margin-top:8px">
+          <thead><tr style="border-bottom:1px solid var(--border)">
+            <th style="text-align:left;padding:6px 8px;font-weight:600;color:var(--text2)">Employee</th>
+            <th style="text-align:center;padding:6px 8px;font-weight:600;color:var(--text2)">Days worked</th>
+            <th style="text-align:left;padding:6px 8px;font-weight:600;color:var(--text2)">Notes / Anomalies</th>
+          </tr></thead>
+          <tbody>${deptRows.map(row=>{
+            const days=[...new Set(row.recs.filter(r=>r.clockOut).map(r=>r.date))].length;
+            const aInfo=row.anomalies.map(a=>a.desc).join(', ')||'—';
+            return `<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:7px 8px;font-weight:500">${row.emp.name}</td>
+              <td style="padding:7px 8px;text-align:center">${days}</td>
+              <td style="padding:7px 8px;color:${row.anomalies.length?'var(--amber)':'var(--text3)'};font-size:12px">${aInfo}${row.hrNote?' | HR: '+row.hrNote:''}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+        ${val?.comment?`<div style="font-size:12px;color:var(--text2);margin-top:8px;padding:6px 8px;background:var(--bg2);border-radius:6px">HOD note: "${val.comment}"</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function submitDeptValidation(dept){
+  const key     = dept.replace(/\s/g,'-');
+  const comment = document.getElementById(`val-comment-${key}`)?.value||'';
+  _deptValidations[dept] = {
+    validatedBy: CU.name,
+    validatedAt: new Date().toISOString(),
+    comment,
+    overriddenByHR: false
+  };
+  dbAddAudit(CU.name, `Validated attendance for dept: ${dept} (payroll ${_payrollPeriod?.from} – ${_payrollPeriod?.to})`);
+  toast(`${dept} attendance validated.`,'success');
+  renderHODValidation();
+}
+
+function hrOverrideAllDepts(){
+  const depts = [...new Set(_attReviewData.map(r=>r.emp.dept||'No department'))];
+  const missing = depts.filter(d=>!_deptValidations[d]);
+  if(!missing.length){ toast('All departments already validated.','info'); return; }
+  if(!confirm(`Validate ${missing.length} department(s) on behalf of their HODs? This will be recorded in the audit log.`)) return;
+  missing.forEach(d=>{
+    _deptValidations[d]={validatedBy:CU.name,validatedAt:new Date().toISOString(),comment:'',overriddenByHR:true};
+    dbAddAudit(CU.name,`HR override: validated attendance for dept ${d}`);
+  });
+  toast(`${missing.length} department(s) validated by HR override.`,'success');
+  renderHODValidation();
+}
+
+// ── STEP 3: Confirm & Run Payroll ─────────────────────────────────────────────
+async function confirmAndRunPayroll(){
+  const depts    = [...new Set(_attReviewData.map(r=>r.emp.dept||'No department'))];
+  const missing  = depts.filter(d=>!_deptValidations[d]);
+
+  if(missing.length>0){
+    if(!confirm(`${missing.length} department(s) not yet validated (${missing.join(', ')}). Run payroll anyway? HR will be listed as validator.`)) return;
+    missing.forEach(d=>{
+      _deptValidations[d]={validatedBy:CU.name,validatedAt:new Date().toISOString(),comment:'',overriddenByHR:true};
+    });
+  }
+
+  _periodLocked = true;
+  showLoader('Calculating payroll…');
+  const {from,to,payDate,dept} = _payrollPeriod;
+
+  let attRecs = S.get('attendance',[]).filter(r=>r.date>=from&&r.date<=to);
+  let leaveRecs=[];
+  try{ leaveRecs=await dbGetLeaveRequests(); }catch(e){ leaveRecs=S.get('leaveRequests',[]); }
+  leaveRecs=leaveRecs.filter(r=>r.status==='approved'&&r.fromDate<=to&&r.toDate>=from);
+
+  const settings     = getOTSettings();
+  const totalWDays   = countWorkingDaysInRange(from,to);
+  const emps = getEmps().filter(e=>e.status!=='offboarded'&&(!dept||e.dept===dept)&&e.salary?.amount);
+
+  _payrollData = emps.map((emp,idx)=>{
+    const sal=emp.salary, annual=sal.amount||0, currency=sal.currency||'USD';
+    const dailyRate=annual/(52*5), hourlyRate=dailyRate/settings.workHours;
+    const periodPay=dailyRate*totalWDays;
+    const empAtt=attRecs.filter(r=>String(r.empId)===String(emp.id)&&r.clockOut);
+    const daysWorked=[...new Set(empAtt.map(r=>r.date))].length;
+    let otMins=0,otPay=0;
+    empAtt.forEach(rec=>{
+      const {otMins:om,type}=calcOTMins(rec,settings);
+      if(om>0){ const mult=type==='holiday'?settings.otHoliday:type==='weekend'?settings.otWeekend:settings.otWeekday;
+        otMins+=om; otPay+=(om/60)*hourlyRate*mult; }
+    });
+    let leaveDeduct=0,leaveNote='';
+    leaveRecs.filter(r=>String(r.empId)===String(emp.id)).forEach(req=>{
+      let days=0,cur=new Date(req.fromDate+'T00:00:00');
+      const end=new Date(req.toDate+'T00:00:00'),ps=new Date(from+'T00:00:00'),pe=new Date(to+'T00:00:00');
+      while(cur<=end){ if(cur>=ps&&cur<=pe){const dow=cur.getDay(),ds=cur.toISOString().slice(0,10);
+        if(dow!==0&&dow!==6&&!(MAURITIUS_HOLIDAYS_2025||[]).includes(ds))days++;}cur.setDate(cur.getDate()+1);}
+      if(days>0)leaveNote+=(leaveNote?', ':'')+days+'d '+req.type;
+    });
+    const reviewRow=_attReviewData.find(r=>String(r.emp.id)===String(emp.id));
+    const deptVal=_deptValidations[emp.dept||'No department'];
+    return {emp,annual,currency,periodPay,dailyRate,hourlyRate,daysWorked,totalWDays,
+      otMins,otPay,leaveDeduct,leaveNote,netPay:periodPay+otPay-leaveDeduct,
+      hrNote:reviewRow?.hrNote||'',hodValidatedBy:deptVal?.validatedBy||'—',
+      overridePeriodPay:null,overrideOTPay:null,overrideDeduct:null};
+  });
+
+  hideLoader();
+  document.getElementById('payroll-step-hod').style.display='none';
+  document.getElementById('payroll-step-confirm').style.display='block';
+  renderPayrollStepper(3);
+
+  const lbl=document.getElementById('payroll-period-label');
+  if(lbl) lbl.textContent=fDate(from)+' – '+fDate(to)+(payDate?' · Pay: '+fDate(payDate):'');
+
+  renderPayrollMetrics(_payrollData);
+  renderPayrollTable(_payrollData,settings);
+  dbAddAudit(CU.name,`Payroll confirmed and calculated for ${from} – ${to}`);
+  toast('Payroll calculated. Review and export.','success');
+}
+
+function renderPayrollMetrics(rows){
+  const el=document.getElementById('payroll-metrics');
+  if(!el) return;
+  const cur=rows[0]?.currency||'USD';
+  const totalNet=rows.reduce((s,r)=>s+(r.overridePeriodPay??r.netPay),0);
+  const totalOT=rows.reduce((s,r)=>s+(r.overrideOTPay??r.otPay),0);
+  const totalBase=rows.reduce((s,r)=>s+(r.overridePeriodPay??r.periodPay),0);
+  el.innerHTML=
+    `<div class="mc"><div class="mc-label">Employees</div><div class="mc-value">${rows.length}</div></div>`+
+    `<div class="mc"><div class="mc-label">Total base</div><div class="mc-value" style="font-size:20px">${fCur(totalBase,cur)}</div></div>`+
+    `<div class="mc"><div class="mc-label">Total overtime</div><div class="mc-value" style="font-size:20px;color:var(--amber)">${fCur(totalOT,cur)}</div></div>`+
+    `<div class="mc"><div class="mc-label">Total net payroll</div><div class="mc-value" style="font-size:20px;color:var(--navy)">${fCur(totalNet,cur)}</div></div>`;
+}
+
+function renderPayrollTable(rows,settings){
+  const tbody=document.getElementById('payroll-tbody');
+  if(!tbody) return;
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text3)">No employees found.</td></tr>'; return; }
+  tbody.innerHTML=rows.map((row,idx)=>{
+    const c=aColor(row.emp.name);
+    const base=row.overridePeriodPay??row.periodPay;
+    const ot=row.overrideOTPay??row.otPay;
+    const ded=row.overrideDeduct??row.leaveDeduct;
+    const net=base+ot-ded;
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:10px 12px"><div class="emp-cell">
+        <div class="avatar" style="background:${c}22;color:${c};width:26px;height:26px;font-size:10px">${inits(row.emp.name)}</div>
+        <div><div style="font-weight:500">${row.emp.name}</div><div class="txs tm">${fCur(row.annual,row.currency)}/yr</div></div>
+      </div></td>
+      <td style="padding:10px 12px;color:var(--text3);font-size:12px">${row.emp.dept||'—'}</td>
+      <td style="padding:10px 12px;text-align:right">
+        <input id="pay-base-${idx}" type="number" step="0.01" value="${base.toFixed(2)}"
+          style="width:100px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:right"
+          onchange="recalcPayrollRow(${idx})">
+      </td>
+      <td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--text3)">${row.daysWorked}/${row.totalWDays}</td>
+      <td style="padding:10px 12px;text-align:right;font-size:12px;color:${row.otMins>0?'var(--amber)':'var(--text3)'}">
+        ${row.otMins>0?fmtDuration(row.otMins):'—'}
+      </td>
+      <td style="padding:10px 12px;text-align:right">
+        <input id="pay-ot-${idx}" type="number" step="0.01" value="${ot.toFixed(2)}"
+          style="width:90px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:right"
+          onchange="recalcPayrollRow(${idx})">
+      </td>
+      <td style="padding:10px 12px;text-align:right">
+        <input id="pay-deduct-${idx}" type="number" step="0.01" value="${ded.toFixed(2)}"
+          style="width:80px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:right"
+          onchange="recalcPayrollRow(${idx})">
+        ${row.leaveNote?`<div style="font-size:10px;color:var(--text3)">${row.leaveNote}</div>`:''}
+      </td>
+      <td id="pay-net-${idx}" style="padding:10px 12px;text-align:right;font-weight:700;color:var(--navy);font-size:14px">${fCur(net,row.currency)}</td>
+      <td style="padding:10px 12px">
+        <div style="font-size:10px;color:var(--text3)">HOD: ${row.hodValidatedBy}</div>
+        <input id="pay-note-${idx}" class="fi" placeholder="Note…" style="width:110px;padding:3px 6px;font-size:11px;margin-top:3px" value="${row.hrNote||''}">
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function recalcPayrollRow(idx){
+  const row=_payrollData[idx]; if(!row) return;
+  const base=parseFloat(document.getElementById(`pay-base-${idx}`)?.value)||0;
+  const ot=parseFloat(document.getElementById(`pay-ot-${idx}`)?.value)||0;
+  const ded=parseFloat(document.getElementById(`pay-deduct-${idx}`)?.value)||0;
+  row.overridePeriodPay=base; row.overrideOTPay=ot; row.overrideDeduct=ded;
+  const net=base+ot-ded;
+  const el=document.getElementById(`pay-net-${idx}`);
+  if(el) el.textContent=fCur(net,row.currency);
+  renderPayrollMetrics(_payrollData);
+}
+
+function exportPayrollCSV(){
+  if(!_payrollData.length){ toast('Run payroll first.','error'); return; }
+  const {from,to,payDate}=_payrollPeriod||{};
+  const rows=[['Employee','Department','Annual Salary','Currency','Period','Payment Date',
+    'Base Pay','Days Worked','Total Working Days','OT Hours','OT Pay','Leave Deduction','Net Pay','HOD Validated By','HR Notes']];
+  _payrollData.forEach((row,idx)=>{
+    const base=row.overridePeriodPay??row.periodPay;
+    const ot=row.overrideOTPay??row.otPay;
+    const ded=row.overrideDeduct??row.leaveDeduct;
+    const note=document.getElementById(`pay-note-${idx}`)?.value||row.hrNote||'';
+    rows.push([row.emp.name,row.emp.dept||'',row.annual,row.currency,
+      (from||'')+' to '+(to||''),payDate||'',
+      base.toFixed(2),row.daysWorked,row.totalWDays,
+      (row.otMins/60).toFixed(2),ot.toFixed(2),ded.toFixed(2),(base+ot-ded).toFixed(2),
+      row.hodValidatedBy,note]);
+  });
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`payroll_${from||'export'}_to_${to||'export'}.csv`;
+  a.click();
+  toast('Payroll exported.','success');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+
+// _payrollData declared in payroll workflow module
 
 function countWorkingDaysInRange(from, to){
   let count=0, cur=new Date(from+'T00:00:00');
@@ -8560,149 +9108,20 @@ async function runPayroll(){
   renderPayrollTable(rows, settings);
 }
 
-function renderPayrollMetrics(rows){
-  const el = document.getElementById('payroll-metrics');
-  if(!el) return;
-  const totalNet  = rows.reduce((s,r)=>s+(r.overridePeriodPay??r.netPay),0);
-  const totalOT   = rows.reduce((s,r)=>s+(r.overrideOTPay??r.otPay),0);
-  const totalBase = rows.reduce((s,r)=>s+(r.overridePeriodPay??r.periodPay),0);
-  const cur       = rows[0]?.currency||'USD';
-  el.innerHTML =
-    '<div class="mc"><div class="mc-label">Employees on payroll</div><div class="mc-value">'+rows.length+'</div></div>'+
-    '<div class="mc"><div class="mc-label">Total base pay</div><div class="mc-value" style="font-size:20px">'+fCur(totalBase,cur)+'</div></div>'+
-    '<div class="mc"><div class="mc-label">Total overtime</div><div class="mc-value" style="font-size:20px;color:var(--amber)">'+fCur(totalOT,cur)+'</div></div>'+
-    '<div class="mc"><div class="mc-label">Total net payroll</div><div class="mc-value" style="font-size:20px;color:var(--navy)">'+fCur(totalNet,cur)+'</div></div>';
-}
-
-function renderPayrollTable(rows, settings){
-  const tbody = document.getElementById('payroll-tbody');
-  if(!tbody) return;
-
-  if(!rows.length){
-    tbody.innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--text3);padding:24px">No employees with salary data found for this period.</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = rows.map((row,idx)=>{
-    const c   = aColor(row.emp.name);
-    const basePay = row.overridePeriodPay ?? row.periodPay;
-    const otPay   = row.overrideOTPay    ?? row.otPay;
-    const deduct  = row.overrideDeduct   ?? row.leaveDeduct;
-    const net     = basePay + otPay - deduct;
-
-    return '<tr style="border-bottom:1px solid var(--border)">'+
-      '<td style="padding:10px 12px"><div class="emp-cell">'+
-        '<div class="avatar" style="background:'+c+'22;color:'+c+';width:26px;height:26px;font-size:10px">'+inits(row.emp.name)+'</div>'+
-        '<div><div style="font-weight:500">'+row.emp.name+'</div>'+
-        '<div class="txs tm">'+fCur(row.annual,row.currency)+'/yr</div></div>'+
-      '</div></td>'+
-      '<td style="padding:10px 12px;color:var(--text3);font-size:12px">'+( row.emp.dept||'—')+'</td>'+
-
-      // Base pay — editable
-      '<td style="padding:10px 12px;text-align:right">'+
-        '<input id="pay-base-'+idx+'" type="number" step="0.01" value="'+basePay.toFixed(2)+'" '+
-        'style="width:100px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:right" '+
-        'onchange="recalcPayrollRow('+idx+')">'+
-      '</td>'+
-
-      // Period Pay (calculated, read-only display)
-      '<td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--text3)">'+
-        row.daysWorked+'/'+row.totalWorkDays+' days'+
-      '</td>'+
-
-      // Days worked
-      '<td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--text2)">'+
-        row.daysWorked+
-      '</td>'+
-
-      // OT hours
-      '<td style="padding:10px 12px;text-align:right;font-size:12px;color:'+(row.otMins>0?'var(--amber)':'var(--text3)')+'">'+
-        (row.otMins>0?fmtDuration(row.otMins):'—')+
-      '</td>'+
-
-      // OT pay — editable
-      '<td style="padding:10px 12px;text-align:right">'+
-        '<input id="pay-ot-'+idx+'" type="number" step="0.01" value="'+otPay.toFixed(2)+'" '+
-        'style="width:90px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:right" '+
-        'onchange="recalcPayrollRow('+idx+')">'+
-      '</td>'+
-
-      // Leave deduction — editable
-      '<td style="padding:10px 12px;text-align:right">'+
-        '<input id="pay-deduct-'+idx+'" type="number" step="0.01" value="'+deduct.toFixed(2)+'" '+
-        'style="width:90px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:right" '+
-        'onchange="recalcPayrollRow('+idx+')">'+
-        (row.leaveNote?'<div style="font-size:10px;color:var(--text3);margin-top:2px">'+row.leaveNote+'</div>':'')+
-      '</td>'+
-
-      // Net pay — auto-calculated
-      '<td id="pay-net-'+idx+'" style="padding:10px 12px;text-align:right;font-weight:700;color:var(--navy);font-size:14px">'+
-        fCur(net, row.currency)+
-      '</td>'+
-
-      // HR notes
-      '<td style="padding:10px 12px">'+
-        '<input id="pay-note-'+idx+'" class="fi" placeholder="Note…" style="width:120px;padding:4px 6px;font-size:12px" value="'+( row.hrNote||'')+'">'+
-      '</td>'+
-    '</tr>';
-  }).join('');
-}
-
-function recalcPayrollRow(idx){
-  const row    = _payrollData[idx];
-  if(!row) return;
-  const base   = parseFloat(document.getElementById('pay-base-'+idx)?.value)||0;
-  const ot     = parseFloat(document.getElementById('pay-ot-'+idx)?.value)||0;
-  const deduct = parseFloat(document.getElementById('pay-deduct-'+idx)?.value)||0;
-  const net    = base + ot - deduct;
-
-  row.overridePeriodPay = base;
-  row.overrideOTPay     = ot;
-  row.overrideDeduct    = deduct;
-
-  const netEl = document.getElementById('pay-net-'+idx);
-  if(netEl) netEl.textContent = fCur(net, row.currency);
-
-  renderPayrollMetrics(_payrollData);
-}
-
-function exportPayrollCSV(){
-  if(!_payrollData.length){ toast('Run payroll first.','error'); return; }
-  const from = document.getElementById('pay-from')?.value||'';
-  const to   = document.getElementById('pay-to')?.value||'';
-  const pd   = document.getElementById('pay-date')?.value||'';
-
-  const rows = [['Employee','Department','Annual Salary','Currency','Period','Payment Date',
-    'Base Pay','Days Worked','Total Working Days','OT Hours','OT Pay','Leave Deduction','Net Pay','Notes']];
-
-  _payrollData.forEach((row,idx)=>{
-    const base   = row.overridePeriodPay ?? row.periodPay;
-    const ot     = row.overrideOTPay    ?? row.otPay;
-    const deduct = row.overrideDeduct   ?? row.leaveDeduct;
-    const net    = base + ot - deduct;
-    const note   = document.getElementById('pay-note-'+idx)?.value||row.hrNote||'';
-    rows.push([
-      row.emp.name, row.emp.dept||'', row.annual, row.currency,
-      from+' to '+to, pd,
-      base.toFixed(2), row.daysWorked, row.totalWorkDays,
-      (row.otMins/60).toFixed(2), ot.toFixed(2),
-      deduct.toFixed(2), net.toFixed(2), note
-    ]);
-  });
-
-  const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download = 'payroll_'+from+'_to_'+to+'.csv';
-  a.click();
-  toast('Payroll exported.','success');
-}
-
 // Hook into showPage
 const _showPagePayroll = window.showPage;
 window.showPage = function(id, el){
   _showPagePayroll(id, el);
-  if(id==='payroll') initPayroll();
+  if(id==='payroll'){
+    initPayroll();
+    // Managers land on HOD validation step if a review is in progress
+    if(CU&&CU.role==='manager'&&_attReviewData.length){
+      document.getElementById('payroll-step-period').style.display='none';
+      document.getElementById('payroll-step-hod').style.display='block';
+      renderPayrollStepper(2);
+      renderHODValidation();
+    }
+  }
 };
 
 
@@ -9085,6 +9504,305 @@ function toggleEmpClockMode(empId, newMode){
   }).catch(()=>toast('Failed to save setting.','error'));
 }
 
+
+// ════════════════════════════════════════════════════════════════════════════
+// LEAVE APPROVAL WORKFLOW
+// Rules:
+//   Regular employee → HOD approves → HR confirms
+//   HOD (manager role) → Senior HOD approves (one stage)
+//   HR/Admin can approve any request directly
+// ════════════════════════════════════════════════════════════════════════════
+
+function getLeaveApprovalContext(){
+  // Who is the current user in terms of leave approval?
+  const u = getUsers().find(u=>
+    (CU.empId&&String(u.empId)===String(CU.empId))||
+    (CU.id&&String(u.id)===String(CU.id))
+  );
+  return {
+    isHR:         CU.role==='admin'||CU.role==='hr',
+    isManager:    CU.role==='manager',
+    isSeniorHOD:  u?.seniorHOD||false,
+    canCrossView: u?.crossLeaveVisibility||false,
+    userName:     CU.name,
+    userEmpId:    CU.empId||null,
+    userData:     u
+  };
+}
+
+function canApproveRequest(req){
+  const ctx = getLeaveApprovalContext();
+  if(ctx.isHR) return true;
+
+  const emp = gE(req.empId);
+  if(!emp) return false;
+
+  // Senior HOD can approve other HODs' leave
+  if(req.requesterIsHOD && ctx.isSeniorHOD) return true;
+
+  // Manager can approve their own department employees at HOD stage
+  if(ctx.isManager && req.hodStatus==='pending'){
+    // Check if employee is in manager's department
+    const myEmps = getEmps().filter(e=>
+      e.manager===CU.name||String(e.managerId)===String(CU.empId)
+    );
+    if(myEmps.find(e=>String(e.id)===String(req.empId))) return true;
+  }
+
+  return false;
+}
+
+function canViewRequest(req){
+  const ctx = getLeaveApprovalContext();
+  if(ctx.isHR) return true;
+
+  const emp = gE(req.empId);
+  if(!emp) return false;
+
+  // Own requests always visible
+  if(String(req.empId)===String(ctx.userEmpId)) return true;
+
+  // Manager sees their department
+  if(ctx.isManager){
+    const myEmps = getEmps().filter(e=>
+      e.manager===CU.name||String(e.managerId)===String(CU.empId)
+    );
+    if(myEmps.find(e=>String(e.id)===String(req.empId))) return true;
+  }
+
+  // Cross-leave visibility — see other HODs' leave
+  if(ctx.canCrossView){
+    const empUser = getUsers().find(u=>String(u.empId)===String(req.empId));
+    if(empUser?.role==='manager') return true;
+  }
+
+  // Senior HOD sees all HOD requests
+  if(ctx.isSeniorHOD && req.requesterIsHOD) return true;
+
+  return false;
+}
+
+function getRequestDisplayStatus(req){
+  // Returns a user-friendly status based on the two-stage approval
+  if(req.requesterIsHOD){
+    // HOD leave — one stage (senior HOD approval)
+    if(req.status==='approved') return {label:'Approved', cls:'b-active', detail:'by '+req.hrApprovedBy};
+    if(req.status==='rejected') return {label:'Rejected', cls:'b-absence', detail:''};
+    return {label:'Pending senior HOD', cls:'b-warning', detail:''};
+  }
+  // Regular employee — two stages
+  if(req.status==='rejected')  return {label:'Rejected', cls:'b-absence', detail:''};
+  if(req.status==='approved')  return {label:'Approved', cls:'b-active', detail:'HOD + HR'};
+  if(req.hodStatus==='approved'&&req.hrStatus==='pending')
+    return {label:'HOD approved – awaiting HR', cls:'b-training', detail:''};
+  return {label:'Pending HOD', cls:'b-warning', detail:''};
+}
+
+async function hodApproveLeave(reqId, approve){
+  const ctx = getLeaveApprovalContext();
+  const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
+  if(!req){ toast('Request not found.','error'); return; }
+
+  const note = approve ? '' : prompt('Reason for rejection (optional):')||'';
+
+  if(req.requesterIsHOD){
+    // Senior HOD approving another HOD's leave — final decision
+    req.status         = approve ? 'approved' : 'rejected';
+    req.hrStatus       = approve ? 'approved' : 'rejected';
+    req.hrApprovedBy   = ctx.userName;
+    req.hrApprovedAt   = new Date().toISOString();
+    req.reviewNote     = note;
+  } else {
+    // Manager approving regular employee at HOD stage
+    req.hodStatus      = approve ? 'approved' : 'rejected';
+    req.hodApprovedBy  = ctx.userName;
+    req.hodApprovedAt  = new Date().toISOString();
+    req.reviewNote     = note;
+    if(!approve){
+      req.status = 'rejected';
+      req.hrStatus = 'rejected';
+    }
+  }
+
+  showLoader('Saving…');
+  try{
+    const saved = await dbSaveLeaveRequest(req);
+    const idx = _leaveRequests.findIndex(r=>String(r.id)===String(reqId));
+    if(idx>=0) _leaveRequests[idx] = saved||req;
+
+    if(approve && !req.requesterIsHOD){
+      // Notify HR to confirm
+      addNotif(`Leave request for ${gE(req.empId)?.name} approved by HOD — awaiting HR confirmation.`,'info');
+      sendHRAlert('leave_hod_approved', getHREmails(), {
+        employeeName: gE(req.empId)?.name, type:req.type,
+        from:fDate(req.fromDate), to:fDate(req.toDate),
+        hodName:ctx.userName
+      });
+    } else if(approve && req.requesterIsHOD){
+      addNotif(`${gE(req.empId)?.name}'s leave approved by Senior HOD.`,'success');
+      // Update leave balance
+      await deductLeaveBalance(req);
+    } else {
+      addNotif(`Leave request for ${gE(req.empId)?.name} rejected by ${ctx.userName}.`,'info');
+    }
+  } catch(e){ toast('Save error.','error'); }
+  hideLoader();
+  dbAddAudit(ctx.userName, `${approve?'Approved':'Rejected'} leave (HOD stage) for ${gE(req.empId)?.name}`);
+  toast(approve?'Leave approved.':'Leave rejected.', approve?'success':'info');
+  renderLeave();
+}
+
+async function hrConfirmLeave(reqId, approve){
+  const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
+  if(!req){ toast('Request not found.','error'); return; }
+
+  const note = approve ? '' : prompt('Reason for rejection (optional):')||'';
+
+  req.status       = approve ? 'approved' : 'rejected';
+  req.hrStatus     = approve ? 'approved' : 'rejected';
+  req.hrApprovedBy = CU.name;
+  req.hrApprovedAt = new Date().toISOString();
+  if(note) req.reviewNote = (req.reviewNote?req.reviewNote+' | ':'')+note;
+
+  showLoader('Saving…');
+  try{
+    const saved = await dbSaveLeaveRequest(req);
+    const idx = _leaveRequests.findIndex(r=>String(r.id)===String(reqId));
+    if(idx>=0) _leaveRequests[idx] = saved||req;
+    if(approve) await deductLeaveBalance(req);
+    addNotif(`Leave ${approve?'confirmed':'rejected'} for ${gE(req.empId)?.name}.`, approve?'success':'info');
+  } catch(e){ toast('Save error.','error'); }
+  hideLoader();
+  dbAddAudit(CU.name, `HR ${approve?'confirmed':'rejected'} leave for ${gE(req.empId)?.name}`);
+  toast(approve?'Leave confirmed by HR.':'Leave rejected.', approve?'success':'info');
+  renderLeave();
+}
+
+async function deductLeaveBalance(req){
+  try{
+    const balArr = await dbGetLeaveBalances();
+    const lb = balArr.find(b=>String(b.empId)===String(req.empId));
+    if(lb?.balances?.[req.type]){
+      lb.balances[req.type].used = (lb.balances[req.type].used||0) + req.days;
+      lb.balances[req.type].remaining = (lb.balances[req.type].entitlement||0) - lb.balances[req.type].used;
+      await dbSaveLeaveBalance(lb);
+    }
+  } catch(e){ console.warn('Balance deduct error:', e); }
+}
+
+// ── Rebuild renderLeaveTable with approval actions ─────────────────────────────
+function renderLeaveTable(){
+  const tbody   = document.getElementById('leave-tbody');
+  if(!tbody) return;
+  const typeF   = document.getElementById('leave-filter-type')?.value||'';
+  const statusF = document.getElementById('leave-filter-status')?.value||'';
+  const ctx     = getLeaveApprovalContext();
+
+  // Filter by what current user can see
+  let list = _leaveRequests.filter(r=>canViewRequest(r));
+  if(typeF)   list=list.filter(r=>r.type===typeF);
+  if(statusF) list=list.filter(r=>r.status===statusF);
+  list.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+
+  if(!list.length){
+    tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text3)">No leave requests found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.map(req=>{
+    const emp = gE(req.empId);
+    const c   = emp ? aColor(emp.name) : '#888';
+    const ds  = getRequestDisplayStatus(req);
+    const canApprove = canApproveRequest(req);
+
+    // What action buttons to show?
+    let actionBtns = '';
+    if(canApprove && req.status==='pending'){
+      if(ctx.isHR && req.hodStatus==='approved'){
+        // HR confirmation stage
+        actionBtns = `
+          <button class="btn btn-xs btn-primary" onclick="hrConfirmLeave('${req.id}',true)">✓ HR Confirm</button>
+          <button class="btn btn-xs btn-danger" onclick="hrConfirmLeave('${req.id}',false)">✗ Reject</button>`;
+      } else if(ctx.isHR && req.hodStatus==='pending'){
+        // HR can skip HOD and approve directly
+        actionBtns = `
+          <button class="btn btn-xs btn-primary" onclick="hrConfirmLeave('${req.id}',true)">✓ Approve (skip HOD)</button>
+          <button class="btn btn-xs btn-danger" onclick="hrConfirmLeave('${req.id}',false)">✗ Reject</button>`;
+      } else if(ctx.isManager && req.hodStatus==='pending' && !req.requesterIsHOD){
+        // HOD approves regular employee
+        actionBtns = `
+          <button class="btn btn-xs btn-primary" onclick="hodApproveLeave('${req.id}',true)">✓ Approve</button>
+          <button class="btn btn-xs btn-danger" onclick="hodApproveLeave('${req.id}',false)">✗ Reject</button>`;
+      } else if(ctx.isSeniorHOD && req.requesterIsHOD && req.hodStatus==='needs_senior_hod'){
+        // Senior HOD approves another HOD
+        actionBtns = `
+          <button class="btn btn-xs btn-primary" onclick="hodApproveLeave('${req.id}',true)">✓ Approve HOD leave</button>
+          <button class="btn btn-xs btn-danger" onclick="hodApproveLeave('${req.id}',false)">✗ Reject</button>`;
+      }
+    }
+
+    // Stage indicator
+    let stageHtml = '';
+    if(req.status==='pending' && !req.requesterIsHOD){
+      stageHtml = req.hodStatus==='approved'
+        ? '<div style="font-size:10px;color:var(--green)">✓ HOD: '+req.hodApprovedBy+'</div><div style="font-size:10px;color:var(--amber)">⏳ HR pending</div>'
+        : '<div style="font-size:10px;color:var(--amber)">⏳ HOD pending</div>';
+    } else if(req.requesterIsHOD && req.status==='pending'){
+      stageHtml = '<div style="font-size:10px;color:var(--amber)">⏳ Senior HOD pending</div>';
+    }
+
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:10px 12px">
+        <div class="emp-cell">
+          <div class="avatar" style="background:${c}22;color:${c};width:26px;height:26px;font-size:10px">${inits(emp?.name||'?')}</div>
+          <div>
+            <div style="font-weight:500">${emp?.name||'—'}</div>
+            <div class="txs tm">${emp?.dept||''} ${req.requesterIsHOD?'<span style="font-size:10px;background:var(--purple-light);color:var(--purple-deep);padding:1px 5px;border-radius:8px">HOD</span>':''}</div>
+          </div>
+        </div>
+      </td>
+      <td style="padding:10px 12px"><span class="badge b-${req.type}">${LEAVE_TYPES[req.type]?.label||req.type}</span></td>
+      <td style="padding:10px 12px;font-size:12.5px">${fDate(req.fromDate)}<br><span class="tm txs">to ${fDate(req.toDate)}</span></td>
+      <td style="padding:10px 12px;text-align:center;font-size:13px;font-weight:500">${req.days}d</td>
+      <td style="padding:10px 12px">
+        <span class="badge ${ds.cls}">${ds.label}</span>
+        ${ds.detail?`<div class="txs tm" style="margin-top:2px">${ds.detail}</div>`:''}
+        ${stageHtml}
+      </td>
+      <td style="padding:10px 12px;font-size:12px;color:var(--text3);max-width:140px">${req.reason||'—'}</td>
+      <td style="padding:10px 12px;font-size:12px;color:var(--text3)">${req.reviewNote||'—'}</td>
+      <td style="padding:10px 12px">
+        <div style="display:flex;gap:4px;flex-wrap:wrap">${actionBtns}</div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// Notify HOD when a new leave request is submitted by their department employee
+async function notifyHODofLeaveRequest(req){
+  const emp = gE(req.empId);
+  if(!emp) return;
+
+  if(req.requesterIsHOD){
+    // Notify all senior HODs
+    const seniorHODs = getUsers().filter(u=>u.seniorHOD&&u.active);
+    seniorHODs.forEach(u=>{
+      addNotif(`${emp.name} (HOD) requested ${req.days}d ${LEAVE_TYPES[req.type]?.label||req.type} — awaiting your approval.`,'info');
+    });
+  } else {
+    // Notify the employee's HOD (manager)
+    const mgr = getUsers().find(u=>
+      u.role==='manager'&&(
+        u.name===emp.manager||
+        (u.empId&&String(u.empId)===String(emp.managerId))
+      )
+    );
+    if(mgr){
+      addNotif(`${emp.name} requested ${req.days}d ${LEAVE_TYPES[req.type]?.label||req.type} — requires your approval.`,'info');
+    }
+  }
+}
+
 </script>
 
 <!-- KIOSK / PIN SCREEN -->
@@ -9186,3 +9904,4 @@ function toggleEmpClockMode(empId, newMode){
 
 </body>
 </html>
+    notifyHODofLeaveRequest(saved||req);
