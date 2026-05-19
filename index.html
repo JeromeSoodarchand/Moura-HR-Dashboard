@@ -1426,6 +1426,7 @@ const getUsers=()=>_userCache.length?_userCache:S.get('users',[]);
 const getAudit=()=>S.get('audit',[]);
 
 const saveEmps=v=>saveData('employees',v);
+const saveUsers = (u) => { _userCache = u; S.set('users', u); };
 const saveEvts=v=>saveData('events',v);
 const saveTrProgs=v=>saveData('trainingPrograms',v);
 const saveTrAsgn=v=>saveData('trainingAssignments',v);
@@ -3281,7 +3282,8 @@ function viewEmp(id){
 
     <div class="mf">
       ${canEdit()&&emp.status==='onboarding'?`<button class="btn btn-danger btn-sm" onclick="closeModal();openModal('offboard',${id})">Offboard</button>`:''}
-      ${canEdit()&&emp.status==='offboarded'?`<button class="btn btn-danger btn-sm" disabled style="opacity:.4;cursor:not-allowed">Offboarded</button>`:''}
+      ${canEdit()&&emp.status==='active'?`<button class="btn btn-danger btn-sm" onclick="closeModal();openModal('offboard',${id})">Offboard</button>`:''}
+      ${canEdit()&&emp.status==='offboarded'?`<button class="btn btn-primary btn-sm" onclick="closeModal();openModal('reonboard',${id})">↩ Re-onboard</button>`:''}
       ${canEdit()?`<button class="btn btn-xs" style="border-color:var(--red);color:var(--red)" onclick="closeModal();deleteEmployee(${id})">🗑 Delete record</button>`:''}
       <button class="btn btn-primary btn-sm" onclick="closeModal()">Close</button>
     </div>`;
@@ -3441,6 +3443,38 @@ function openModal(type,pid,pid2){
       <div style="background:var(--red-light);border-radius:var(--radius);padding:10px 12px;font-size:12.5px;color:var(--red-deep);margin:6px 0">⚠ This will mark the employee as offboarded and generate an exit checklist.</div>
       <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-danger" onclick="submitOffboard()">Confirm</button></div>`;
 
+  // ── RE-ONBOARD ──
+  } else if(type==='reonboard'){
+    if(!hasPerm('manage_onboarding')){toast('Access denied.','error');return;}
+    const emp = gE(pid);
+    if(!emp){ toast('Employee not found.','error'); return; }
+    mb.innerHTML=`<div class="modal-title">Re-onboard — ${emp.name} <button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div style="background:var(--blue-light);border-radius:var(--radius);padding:10px 12px;font-size:12.5px;color:var(--blue-deep);margin-bottom:12px">
+        ↩ This will restore <strong>${emp.name}</strong> to active onboarding status and create a fresh onboarding checklist.
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">New start date *</label><input class="fi" id="frob-start" type="date" value="${todayStr()}"></div>
+        <div class="fg"><label class="fl">Department</label><select class="fs" id="frob-dept">${['Engineering','Marketing','HR','Finance','Sales','Design','Operations','Other'].map(d=>`<option ${emp.dept===d?'selected':''}>${d}</option>`).join('')}</select></div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Role / Position</label><input class="fi" id="frob-role" value="${emp.role||''}" placeholder="Job title"></div>
+        <div class="fg"><label class="fl">Manager</label><input class="fi" id="frob-manager" value="${emp.manager||''}" placeholder="Manager name"></div>
+      </div>
+      <div class="fg"><label class="fl">Reason for re-onboarding</label>
+        <select class="fs" id="frob-reason">
+          <option>Rehired after resignation</option>
+          <option>Return from extended leave</option>
+          <option>Contract renewed</option>
+          <option>Transfer from another branch</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div class="fg"><label class="fl">Notes (optional)</label><input class="fi" id="frob-notes" placeholder="Any additional context…"></div>
+      <div class="mf">
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitReonboard(${pid})">↩ Confirm Re-onboard</button>
+      </div>`;
+
   // ── ADD USER ──
   } else if(type==='addUser'){
     if(!hasPerm('admin')){toast('Admin only.','error');return;}
@@ -3555,8 +3589,8 @@ function updateRoleDesc(role,elId='role-desc-box'){
 
 // ─── SUBMIT HANDLERS ──────────────────────────────────────────────────────────
 function submitAdd(){
-  const name=document.getElementById('fn').value.trim();
-  const email=document.getElementById('fe').value.trim();
+  const name=(document.getElementById('fn')?.value||'').trim();
+  const email=(document.getElementById('fe')?.value||'').trim();
   const phone=normalisePhone(document.getElementById('fph').value);
   if(!name){toast('Name is required.','error');return;}
   if(!email&&!phone){toast('Email or mobile number is required.','error');return;}
@@ -3678,7 +3712,7 @@ function submitEdit(id){
 
 function submitSalary(id){
   const emps=getEmps();const emp=emps.find(e=>String(e.id)===String(id));if(!emp)return;
-  const na=parseFloat(document.getElementById('fns').value);if(!na){toast('Enter a valid salary.','error');return;}
+  const na=parseFloat(document.getElementById('fns')?.value||'0');if(!na){toast('Enter a valid salary.','error');return;}
   const cur=document.getElementById('fnc').value,note=document.getElementById('fsn').value||'Salary update',date=document.getElementById('fed').value||td();
   if(!emp.salary)emp.salary={amount:na,currency:cur,frequency:'Annual',history:[],lastReview:null,nextReview:null};
   emp.salary.amount=na;emp.salary.currency=cur;emp.salary.lastReview=date;emp.salary.nextReview=document.getElementById('fnrd').value||emp.salary.nextReview;
@@ -3702,7 +3736,7 @@ function submitSalary(id){
 }
 
 function submitEvent(){
-  const empId=parseInt(document.getElementById('femp').value),desc=document.getElementById('fdes').value.trim();
+  const empId=parseInt(document.getElementById('femp')?.value||'0'),desc=(document.getElementById('fdes')?.value||'').trim();
   if(!desc){toast('Description required.','error');return;}
   const notify=document.getElementById('fno').checked;
   const newEvt={id:Date.now(),empId,type:document.getElementById('ftyp').value,date:document.getElementById('fdt').value||td(),desc,loggedBy:document.getElementById('flb').value||CU.name,notified:notify};
@@ -3865,6 +3899,60 @@ function submitOffboard(){
   });
 }
 
+
+async function submitReonboard(empId){
+  const emp = getEmps().find(e=>String(e.id)===String(empId));
+  if(!emp){ toast('Employee not found.','error'); return; }
+
+  const newStart  = document.getElementById('frob-start')?.value  || todayStr();
+  const newDept   = document.getElementById('frob-dept')?.value   || emp.dept;
+  const newRole   = document.getElementById('frob-role')?.value   || emp.role;
+  const newMgr    = document.getElementById('frob-manager')?.value|| emp.manager;
+  const reason    = document.getElementById('frob-reason')?.value || 'Rehired';
+  const notes     = document.getElementById('frob-notes')?.value  || '';
+
+  // Restore to onboarding status with fresh checklist
+  emp.status       = 'onboarding';
+  emp.start        = newStart;
+  emp.dept         = newDept;
+  emp.role         = newRole;
+  emp.manager      = newMgr;
+  emp.lastDay      = null;
+  emp.reason       = null;
+  emp.offChecklist = {};
+  emp.checklist    = {
+    'Paperwork submitted':   false,
+    'System access granted': false,
+    'IT equipment issued':   false,
+    'Benefits enrolled':     false,
+    'Manager intro done':    false
+  };
+
+  showLoader('Re-onboarding\u2026');
+  try{
+    const saved = await dbSaveEmployee(emp);
+    const idx = _cache.emps.findIndex(e=>String(e.id)===String(emp.id));
+    if(idx>=0) _cache.emps[idx]=saved||emp;
+    else _cache.emps.push(saved||emp);
+    saveEmps(_cache.emps);
+
+    // Log event
+    const evt={id:Date.now(),empId:emp.id,type:'milestone',date:newStart,
+      desc:'Re-onboarded \u2014 '+reason+(notes?' \u00b7 '+notes:''),
+      loggedBy:CU.name,notified:true};
+    dbSaveEvent(evt).then(ev=>{_cache.evts.unshift(ev||evt);saveEvts(_cache.evts);}).catch(()=>{});
+
+    hideLoader();
+    addNotif(emp.name+' re-onboarded. Checklist reset.','success');
+    dbAddAudit(CU.name,'Re-onboarded: '+emp.name+' ('+reason+')');
+    closeModal();
+    renderDashboard();
+    toast(emp.name+' re-onboarded and back in onboarding pipeline.','success');
+  } catch(err){
+    hideLoader();
+    toast('Re-onboard error: '+(err.message||err),'error');
+  }
+}
 function generateSetupToken(){
   return Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2)+Date.now().toString(36);
 }
@@ -7369,23 +7457,6 @@ function kioskBackToSelect(){
   kioskReset();
 }
 
-function exitKiosk(){
-  const pw=prompt('Enter admin password to exit kiosk:');
-  if(!pw) return;
-  // Check against current user or super admin
-  const users=getUsers();
-  const admin=users.find(u=>u.role==='admin'||u.role==='hr');
-  if(!admin||simpleHash(pw)!==admin.passwordHash){
-    // Also allow the hardcoded super admin password
-    if(simpleHash(pw)!==simpleHash('moura848$') && pw!=='moura848$'){
-      alert('Incorrect password.');return;
-    }
-  }
-  document.getElementById('kiosk-screen').style.display='none';
-  document.body.style.overflow='';
-  stopKioskClock();
-}
-
 function startKioskClock(){
   _kioskClockTimer = setInterval(()=>{
     const now=new Date();
@@ -8015,36 +8086,7 @@ function saveWorkingHoursSettings(){
 }
 
 // Patch renderSettings to load working hours values
-const _origRenderSettings = renderSettings;
-function renderSettings(){
-  _origRenderSettings();
-  const wh = getWorkingHoursSettings();
-  const ws = document.getElementById('settings-work-start');
-  const we = document.getElementById('settings-work-end');
-  const whr = document.getElementById('settings-work-hours');
-  const wwd = document.getElementById('settings-ot-weekday');
-  const wwe = document.getElementById('settings-ot-weekend');
-  const who = document.getElementById('settings-ot-holiday');
-  if(ws)  ws.value  = wh.workStart;
-  if(we)  we.value  = wh.workEnd;
-  if(whr) whr.value = wh.workHours;
-  if(wwd) wwd.value = wh.otWeekday;
-  if(wwe) wwe.value = wh.otWeekend;
-  if(who) who.value = wh.otHoliday;
-  [0,1,2,3,4,5,6].forEach(d=>{
-    const el = document.getElementById('work-day-'+d);
-    if(el) el.checked = wh.workDays.includes(d);
-  });
-  // Populate OT dept filter
-  const df = document.getElementById('ot-dept-filter');
-  if(df){
-    const depts = [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept||'').filter(Boolean))].sort();
-    df.innerHTML = '<option value="">All departments</option>'+depts.map(d=>'<option>'+d+'</option>').join('');
-  }
-}
-
 // ── Overtime calculation ──────────────────────────────────────────────────────
-let _otReportData = [];
 
 function calcOvertimeForRecord(rec, wh){
   if(!rec.durationMinutes) return {normalMins:0, otMins:0, type:'normal'};
@@ -8060,62 +8102,6 @@ function calcOvertimeForRecord(rec, wh){
   return { normalMins: Math.min(workedMins, normalMins), otMins, type, rate, workedMins };
 }
 
-async function runOvertimeReport(){
-  const from   = document.getElementById('ot-date-from')?.value;
-  const to     = document.getElementById('ot-date-to')?.value;
-  const deptF  = document.getElementById('ot-dept-filter')?.value||'';
-  if(!from||!to){ toast('Select a date range.','error'); return; }
-
-  const body = document.getElementById('ot-report-body');
-  if(body) body.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Calculating…</div>';
-
-  const wh   = getWorkingHoursSettings();
-  let recs   = [];
-  try{
-    recs = await dbGetAttendance(from, to);
-    const local = S.get('attendance',[]);
-    recs.forEach(r=>{ const i=local.findIndex(x=>String(x.id)===String(r.id)); if(i>=0)local[i]=r; else local.push(r); });
-    S.set('attendance', local);
-  } catch(e){
-    recs = S.get('attendance',[]).filter(r=>r.date>=from&&r.date<=to);
-  }
-
-  const emps = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF));
-
-  // Group by employee
-  const empMap = {};
-  emps.forEach(emp=>{
-    const empRecs = recs.filter(r=>String(r.empId)===String(emp.id)&&r.clockOut&&r.durationMinutes);
-    let totalWorked=0, totalNormal=0, totalOT=0, totalOTCost=0;
-    const days = [];
-
-    empRecs.forEach(rec=>{
-      const ot = calcOvertimeForRecord(rec, wh);
-      totalWorked += ot.workedMins;
-      totalNormal += ot.normalMins;
-      totalOT     += ot.otMins;
-      if(ot.otMins>0) days.push({...rec, ...ot});
-    });
-
-    // Get hourly rate from salary
-    let hourlyRate = null;
-    if(emp.salary?.amount){
-      const freq = emp.salary.frequency||'Annual';
-      const annual = freq==='Annual' ? emp.salary.amount :
-                     freq==='Monthly' ? emp.salary.amount*12 :
-                     freq==='Hourly' ? emp.salary.amount*2080 : emp.salary.amount;
-      hourlyRate = annual / 2080; // 2080 = 52 weeks × 40 hours
-    }
-
-    empMap[emp.id] = { emp, totalWorked, totalNormal, totalOT, hourlyRate, days };
-  });
-
-  _otReportData = Object.values(empMap);
-  renderOTReport(_otReportData, wh, from, to);
-}
-
-
-
 function calcOTCost(d){
   const hrateEl = document.getElementById('ot-rate-'+d.emp.id);
   const rate = hrateEl ? parseFloat(hrateEl.value) : d.hourlyRate;
@@ -8128,65 +8114,6 @@ function calcOTCost(d){
     cost += otHrs * rate * (day.rate||wh.otWeekday);
   });
   return cost;
-}
-
-function recalcOTRow(empId){
-  const d = _otReportData.find(x=>String(x.emp.id)===String(empId));
-  if(!d) return;
-  const cost = calcOTCost(d);
-  const el = document.getElementById('ot-cost-'+empId);
-  if(el) el.textContent = cost!==null ? fCur(cost, d.emp.salary?.currency||'MUR') : '—';
-}
-
-function showOTDayBreakdown(empId){
-  const d = _otReportData.find(x=>String(x.emp.id)===String(empId));
-  if(!d||!d.days.length) return;
-  const wh = getWorkingHoursSettings();
-  const hrateEl = document.getElementById('ot-rate-'+empId);
-  const rate = hrateEl ? parseFloat(hrateEl.value)||null : d.hourlyRate;
-
-  const mb = document.getElementById('mbox');
-  mb.className = 'modal-box wide';
-  document.getElementById('mb').classList.add('open');
-  mb.innerHTML = '<div class="modal-title">OT Breakdown — '+d.emp.name+'<button class="modal-close" onclick="closeModal()">✕</button></div>'+
-    '<table><thead><tr><th>Date</th><th>Type</th><th>Worked</th><th>Normal</th><th>OT</th><th>Rate</th><th>OT Cost</th></tr></thead><tbody>'+
-    d.days.map(day=>{
-      const otHrs = day.otMins/60;
-      const otCost = rate ? otHrs*rate*day.rate : null;
-      const typeLabel = day.type==='holiday'?'Public Holiday':day.type==='weekend'?'Weekend':'Weekday';
-      const typeColor = day.type==='holiday'?'var(--red)':day.type==='weekend'?'var(--purple)':'var(--text2)';
-      return '<tr>'+
-        '<td>'+fDate(day.date)+'</td>'+
-        '<td style="color:'+typeColor+';font-weight:500">'+typeLabel+'</td>'+
-        '<td>'+fmtDuration(day.workedMins)+'</td>'+
-        '<td class="tm">'+fmtDuration(day.normalMins)+'</td>'+
-        '<td style="font-weight:600;color:var(--amber)">'+fmtDuration(day.otMins)+'</td>'+
-        '<td class="tm">×'+day.rate+'</td>'+
-        '<td style="font-weight:500;color:var(--gold)">'+(otCost!==null?fCur(otCost,d.emp.salary?.currency||'MUR'):'—')+'</td>'+
-      '</tr>';
-    }).join('')+
-    '</tbody></table>'+
-    '<div class="mf"><button class="btn btn-primary" onclick="closeModal()">Close</button></div>';
-}
-
-function exportOvertimeCSV(){
-  if(!_otReportData.length){ toast('Run the report first.','error'); return; }
-  const wh = getWorkingHoursSettings();
-  const rows = [['Employee','Department','Total Worked (h)','Normal Hours (h)','Overtime (h)','Hourly Rate','OT Cost','Currency']];
-  _otReportData.forEach(d=>{
-    const hrateEl = document.getElementById('ot-rate-'+d.emp.id);
-    const rate = hrateEl ? parseFloat(hrateEl.value)||'' : d.hourlyRate||'';
-    const cost = calcOTCost(d);
-    rows.push([
-      d.emp.name, d.emp.dept||'',
-      (d.totalWorked/60).toFixed(2), (d.totalNormal/60).toFixed(2), (d.totalOT/60).toFixed(2),
-      rate, cost!==null?cost.toFixed(2):'', d.emp.salary?.currency||'MUR'
-    ]);
-  });
-  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download='overtime_report_'+todayStr()+'.csv';a.click();
-  toast('Overtime report exported.','success');
 }
 
 // Populate OT dept filter when attendance page loads
