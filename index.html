@@ -1364,7 +1364,7 @@ function initSupabase(){
   const key = localStorage.getItem('sb_key') || '';
   if(url && key){
     _sb = supabase.createClient(url, key);
-    setTimeout(()=>{ if(_sb) _sbSetSecret(); }, 0);
+    _sbSetSecret(); // fire immediately, non-blocking at init
     // Immediately authenticate all requests with app session secret
     _sb.rpc && _sbSetSecret();
     // Credentials already saved — hide connection UI on both screens
@@ -1966,7 +1966,7 @@ async function boot(){
       const sbUrl=localStorage.getItem('sb_url')||'';
       const sbKey=localStorage.getItem('sb_key')||'';
       if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey);
-    setTimeout(()=>{ if(_sb) _sbSetSecret(); }, 0); }
+    await _sbSetSecret(); }
       // Load data in background
       showLoader('Loading…');
       Promise.all([dbGetEmployees(),dbGetEvents(),dbGetPrograms(),dbGetAssignments(),dbGetUsers()])
@@ -2073,7 +2073,7 @@ async function boot(){
 boot();
 
 // ─── SETUP (first-time admin creation) ───────────────────────────────────────
-function doSetup(){
+async function doSetup(){
   const name=document.getElementById('setup-name').value.trim();
   const username=document.getElementById('setup-user').value.trim().toLowerCase();
   const email=document.getElementById('setup-email').value.trim();
@@ -2093,7 +2093,7 @@ function doSetup(){
     localStorage.setItem('sb_key',sbKeySetup);
     localStorage.setItem('sb_connected','1');
     _sb=supabase.createClient(sbUrlSetup,sbKeySetup);
-    setTimeout(()=>{ if(_sb) _sbSetSecret(); }, 0);
+    await _sbSetSecret();
   }
   // Save user to DB or local
   if(sbReady()){
@@ -2123,7 +2123,7 @@ async function doLogin(){
   const sbUrl=localStorage.getItem('sb_url')||'';
   const sbKey=localStorage.getItem('sb_key')||'';
   if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey);
-    setTimeout(()=>{ if(_sb) _sbSetSecret(); }, 0); }
+    await _sbSetSecret(); }
 
   // Try multiple formats in order:
   let user = null;
@@ -6153,7 +6153,7 @@ async function checkSetupToken(){
     localStorage.setItem('sb_url', sbUrl);
     localStorage.setItem('sb_key', sbKey);
     if(!_sb) _sb = supabase.createClient(sbUrl, sbKey);
-    setTimeout(()=>{ if(_sb) _sbSetSecret(); }, 0);
+    _sbSetSecret();
   }
 
   // Find user with this token
@@ -7442,7 +7442,7 @@ async function loginPinSubmit(){
   const sbUrl=localStorage.getItem('sb_url')||'';
   const sbKey=localStorage.getItem('sb_key')||'';
   if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey);
-    setTimeout(()=>{ if(_sb) _sbSetSecret(); }, 0); }
+    await _sbSetSecret(); }
 
   // Reload employees AND users fresh from DB/localStorage before PIN lookup
   // This ensures pinHash fields are current even on first page load
