@@ -524,7 +524,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
       <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
       <span class="tab-label">Events log</span>
     </button>
-    <button class="nav-tab" data-perm="view_employees" onclick="showPage('attendance',this)">
+    <button class="nav-tab" data-perm="view_attendance" onclick="showPage('attendance',this)">
       <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
       <span class="tab-label">Attendance</span>
     </button>
@@ -1669,7 +1669,9 @@ async function dbGetUsers(){
     role:r.role,active:r.active,
     passwordHash:r.password_hash,
     setupToken:r.setup_token||null,setupDone:r.setup_done||false,
-    empId:r.emp_id||null,createdAt:r.created_at
+    empId:r.emp_id||null,createdAt:r.created_at,
+    seniorHOD:r.senior_hod||false,
+    crossLeaveVisibility:r.cross_leave_visibility||false
   }));
   // Always sync to cache and localStorage
   _userCache = users;
@@ -1704,10 +1706,12 @@ async function dbFindUser(username){
   if(localMatch) return localMatch;
   // Then try Supabase
   if(!sbReady()) return null;
+  try{
   const {data,error}=await _sb.from('hr_users').select('*').eq('username',username).eq('active',true);
   if(error||!data||data.length===0) return null;
   const d=data[0];
   return{id:d.id,name:d.name,username:d.username,email:d.email||'',phone:d.phone||'',role:d.role,active:d.active,passwordHash:d.password_hash,setupToken:d.setup_token||null,setupDone:d.setup_done||false,empId:d.emp_id||null};
+  } catch(e){ console.warn('dbFindUser error:',e); return null; }
 }
 
 // ── AUDIT ──
@@ -1736,7 +1740,7 @@ function rowToEmp(r){
   return{id:r.id,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
     salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:r.salary_history||[]}:null,
     checklist:r.checklist||{},offChecklist:r.off_checklist||{},lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
-    photoUrl:r.photo_url||null,files:r.files||[],clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null};
+    photoUrl:r.photo_url||null,files:r.files||[],clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:r.att_editor||false};
 }
 function empToRow(e){
   const row={
@@ -1767,6 +1771,7 @@ function empToRow(e){
     clock_mode:           e.clockMode            || 'qr',
     pin_hash:             e.pinHash              || null,
     user_id:              e.userId               || null,
+    att_editor:           e.attendanceEditor     || false,
     updated_at:           new Date().toISOString(),
   };
   // Remove any remaining undefined values
@@ -1854,9 +1859,9 @@ async function loadAndRenderUserMgmt(){
 
 // ─── ROLE PERMISSIONS ─────────────────────────────────────────────────────────
 const ROLE_PERMS={
-  admin:['view_employees','add_employees','edit_employees','view_salary','manage_onboarding','log_events','view_events','view_training','manage_training','manage_offboarding','view_analytics','admin'],
-  hr:['view_employees','add_employees','edit_employees','view_salary','manage_onboarding','log_events','view_events','view_training','manage_training','manage_offboarding','view_analytics'],
-  manager:['view_employees','log_events','view_events','view_training'],
+  admin:['view_employees','add_employees','edit_employees','view_salary','manage_onboarding','log_events','view_events','view_training','manage_training','manage_offboarding','view_analytics','view_attendance','admin'],
+  hr:['view_employees','add_employees','edit_employees','view_salary','manage_onboarding','log_events','view_events','view_training','manage_training','manage_offboarding','view_analytics','view_attendance'],
+  manager:['view_employees','log_events','view_events','view_training','view_attendance'],
   viewer:['view_employees','view_events','view_training'],
 };
 
@@ -2906,7 +2911,7 @@ function renderEmployees(){
     return`<tr onclick="viewEmp(${emp.id})" style="cursor:pointer">
       <td><div class="emp-cell"><div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div><div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.email}</div></div></div></td>
       <td>${emp.dept}</td><td>${emp.role}</td><td>${fDate(emp.start)}</td>
-      <td style="font-weight:500">${sal}</td><td>${sB(emp.status)}</td>
+      <td style="font-weight:500">${sal}</td><td>${sB(emp.status)}${emp.attendanceEditor?'<span class="badge" style="background:#1E144520;color:#1E1445;margin-left:4px" title="Attendance Editor">&#x1F4CA; Att. Editor</span>':''}</td>
       <td class="ts tm">${cnt}</td>
       <td>${canEdit()?`<button class="btn btn-xs btn-danger" onclick="event.stopPropagation();deleteEmployee(${emp.id})" title="Delete employee">✕</button>`:''}</td>
     </tr>`;
@@ -3228,7 +3233,7 @@ function viewEmp(id){
           📷<input type="file" accept="image/*" style="display:none" onchange="uploadPhotoFile(${id},this)">
         </label>`:''}
       </div>
-      <div style="flex:1"><div style="font-size:16px;font-weight:600">${emp.name}</div><div class="tm ts">${emp.role} · ${emp.dept}</div><div style="margin-top:6px">${sB(emp.status)}</div></div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:600">${emp.name}</div><div class="tm ts">${emp.role} · ${emp.dept}</div><div style="margin-top:6px"><div style=\"display:flex;gap:5px;flex-wrap:wrap\">${sB(emp.status)}${emp.attendanceEditor?'<span class="badge" style="background:#1E144520;color:#1E1445">&#x1F4CA; Att. Editor</span>':''}</div></div></div>
       <div style="display:flex;gap:6px;flex-direction:column;align-items:flex-end">
         <button class="btn btn-sm pdf-btn" onclick="generateEmployeePDF(${id})">⬇ PDF Report</button>
         ${canEdit()?`<button class="btn btn-sm btn-primary" onclick="closeModal();openModal('editEmployee',${id})">Edit</button>`:''}
@@ -3348,6 +3353,7 @@ function viewEmp(id){
       ${canEdit()&&emp.status==='active'?`<button class="btn btn-danger btn-sm" onclick="closeModal();openModal('offboard',${id})">Offboard</button>`:''}
       ${canEdit()&&emp.status==='offboarded'?`<button class="btn btn-primary btn-sm" onclick="closeModal();openModal('reonboard',${id})">↩ Re-onboard</button>`:''}
       ${canEdit()?`<button class="btn btn-xs" style="border-color:var(--red);color:var(--red)" onclick="closeModal();deleteEmployee(${id})">🗑 Delete record</button>`:''}
+      ${canEdit()&&emp.status!=='offboarded'&&!getUsers().find(u=>u.empId&&String(u.empId)===String(emp.id))?`<button class="btn btn-sm" style="background:#1E1445;color:#fff;border-color:#1E1445" onclick="autoCreateUserForEmployee(gE(${id}))">&#128273; Create HR Account</button>`:''}
       <button class="btn btn-primary btn-sm" onclick="closeModal()">Close</button>
     </div>`;
   document.getElementById('mb').classList.add('open');
@@ -3398,7 +3404,7 @@ function openModal(type,pid,pid2){
       <div class="fr"><div class="fg"><label class="fl">Phone</label><input class="fi" id="fph" value="${emp?.phone||''}" placeholder="+230 or +27 number"></div>
       <div class="fg"><label class="fl">Start date</label><input class="fi" id="fst" type="date" value="${emp?.start||td()}"></div></div>
       <div class="fsec">Role</div>
-      <div class="fr"><div class="fg"><label class="fl">Job title / Role</label><select class="fs" id="fr2"><option value="">— Select title —</option>${getSettings().jobTitles.map(t=>`<option value="${t}" ${emp?.role===t?"selected":""}>${t}</option>`).join("")}${emp?.role&&!getSettings().jobTitles.includes(emp.role)?`<option value="${emp.role}" selected>${emp.role}</option>`:""}<option value="__custom">&#9999; Other (type below)&hellip;</option></select><input class="fi" id="fr2c" placeholder="Custom title&hellip;" style="margin-top:5px" value="${emp?.role&&!getSettings().jobTitles.includes(emp.role)?emp.role:""}" oninput="document.getElementById('fr2').value='__custom'"></div>
+      <div class="fr"><div class="fg"><label class="fl">Job title / Role</label><select class="fs" id="fr2"><option value="">— Select title —</option>${(getSettings().jobTitles||[]).map(t=>`<option value="${t}" ${emp?.role===t?"selected":""}>${t}</option>`).join("")}${emp?.role&&!(getSettings().jobTitles||[]).includes(emp.role)?`<option value="${emp.role}" selected>${emp.role}</option>`:""}<option value="__custom">&#9999; Other (type below)&hellip;</option></select><input class="fi" id="fr2c" placeholder="Custom title&hellip;" style="margin-top:5px" value="${emp?.role&&!(getSettings().jobTitles||[]).includes(emp.role)?emp.role:""}" oninput="document.getElementById('fr2').value='__custom'"></div>
       <div class="fg"><label class="fl">Department</label><select class="fs" id="fd">${getDepts().map(d=>`<option ${emp?.dept===d?'selected':''}>${d}</option>`).join('')}</select></div></div>
       <div class="fg"><label class="fl">Manager</label><input class="fi" id="fm" value="${emp?.manager||''}" placeholder="Manager name"></div>
       <div class="fg"><label class="fl">Mobile clock-in</label>
@@ -3407,13 +3413,22 @@ function openModal(type,pid,pid2){
           <option value="app">App — can clock in directly from the HR app (no QR needed)</option>
           <option value="qr">QR mobile — can clock in from phone by scanning a location QR code</option>
         </select>
-        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Admin, HR and managers can always clock in from the app. For other employees, choose kiosk (default), app or QR.</div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">All employees can use the entrance kiosk. This setting also controls whether they can clock in from a phone (app) or QR scan.</div>
       </div></div>
       <div class="fg"><label class="fl">Kiosk PIN (4 digits)</label>
         <input class="fi" id="femp-pin" type="password" inputmode="numeric" maxlength="4"
-          value="${emp?.pin?'••••':''}" placeholder="Leave blank for no PIN access"
+          value="${emp?.pin?'••••':''}" placeholder="Leave blank — employee selects their name and taps confirm (no PIN needed)"
           style="letter-spacing:.2em;font-size:18px">
         <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Used for clock in/out on the shared tablet kiosk. Leave blank to disable kiosk access for this employee.</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg2);border-radius:var(--radius);margin-bottom:12px">
+        <input type="checkbox" id="fatt-editor" style="width:16px;height:16px;accent-color:#1E1445;cursor:pointer;flex-shrink:0"
+          ${emp?.attendanceEditor?'checked':''} onchange="this.closest('.modal-box').querySelector('#fatt-editor-badge').style.display=this.checked?'inline-flex':'none'">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:500">Attendance Editor</div>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:1px">Gives this employee access to the Attendance dashboard (e.g. HOD reviewing their team)</div>
+        </div>
+        <span id="fatt-editor-badge" style="display:${emp?.attendanceEditor?'inline-flex':'none'};background:#1E144520;color:#1E1445;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">Active</span>
       </div>
       <div class="fsec">Compensation</div>
       <div class="fr3"><div class="fg"><label class="fl">Salary amount</label><input class="fi" id="fsal" type="number" value="${emp?.salary?.amount||''}" placeholder="50000"></div>
@@ -3677,7 +3692,7 @@ function submitAdd(){
   const sa=parseFloat(document.getElementById('fsal').value);
   const newEmp={
     id:Date.now(),name,email,phone,
-    role:document.getElementById('fr2').value||'—',
+    role:(()=>{const rv=(document.getElementById('fr2')?.value||'').trim();return rv&&rv!=='__custom'?rv:(document.getElementById('fr2c')?.value||'').trim()||'—';})(),
     dept:document.getElementById('fd').value,
     manager:document.getElementById('fm').value||'—',
     start:document.getElementById('fst').value||td(),
@@ -3686,6 +3701,7 @@ function submitAdd(){
     checklist:(()=>{const d=(getSettings().checklistDefaults||['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done']);return Object.fromEntries(d.map(k=>[k,false]));})(),
     files:[],photoUrl:null,
     clockMode:document.getElementById('fclockmode')?.value||'kiosk',
+    attendanceEditor:document.getElementById('fatt-editor')?.checked||false,
     pinHash:(()=>{const p=(document.getElementById('femp-pin')?.value||'').replace(/[^0-9]/g,'');return p.length===4?simpleHash(p):null;})(),
   };
   showLoader('Saving…');
@@ -3700,13 +3716,9 @@ function submitAdd(){
       employeeName:name, role:newEmp.role, dept:newEmp.dept,
       startDate:newEmp.start, manager:newEmp.manager, addedBy:CU.name
     });
-    // Auto-create user account if they have a phone number
     closeModal();
     renderDashboard();
-    toast(name+' added. Onboarding started.','success');
-    if(phone){
-      setTimeout(()=>autoCreateUserForEmployee(s), 400);
-    }
+    toast(name+' added. Kiosk access ready.','success');
   }).catch(err=>{
     hideLoader();
     console.error('Save employee error:',err);
@@ -3714,7 +3726,6 @@ function submitAdd(){
     saveEmps(_cache.emps);
     addNotif('New hire added locally: '+name,'success');
     closeModal();renderDashboard();toast(name+' added (saved locally).','success');
-    if(phone) setTimeout(()=>autoCreateUserForEmployee(newEmp), 400);
   });
 }
 
@@ -3765,10 +3776,12 @@ function submitEdit(id){
   emp.name=document.getElementById('fn').value.trim()||emp.name;
   emp.email=document.getElementById('fe').value.trim()||emp.email;
   emp.phone=normalisePhone(document.getElementById('fph').value);
-  emp.role=document.getElementById('fr2').value||emp.role;
+  emp.role=(()=>{const rv=(document.getElementById('fr2')?.value||'').trim();return rv&&rv!=='__custom'?rv:(document.getElementById('fr2c')?.value||'').trim()||emp.role;})();
   emp.dept=document.getElementById('fd').value;emp.manager=document.getElementById('fm').value||emp.manager;
   const cmEl2=document.getElementById('fclockmode');
   if(cmEl2) emp.clockMode=cmEl2.value||'kiosk';
+  const attEdEl=document.getElementById('fatt-editor');
+  if(attEdEl!==null) emp.attendanceEditor=attEdEl.checked;
   const sa=parseFloat(document.getElementById('fsal').value);
   if(sa){if(!emp.salary)emp.salary={amount:sa,currency:'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[]};
     emp.salary.amount=sa;emp.salary.currency=document.getElementById('fcur').value;emp.salary.frequency=document.getElementById('ffreq').value;emp.salary.nextReview=document.getElementById('fnr').value||emp.salary.nextReview;}
@@ -4501,7 +4514,9 @@ function getSettings(){
     hrPhone:'',
     website:'',
     checklistDefaults:['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done'],
-    departments:['Engineering','Marketing','HR','Finance','Sales','Design','Operations']
+    departments:['Engineering','Marketing','HR','Finance','Sales','Design','Operations'],
+    jobTitles:['Funeral Director','Embalmer','Mortuary Technician','Hearse Driver','Administrative Assistant','Accounts Officer','HR Manager','Operations Manager','Funeral Arranger','Receptionist'],
+    customEventTypes:[]
   });
 }
 
@@ -4549,6 +4564,17 @@ function renderSettings(){
   const sc2=document.getElementById('settings-secondary-color');
   pc.oninput=()=>{document.getElementById('settings-primary-hex').value=pc.value;updateColorPreview(pc.value,document.getElementById('settings-secondary-color').value);};
   sc2.oninput=()=>{document.getElementById('settings-secondary-hex').value=sc2.value;updateColorPreview(document.getElementById('settings-primary-color').value,sc2.value);};
+}
+
+function applyAttEditorPerm(){
+  if(!CU) return;
+  if(CU.role==='admin'||CU.role==='hr'||CU.role==='manager') return; // already have view_attendance
+  const empId = CU.empId;
+  if(!empId) return;
+  const emp = gE(empId);
+  if(emp?.attendanceEditor){
+    CU.customPerms = [...(CU.customPerms||[]),'view_attendance','view_employees'];
+  }
 }
 
 function updateColorPreview(primary,secondary){
@@ -6759,8 +6785,16 @@ async function dbGetLeaveRequests(){
     if(error){ return local; }
     return data.map(r=>({
       id:r.id, empId:r.emp_id, type:r.type, fromDate:r.from_date, toDate:r.to_date,
-      days:r.days, reason:r.reason||'', status:r.status, reviewedBy:r.reviewed_by||'',
-      reviewNote:r.review_note||'', createdAt:r.created_at, updatedAt:r.updated_at
+      days:r.days, reason:r.reason||'', status:r.status,
+      hodStatus:r.hod_status||'pending',
+      hodApprovedBy:r.hod_approved_by||'',
+      hodApprovedAt:r.hod_approved_at||null,
+      hrStatus:r.hr_status||'pending',
+      hrApprovedBy:r.hr_approved_by||'',
+      hrApprovedAt:r.hr_approved_at||null,
+      requesterIsHOD:r.requester_is_hod||false,
+      reviewedBy:r.reviewed_by||'', reviewNote:r.review_note||'',
+      createdAt:r.created_at, updatedAt:r.updated_at
     }));
   } catch(e){ return local; }
 }
@@ -6776,6 +6810,13 @@ async function dbSaveLeaveRequest(req){
     const row = {
       emp_id:req.empId, type:req.type, from_date:req.fromDate, to_date:req.toDate,
       days:req.days, reason:req.reason||'', status:req.status,
+      hod_status:req.hodStatus||'pending',
+      hod_approved_by:req.hodApprovedBy||null,
+      hod_approved_at:req.hodApprovedAt||null,
+      hr_status:req.hrStatus||'pending',
+      hr_approved_by:req.hrApprovedBy||null,
+      hr_approved_at:req.hrApprovedAt||null,
+      requester_is_hod:req.requesterIsHOD||false,
       reviewed_by:req.reviewedBy||null, review_note:req.reviewNote||null,
       updated_at:new Date().toISOString()
     };
@@ -6807,14 +6848,22 @@ async function dbGetLeaveBalances(){
 }
 
 async function dbSaveLeaveBalance(empId, balances){
+  // Accept (empId, balances) or a single object with .empId
+  let eid = empId, bal = balances;
+  if(typeof empId === 'object' && empId !== null){
+    eid = empId.empId; bal = empId.balances || empId;
+  }
   const local = S.get('leaveBalances',{});
-  local[empId] = balances;
+  local[eid] = bal;
   S.set('leaveBalances', local);
   _leaveBalances = local;
   if(!sbReady()) return;
   try{
+    const ann = bal?.annual ?? bal?.annual?.entitlement ?? null;
+    const sick = bal?.sick ?? bal?.sick?.entitlement ?? null;
+    const cas  = bal?.casual ?? bal?.casual?.entitlement ?? null;
     await _sb.from('leave_balances').upsert(
-      {emp_id:empId, annual:balances.annual, sick:balances.sick, casual:balances.casual, updated_at:new Date().toISOString()},
+      {emp_id:eid, annual:ann, sick:sick, casual:cas, updated_at:new Date().toISOString()},
       {onConflict:'emp_id'}
     );
   } catch(e){ console.error('Save leave balance error:',e); }
@@ -7399,7 +7448,7 @@ async function loginPinSubmit(){
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
   const org=S.get('org','Moura HR');
   const nel=document.getElementById('org-name-nav');if(nel)nel.textContent=org;
-  applyPermissions();applyStoredBranding();initInactivityTracking();
+  applyPermissions();applyAttEditorPerm();applyStoredBranding();initInactivityTracking();
 
   // Route by role
   if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
@@ -7451,7 +7500,7 @@ function openKiosk(){
 function renderKioskEmpList(filter){
   const el = document.getElementById('kiosk-emp-list');
   if(!el) return;
-  const emps = getEmps().filter(e=>e.status!=='offboarded'&&e.pinHash);
+  const emps = getEmps().filter(e=>e.status!=='offboarded');
   const filtered = filter
     ? emps.filter(e=>e.name.toLowerCase().includes(filter.toLowerCase()))
     : emps;
@@ -7486,7 +7535,14 @@ function kioskSelectEmp(empId){
   if(!emp) return;
   _kioskSelectedEmp = emp;
   _kioskPin = '';
-  // Show step 2 — PIN entry
+  // No PIN set — go straight to clock-in confirmation
+  if(!emp.pinHash){
+    const _la = S.get('attendance',[]);
+    const _or = _la.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut)||null;
+    window._kioskPendingEmp=emp; window._kioskPendingRec=_or; window._kioskPendingLocalAtt=_la;
+    kioskShowConfirmation(emp,_or,_la); return;
+  }
+  // Has PIN — show PIN entry
   document.getElementById('kiosk-step-select').style.display='none';
   document.getElementById('kiosk-step-pin').style.display='block';
   // Clear search input
@@ -7745,7 +7801,7 @@ async function confirmPinLogin(empId, pin){
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
   const org=S.get('org','Moura HR');
   const nel=document.getElementById('org-name-nav');if(nel)nel.textContent=org;
-  applyPermissions();applyStoredBranding();initInactivityTracking();
+  applyPermissions();applyAttEditorPerm();applyStoredBranding();initInactivityTracking();
   if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
     renderDashboard();setTimeout(()=>showManagerLoginChoice(user),400);
   } else {
@@ -8610,7 +8666,7 @@ function renderAttReview(){
     <thead><tr style="background:var(--bg2)">
       <th style="text-align:left;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">Employee</th>
       <th style="text-align:left;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">Dept</th>
-      <th style="text-align:center;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">Days</th>
+      <th style="text-align:left;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">Daily Hours</th>
       <th style="text-align:left;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">Anomalies</th>
       <th style="text-align:left;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">HR Note</th>
       <th style="text-align:center;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2)">Reviewed</th>
@@ -8618,31 +8674,79 @@ function renderAttReview(){
     </tr></thead>
     <tbody>${_attReviewData.map((row,idx)=>{
       const c = aColor(row.emp.name);
-      const daysWorked = [...new Set(row.recs.filter(r=>r.clockOut).map(r=>r.date))].length;
       const anom = row.anomalies;
+
+      // ── Group records by date ─────────────────────────────────────────────
+      const byDate = {};
+      row.recs.forEach(r=>{
+        if(!byDate[r.date]) byDate[r.date]=[]; byDate[r.date].push(r);
+      });
+      const dates = Object.keys(byDate).sort();
+      const totalMins = dates.reduce((sum,d)=>{
+        return sum + byDate[d].reduce((s,r)=>s+(calcDuration(r.clockIn,r.clockOut)||0),0);
+      },0);
+      const daysWithComplete = dates.filter(d=>byDate[d].some(r=>r.clockOut)).length;
+
+      // ── Per-day summary chips ─────────────────────────────────────────────
+      const dayChips = dates.map(d=>{
+        const recs = byDate[d];
+        const dayMins = recs.reduce((s,r)=>s+(calcDuration(r.clockIn,r.clockOut)||0),0);
+        const incomplete = recs.some(r=>!r.clockOut);
+        const isAnomDay  = anom.some(a=>a.date===d);
+        const chipColor  = isAnomDay?'var(--amber)':incomplete?'var(--text3)':'var(--green)';
+        const detailRows = recs.map(r=>{
+          const dur = calcDuration(r.clockIn,r.clockOut);
+          return `<div style="display:flex;gap:8px;align-items:center;padding:3px 0;font-size:11.5px;color:var(--text2)">
+            <span style="min-width:54px;color:var(--text3)">${fmtTime(r.clockIn)}</span>
+            <span style="color:var(--text3)">→</span>
+            <span style="min-width:54px">${r.clockOut?fmtTime(r.clockOut):'<span style="color:var(--red)">open</span>'}</span>
+            <span style="color:var(--text3);font-size:11px">${dur?fmtDuration(dur):'—'}</span>
+            ${r.location?`<span style="font-size:10px;color:var(--text3);background:var(--bg2);border-radius:4px;padding:1px 5px">${r.location}</span>`:''}
+          </div>`;
+        }).join('');
+        return `<div class="pay-day-chip" onclick="togglePayDay(this)" style="display:inline-flex;flex-direction:column;margin:2px;border-radius:6px;border:1px solid var(--border);background:#fff;cursor:pointer;min-width:64px;vertical-align:top">
+          <div style="display:flex;gap:4px;align-items:center;padding:4px 7px">
+            <span style="font-size:10.5px;font-weight:600;color:var(--text2)">${d.slice(5).replace('-','/')}</span>
+            <span style="font-size:11px;font-weight:600;color:${chipColor}">${dayMins?fmtDuration(dayMins):incomplete?'open':'—'}</span>
+            <span style="font-size:9px;color:var(--text3)">${recs.length>1?'('+recs.length+')':''}</span>
+            <svg style="width:9px;height:9px;color:var(--text3);margin-left:auto;flex-shrink:0;transition:transform .15s" class="pay-day-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="pay-day-detail" style="display:none;padding:4px 8px 6px;border-top:1px solid var(--border);background:var(--bg2);border-radius:0 0 5px 5px">
+            ${detailRows}
+          </div>
+        </div>`;
+      }).join('');
+
+      const daysSummary = `<div style="margin-bottom:4px">
+        <span style="font-size:12px;font-weight:600">${daysWithComplete}d</span>
+        <span style="font-size:11px;color:var(--text3);margin-left:4px">/ ${fmtDuration(totalMins)} total</span>
+      </div>
+      <div>${dayChips||'<span style="color:var(--text3);font-size:12px">No records</span>'}</div>`;
+
       const anomHtml = anom.length===0
         ? '<span style="color:var(--green);font-size:12px">✓ Clean</span>'
         : anom.map(a=>{
             const col = a.type==='missing'||a.type==='no_clockout'||a.type==='duplicate'?'var(--red)':'var(--amber)';
             return `<div style="font-size:11.5px;color:${col}">${a.date} — ${a.desc}</div>`;
           }).join('');
+
       return `<tr style="border-bottom:1px solid var(--border);background:${row.reviewed?'':anom.length?'#fffbf0':''}">
-        <td style="padding:10px 12px"><div class="emp-cell">
+        <td style="padding:10px 12px;vertical-align:top"><div class="emp-cell">
           <div class="avatar" style="background:${c}22;color:${c};width:26px;height:26px;font-size:10px">${inits(row.emp.name)}</div>
           <div style="font-weight:500">${row.emp.name}</div>
         </div></td>
-        <td style="padding:10px 12px;color:var(--text3);font-size:12px">${row.emp.dept||'—'}</td>
-        <td style="padding:10px 12px;text-align:center;font-size:13px">${daysWorked}</td>
-        <td style="padding:10px 12px">${anomHtml}</td>
-        <td style="padding:10px 12px">
+        <td style="padding:10px 12px;color:var(--text3);font-size:12px;vertical-align:top">${row.emp.dept||'—'}</td>
+        <td style="padding:10px 12px;vertical-align:top;max-width:380px">${daysSummary}</td>
+        <td style="padding:10px 12px;vertical-align:top">${anomHtml}</td>
+        <td style="padding:10px 12px;vertical-align:top">
           <input id="hr-note-${idx}" class="fi" value="${row.hrNote||''}" placeholder="Note…"
             style="width:140px;padding:4px 8px;font-size:12px" onchange="updateHRNote(${idx},this.value)">
         </td>
-        <td style="padding:10px 12px;text-align:center">
+        <td style="padding:10px 12px;text-align:center;vertical-align:top">
           <input type="checkbox" ${row.reviewed?'checked':''} style="width:16px;height:16px;accent-color:var(--green);cursor:pointer"
             onchange="toggleReviewed(${idx},this.checked)">
         </td>
-        <td style="padding:10px 12px">
+        <td style="padding:10px 12px;vertical-align:top">
           <div style="display:flex;gap:4px;flex-wrap:wrap">
             <button class="btn btn-xs" onclick="openAttendanceEditModal('${row.emp.id}','${_payrollPeriod?.from}','${_payrollPeriod?.to}',${idx})">Edit Att.</button>
             ${anom.length?`<button class="btn btn-xs btn-primary" onclick="quickFixAnomalies(${idx})">Fix issues</button>`:''}
@@ -8651,6 +8755,15 @@ function renderAttReview(){
       </tr>`;
     }).join('')}</tbody></table></div>`;
 }
+
+function togglePayDay(chip){
+  const detail = chip.querySelector('.pay-day-detail');
+  const arrow  = chip.querySelector('.pay-day-arrow');
+  const open   = detail.style.display === 'none';
+  detail.style.display = open ? 'block' : 'none';
+  if(arrow) arrow.style.transform = open ? 'rotate(180deg)' : '';
+}
+
 
 function toggleReviewed(idx, val){
   if(_attReviewData[idx]) _attReviewData[idx].reviewed = val;
@@ -9724,12 +9837,22 @@ async function hrConfirmLeave(reqId, approve){
 
 async function deductLeaveBalance(req){
   try{
-    const balArr = await dbGetLeaveBalances();
-    const lb = balArr.find(b=>String(b.empId)===String(req.empId));
-    if(lb?.balances?.[req.type]){
-      lb.balances[req.type].used = (lb.balances[req.type].used||0) + req.days;
-      lb.balances[req.type].remaining = (lb.balances[req.type].entitlement||0) - lb.balances[req.type].used;
-      await dbSaveLeaveBalance(lb);
+    // Get leave balances — handles both array and object shapes
+    const balData = await dbGetLeaveBalances();
+    // Normalise: localStorage uses {empId:{annual,...}}, Supabase returns same shape
+    const empBal = Array.isArray(balData)
+      ? balData.find(b=>String(b.empId)===String(req.empId))
+      : (balData[req.empId] ? {empId:req.empId, balances:balData[req.empId]} : null);
+    const typeKey = req.type; // e.g. 'annual', 'sick'
+    if(empBal?.balances?.[typeKey] !== undefined){
+      empBal.balances[typeKey].used = (empBal.balances[typeKey].used||0) + req.days;
+      empBal.balances[typeKey].remaining = (empBal.balances[typeKey].entitlement||empBal.balances[typeKey].used||0);
+      await dbSaveLeaveBalance(empBal);
+    } else if(empBal?.[typeKey] !== undefined || (balData[req.empId]?.[typeKey] !== undefined)){
+      // Flat shape {annual:20, sick:15, ...}
+      const flat = empBal || {empId:req.empId, ...balData[req.empId]};
+      if(flat[typeKey] !== undefined) flat[typeKey] = Math.max(0,(flat[typeKey]||0) - req.days);
+      await dbSaveLeaveBalance(flat);
     }
   } catch(e){ console.warn('Balance deduct error:', e); }
 }
