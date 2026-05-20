@@ -1363,7 +1363,7 @@ function initSupabase(){
   const url = localStorage.getItem('sb_url') || '';
   const key = localStorage.getItem('sb_key') || '';
   if(url && key){
-    _sb = supabase.createClient(url, key);
+    _sb = supabase.createClient(url, key, {global:{headers:{'x-app-secret':_APP_SECRET}}});
     _sbSetSecret(); // fire immediately, non-blocking at init
     // Immediately authenticate all requests with app session secret
     _sb.rpc && _sbSetSecret();
@@ -1388,7 +1388,7 @@ async function saveSbCredentials(){
   if(!url||!key){ showSbStatus('Enter both URL and key.','error'); return; }
   showSbStatus('Testing connection…','info');
   try{
-    const testClient = supabase.createClient(url, key);
+    const testClient = supabase.createClient(url, key, {global:{headers:{'x-app-secret':_APP_SECRET}}});
     const {error} = await testClient.from('hr_users').select('id').limit(1);
     if(error) throw error;
     // Connection works — persist credentials permanently
@@ -1424,12 +1424,8 @@ const S={
 // ── APP SESSION SECRET — must match app.app_secret in Supabase SQL ──────────
 const _APP_SECRET = 'MHR_9A_wRcm-HPdnuZCbJ4NXMZJxjuTYceubJUlXqyqefYA';
 async function _sbSetSecret(){
-  if(!_sb) return;
-  try{
-    await _sb.rpc('set_app_secret', {secret: _APP_SECRET});
-  } catch(e){
-    console.warn('RLS secret not set — queries may return empty. Run schema_fix.sql.');
-  }
+  // No-op: secret is now sent as a request header on every Supabase call.
+  // The x-app-secret header is set when createClient() is called.
 }
 // Call set_config directly via a Postgres function
 // Create this function in Supabase SQL editor:
@@ -1962,7 +1958,7 @@ async function boot(){
       // Init Supabase if not already
       const sbUrl=localStorage.getItem('sb_url')||'';
       const sbKey=localStorage.getItem('sb_key')||'';
-      if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey);
+      if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey,{global:{headers:{'x-app-secret':_APP_SECRET}}});
     await _sbSetSecret(); }
       // Load data in background
       showLoader('Loading…');
@@ -2089,7 +2085,7 @@ async function doSetup(){
     localStorage.setItem('sb_url',sbUrlSetup);
     localStorage.setItem('sb_key',sbKeySetup);
     localStorage.setItem('sb_connected','1');
-    _sb=supabase.createClient(sbUrlSetup,sbKeySetup);
+    _sb=supabase.createClient(sbUrlSetup,sbKeySetup,{global:{headers:{'x-app-secret':_APP_SECRET}}});
     await _sbSetSecret();
   }
   // Save user to DB or local
@@ -2119,7 +2115,7 @@ async function doLogin(){
   const p=document.getElementById('lp').value;
   const sbUrl=localStorage.getItem('sb_url')||'';
   const sbKey=localStorage.getItem('sb_key')||'';
-  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey); }
+  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey,{global:{headers:{'x-app-secret':_APP_SECRET}}}); }
   if(sbReady()) await _sbSetSecret();
 
   // Try multiple formats in order:
@@ -6149,7 +6145,7 @@ async function checkSetupToken(){
   if(sbUrl && sbKey){
     localStorage.setItem('sb_url', sbUrl);
     localStorage.setItem('sb_key', sbKey);
-    if(!_sb) _sb = supabase.createClient(sbUrl, sbKey);
+    if(!_sb) _sb = supabase.createClient(sbUrl, sbKey, {global:{headers:{'x-app-secret':_APP_SECRET}}});
     _sbSetSecret();
   }
 
@@ -7438,7 +7434,7 @@ async function loginPinSubmit(){
   // Connect Supabase if needed
   const sbUrl=localStorage.getItem('sb_url')||'';
   const sbKey=localStorage.getItem('sb_key')||'';
-  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey); }
+  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey,{global:{headers:{'x-app-secret':_APP_SECRET}}}); }
   if(sbReady()) await _sbSetSecret();
 
   // Reload employees AND users fresh from DB/localStorage before PIN lookup
