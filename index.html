@@ -1428,10 +1428,7 @@ async function _sbSetSecret(){
   try{
     await _sb.rpc('set_app_secret', {secret: _APP_SECRET});
   } catch(e){
-    // Fallback: use raw SQL via rpc if set_app_secret function not available
-    try{
-      await _sb.from('_rls_auth').select('1').eq('secret',_APP_SECRET);
-    } catch(_){}
+    console.warn('RLS secret not set — queries may return empty. Run schema_fix.sql.');
   }
 }
 // Call set_config directly via a Postgres function
@@ -2122,8 +2119,8 @@ async function doLogin(){
   const p=document.getElementById('lp').value;
   const sbUrl=localStorage.getItem('sb_url')||'';
   const sbKey=localStorage.getItem('sb_key')||'';
-  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey);
-    await _sbSetSecret(); }
+  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey); }
+  if(sbReady()) await _sbSetSecret();
 
   // Try multiple formats in order:
   let user = null;
@@ -7441,8 +7438,8 @@ async function loginPinSubmit(){
   // Connect Supabase if needed
   const sbUrl=localStorage.getItem('sb_url')||'';
   const sbKey=localStorage.getItem('sb_key')||'';
-  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey);
-    await _sbSetSecret(); }
+  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey); }
+  if(sbReady()) await _sbSetSecret();
 
   // Reload employees AND users fresh from DB/localStorage before PIN lookup
   // This ensures pinHash fields are current even on first page load
