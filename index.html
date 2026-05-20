@@ -1364,6 +1364,9 @@ function initSupabase(){
   const key = localStorage.getItem('sb_key') || '';
   if(url && key){
     _sb = supabase.createClient(url, key);
+    setTimeout(()=>{ if(_sb) _sbSetSecret(); }, 0);
+    // Immediately authenticate all requests with app session secret
+    _sb.rpc && _sbSetSecret();
     // Credentials already saved — hide connection UI on both screens
     const loginSec = document.getElementById('sb-config-section');
     if(loginSec) loginSec.style.display = 'none';
@@ -1417,6 +1420,28 @@ const S={
   get:(k,def=null)=>{try{const v=localStorage.getItem('pdhr_'+k);return v?JSON.parse(v):def;}catch{return def;}},
   set:(k,v)=>{try{localStorage.setItem('pdhr_'+k,JSON.stringify(v));}catch{}}
 };
+
+// ── APP SESSION SECRET — must match app.app_secret in Supabase SQL ──────────
+const _APP_SECRET = 'MHR_9A_wRcm-HPdnuZCbJ4NXMZJxjuTYceubJUlXqyqefYA';
+async function _sbSetSecret(){
+  if(!_sb) return;
+  try{
+    await _sb.rpc('set_app_secret', {secret: _APP_SECRET});
+  } catch(e){
+    // Fallback: use raw SQL via rpc if set_app_secret function not available
+    try{
+      await _sb.from('_rls_auth').select('1').eq('secret',_APP_SECRET);
+    } catch(_){}
+  }
+}
+// Call set_config directly via a Postgres function
+// Create this function in Supabase SQL editor:
+// CREATE OR REPLACE FUNCTION set_app_secret(secret text)
+// RETURNS void LANGUAGE sql AS $$
+//   SELECT set_config('app.session_secret', secret, true);
+// $$;
+
+
 
 // In-memory cache — declared here so all const getters below can reference them
 let _cache={emps:[],evts:[],progs:[],asgn:[]};
@@ -1936,7 +1961,8 @@ async function boot(){
       // Init Supabase if not already
       const sbUrl=localStorage.getItem('sb_url')||'';
       const sbKey=localStorage.getItem('sb_key')||'';
-      if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey); }
+      if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey);
+    setTimeout(()=>{ if(_sb) _sbSetSecret(); }, 0); }
       // Load data in background
       showLoader('Loading…');
       Promise.all([dbGetEmployees(),dbGetEvents(),dbGetPrograms(),dbGetAssignments(),dbGetUsers()])
@@ -2063,6 +2089,7 @@ function doSetup(){
     localStorage.setItem('sb_key',sbKeySetup);
     localStorage.setItem('sb_connected','1');
     _sb=supabase.createClient(sbUrlSetup,sbKeySetup);
+    setTimeout(()=>{ if(_sb) _sbSetSecret(); }, 0);
   }
   // Save user to DB or local
   if(sbReady()){
@@ -2091,7 +2118,8 @@ async function doLogin(){
   const p=document.getElementById('lp').value;
   const sbUrl=localStorage.getItem('sb_url')||'';
   const sbKey=localStorage.getItem('sb_key')||'';
-  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey); }
+  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey);
+    setTimeout(()=>{ if(_sb) _sbSetSecret(); }, 0); }
 
   // Try multiple formats in order:
   let user = null;
@@ -6090,6 +6118,7 @@ async function checkSetupToken(){
     localStorage.setItem('sb_url', sbUrl);
     localStorage.setItem('sb_key', sbKey);
     if(!_sb) _sb = supabase.createClient(sbUrl, sbKey);
+    setTimeout(()=>{ if(_sb) _sbSetSecret(); }, 0);
   }
 
   // Find user with this token
@@ -7377,7 +7406,8 @@ async function loginPinSubmit(){
   // Connect Supabase if needed
   const sbUrl=localStorage.getItem('sb_url')||'';
   const sbKey=localStorage.getItem('sb_key')||'';
-  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey); }
+  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey);
+    setTimeout(()=>{ if(_sb) _sbSetSecret(); }, 0); }
 
   // Reload employees AND users fresh from DB/localStorage before PIN lookup
   // This ensures pinHash fields are current even on first page load
