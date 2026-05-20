@@ -633,7 +633,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
         <button class="fb" onclick="setEF('onboarding',this)">Onboarding</button>
         <button class="fb" onclick="setEF('offboarded',this)">Offboarded</button>
       </div>
-      <div class="card"><table><thead><tr><th>Employee</th><th>Department</th><th>Role</th><th>Start</th><th>Salary</th><th>Status</th><th>Events</th><th></th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
+      <div class="card"><table><thead><tr><th>Employee</th><th>Department</th><th>Role</th><th>Start</th><th>Salary</th><th>Status</th><th>HR Account</th><th>Events</th><th></th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
     </div>
 
     <!-- ONBOARDING -->
@@ -1320,8 +1320,6 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
   <div class="loader-box"><div class="loader-spinner"></div><span id="loader-msg">Loading…</span></div>
 </div>
 <div class="toast-container" id="tc"></div>
-
-
 <script>
 
 
@@ -2942,6 +2940,11 @@ function renderEmployees(){
       <td><div class="emp-cell"><div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div><div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.email}</div></div></div></td>
       <td>${emp.dept}</td><td>${emp.role}</td><td>${fDate(emp.start)}</td>
       <td style="font-weight:500">${sal}</td><td>${sB(emp.status)}${emp.attendanceEditor?'<span class="badge" style="background:#1E144520;color:#1E1445;margin-left:4px" title="Attendance Editor">&#x1F4CA; Att. Editor</span>':''}${emp.isHOD?'<span class="badge" style="background:#BA751720;color:#BA7517;margin-left:4px">HOD</span>':''}${emp.isSeniorHOD?'<span class="badge" style="background:#7F77DD20;color:#7F77DD;margin-left:4px">Sr. HOD</span>':''}</td>
+      <td style="font-size:12px">${(()=>{
+        const u=getUsers().find(u=>u.empId&&String(u.empId)===String(emp.id));
+        if(u) return `<span class="badge" style="background:#1E144520;color:#1E1445">&#10003; ${u.role[0].toUpperCase()+u.role.slice(1)}</span>`;
+        return '<span style="color:var(--text3);font-size:11.5px">No account</span>';
+      })()}</td>
       <td class="ts tm">${cnt}</td>
       <td>${canEdit()?`<button class="btn btn-xs btn-danger" onclick="event.stopPropagation();deleteEmployee(${emp.id})" title="Delete employee">✕</button>`:''}</td>
     </tr>`;
@@ -3284,6 +3287,12 @@ function viewEmp(id){
       <div class="ig-item"><div class="ig-label">Start Date</div><div class="ig-value">${fDate(emp.start)}</div></div>
       <div class="ig-item"><div class="ig-label">Phone</div><div class="ig-value">${emp.phone||'—'}</div></div>
       <div class="ig-item"><div class="ig-label">Email</div><div class="ig-value" style="font-size:12px;color:var(--blue)">${emp.email}</div></div>
+      <div class="ig-item"><div class="ig-label">HR Account</div><div class="ig-value">${(()=>{
+        const u=getUsers().find(u=>u.empId&&String(u.empId)===String(emp.id));
+        if(!u) return '<span style="color:var(--text3)">No account</span>';
+        const roleLabel=u.role[0].toUpperCase()+u.role.slice(1);
+        return `<span style="color:var(--green)">&#10003; Active</span> &middot; <span style="font-size:11.5px;color:var(--text2)">${roleLabel}</span> &middot; <span style="font-size:11px;color:var(--text3)">${u.username}</span>`;
+      })()}</div></div>
       ${emp.lastDay?`<div class="ig-item"><div class="ig-label">Last Day</div><div class="ig-value">${fDate(emp.lastDay)}</div></div>`:''}
       ${emp.reason?`<div class="ig-item"><div class="ig-label">Reason</div><div class="ig-value">${emp.reason}</div></div>`:''}
     </div>
@@ -3469,6 +3478,24 @@ function openModal(type,pid,pid2){
           <div style="font-size:11.5px;color:var(--text3);margin-top:1px">Gives this employee access to the Attendance dashboard (e.g. HOD reviewing their team)</div>
         </div>
         <span id="fatt-editor-badge" style="display:${emp?.attendanceEditor?'inline-flex':'none'};background:#1E144520;color:#1E1445;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">Active</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff8e7;border-radius:var(--radius);margin-bottom:8px;border:1px solid #f0d080">
+        <input type="checkbox" id="fis-hod" style="width:16px;height:16px;accent-color:#BA7517;cursor:pointer;flex-shrink:0"
+          ${emp?.isHOD?'checked':''} onchange="document.getElementById('fis-hod-badge').style.display=this.checked?'inline-flex':'none'">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:500">Head of Department (HOD)</div>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:1px">Can approve leave from employees whose Manager field matches their name</div>
+        </div>
+        <span id="fis-hod-badge" style="display:${emp?.isHOD?'inline-flex':'none'};background:#BA751720;color:#BA7517;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">HOD</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fef3ff;border-radius:var(--radius);margin-bottom:12px;border:1px solid #d8a0e8">
+        <input type="checkbox" id="fis-senior-hod" style="width:16px;height:16px;accent-color:#7F77DD;cursor:pointer;flex-shrink:0"
+          ${emp?.isSeniorHOD?'checked':''} onchange="document.getElementById('fis-senior-hod-badge').style.display=this.checked?'inline-flex':'none'">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:500">Senior HOD</div>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:1px">Can approve leave submitted by other HODs</div>
+        </div>
+        <span id="fis-senior-hod-badge" style="display:${emp?.isSeniorHOD?'inline-flex':'none'};background:#7F77DD20;color:#7F77DD;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">Sr. HOD</span>
       </div>
       <div class="fsec">Compensation</div>
       <div class="fr3"><div class="fg"><label class="fl">Salary amount</label><input class="fi" id="fsal" type="number" value="${emp?.salary?.amount||''}" placeholder="50000"></div>
