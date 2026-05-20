@@ -3724,6 +3724,16 @@ function submitAdd(){
   const phone=normalisePhone(document.getElementById('fph').value);
   if(!name){toast('Name is required.','error');return;}
   if(!email&&!phone){toast('Email or mobile number is required.','error');return;}
+  // Duplicate check — phone and email must be unique across all employees
+  const allEmps = getEmps();
+  if(phone){
+    const dupPhone = allEmps.find(e=>e.phone&&normalisePhone(e.phone)===phone);
+    if(dupPhone){toast('Mobile number already used by '+dupPhone.name+'. Each employee must have a unique number.','error');return;}
+  }
+  if(email){
+    const dupEmail = allEmps.find(e=>e.email&&e.email.toLowerCase()===email.toLowerCase());
+    if(dupEmail){toast('Email already used by '+dupEmail.name+'. Each employee must have a unique email.','error');return;}
+  }
   const sa=parseFloat(document.getElementById('fsal').value);
   const newEmp={
     id:Date.now(),name,email,phone,
@@ -3827,9 +3837,22 @@ async function autoCreateUserForEmployee(emp){
 
 function submitEdit(id){
   const emps=getEmps();const emp=emps.find(e=>String(e.id)===String(id));if(!emp)return;
-  emp.name=document.getElementById('fn').value.trim()||emp.name;
-  emp.email=document.getElementById('fe').value.trim()||emp.email;
-  emp.phone=normalisePhone(document.getElementById('fph').value);
+  const newName  = document.getElementById('fn').value.trim()||emp.name;
+  const newEmail = (document.getElementById('fe').value.trim()||emp.email||'').toLowerCase();
+  const newPhone = normalisePhone(document.getElementById('fph').value);
+  // Duplicate check — exclude self
+  const others = emps.filter(e=>String(e.id)!==String(id));
+  if(newPhone){
+    const dupPhone = others.find(e=>e.phone&&normalisePhone(e.phone)===newPhone);
+    if(dupPhone){toast('Mobile number already used by '+dupPhone.name+'.','error');return;}
+  }
+  if(newEmail){
+    const dupEmail = others.find(e=>e.email&&e.email.toLowerCase()===newEmail);
+    if(dupEmail){toast('Email already used by '+dupEmail.name+'.','error');return;}
+  }
+  emp.name  = newName;
+  emp.email = document.getElementById('fe').value.trim()||emp.email;
+  emp.phone = newPhone;
   emp.role=(()=>{const rv=(document.getElementById('fr2')?.value||'').trim();return rv&&rv!=='__custom'?rv:(document.getElementById('fr2c')?.value||'').trim()||emp.role;})();
   emp.dept=document.getElementById('fd').value;emp.manager=document.getElementById('fm').value||emp.manager;
   const cmEl2=document.getElementById('fclockmode');
