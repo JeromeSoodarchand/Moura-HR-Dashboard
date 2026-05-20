@@ -1708,17 +1708,17 @@ async function dbGetUsers(){
 
 async function dbSaveUser(user){
   if(!sbReady()){ const u=S.get('users',[]);const i=u.findIndex(x=>String(x.id)===String(user.id));if(i>=0)u[i]=user;else u.push(user);S.set('users',u);return user; }
-  const row={name:user.name,username:user.username,email:user.email||'',phone:user.phone||null,role:user.role,active:user.active,password_hash:user.passwordHash,emp_id:user.empId||null};
+  const row={name:user.name,username:user.username,email:user.email||null,phone:user.phone||null,role:user.role,active:user.active,password_hash:user.passwordHash,emp_id:user.empId||null,senior_hod:user.seniorHOD||false,cross_leave_visibility:user.crossLeaveVisibility||false};
   Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
   try{
     if(user.id && String(user.id).length<13){
       const {data,error}=await _sb.from('hr_users').update(row).eq('id',user.id).select().single();
       if(error){console.error('Update user error:',error);throw error;}
-      return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at};
+      return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at,seniorHOD:data.senior_hod||false,crossLeaveVisibility:data.cross_leave_visibility||false};
     } else {
       const {data,error}=await _sb.from('hr_users').insert(row).select().single();
       if(error){console.error('Insert user error:',error);throw error;}
-      return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at};
+      return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at,seniorHOD:data.senior_hod||false,crossLeaveVisibility:data.cross_leave_visibility||false};
     }
   } catch(err){
     console.error('dbSaveUser exception:',err);
@@ -1774,7 +1774,7 @@ function rowToEmp(r){
 function empToRow(e){
   const row={
     name:       e.name||'',
-    email:      (e.email||'').trim()||'',
+    email:      (e.email||'').trim()||null,
     phone:      e.phone||null,
     role:       e.role||null,
     dept:       e.dept||null,
