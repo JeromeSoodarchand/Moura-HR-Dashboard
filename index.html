@@ -2774,7 +2774,10 @@ function autoLogout(){
           const idx = localAtt.findIndex(r=>String(r.id)===String(openRec.id));
           if(idx>=0) localAtt[idx]=openRec;
           S.set('attendance', localAtt);
-          dbSaveAttendance(openRec).catch(()=>{});
+          dbSaveAttendance(openRec).catch(e=>{
+      console.error('Clock-out save failed:',e);
+      toast('Clock-out saved locally. Will sync when connection restored.','info');
+    });
         }
       }
     }
@@ -7754,7 +7757,10 @@ async function kioskClockIn(emp,loc){
   const localAtt=S.get('attendance',[]);
   localAtt.push(rec);
   S.set('attendance',localAtt);
-  dbSaveAttendance(rec).catch(()=>{});
+  dbSaveAttendance(rec).catch(e=>{
+    console.error('Clock-in save failed:',e);
+    toast('Clock-in saved locally. Will sync when connection restored.','info');
+  });
   kioskShowResult('👋  '+emp.name+'\nClocked in at '+loc.name,'in');
   setDotsState('success');
 }
@@ -9467,7 +9473,10 @@ async function kioskConfirmAction(confirmed){
     const idx=localAtt.findIndex(r=>String(r.id)===String(openRec.id));
     if(idx>=0)localAtt[idx]=openRec;
     S.set('attendance',localAtt);
-    dbSaveAttendance(openRec).catch(()=>{});
+    dbSaveAttendance(openRec).catch(e=>{
+      console.error('Clock-out save failed:',e);
+      toast('Clock-out saved locally. Will sync when connection restored.','info');
+    });
     const dur=fmtDuration(openRec.durationMinutes);
     kioskShowResult('👋  '+emp.name+'\nClocked out — '+dur+' on site','out');
   } else {
