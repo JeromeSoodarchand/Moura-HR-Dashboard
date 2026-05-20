@@ -1762,7 +1762,7 @@ function rowToEmp(r){
   return{id:r.id,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
     salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:r.salary_history||[]}:null,
     checklist:r.checklist||{},offChecklist:r.off_checklist||{},lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
-    photoUrl:r.photo_url||null,files:r.files||[],clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:r.att_editor||false};
+    photoUrl:r.photo_url||null,files:r.files||[],clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:r.att_editor||false,isHOD:r.is_hod||false,isSeniorHOD:r.is_senior_hod||false};
 }
 function empToRow(e){
   const row={
@@ -1794,6 +1794,8 @@ function empToRow(e){
     pin_hash:             e.pinHash              || null,
     user_id:              e.userId               || null,
     att_editor:           e.attendanceEditor     || false,
+    is_hod:               e.isHOD                || false,
+    is_senior_hod:        e.isSeniorHOD          || false,
     updated_at:           new Date().toISOString(),
   };
   // Remove any remaining undefined values
@@ -2939,7 +2941,7 @@ function renderEmployees(){
     return`<tr onclick="${emp.id?'viewEmp('+emp.id+')':''}" style="cursor:pointer${emp.id?'':';opacity:.6;cursor:not-allowed'}">
       <td><div class="emp-cell"><div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div><div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.email}</div></div></div></td>
       <td>${emp.dept}</td><td>${emp.role}</td><td>${fDate(emp.start)}</td>
-      <td style="font-weight:500">${sal}</td><td>${sB(emp.status)}${emp.attendanceEditor?'<span class="badge" style="background:#1E144520;color:#1E1445;margin-left:4px" title="Attendance Editor">&#x1F4CA; Att. Editor</span>':''}</td>
+      <td style="font-weight:500">${sal}</td><td>${sB(emp.status)}${emp.attendanceEditor?'<span class="badge" style="background:#1E144520;color:#1E1445;margin-left:4px" title="Attendance Editor">&#x1F4CA; Att. Editor</span>':''}${emp.isHOD?'<span class="badge" style="background:#BA751720;color:#BA7517;margin-left:4px">HOD</span>':''}${emp.isSeniorHOD?'<span class="badge" style="background:#7F77DD20;color:#7F77DD;margin-left:4px">Sr. HOD</span>':''}</td>
       <td class="ts tm">${cnt}</td>
       <td>${canEdit()?`<button class="btn btn-xs btn-danger" onclick="event.stopPropagation();deleteEmployee(${emp.id})" title="Delete employee">✕</button>`:''}</td>
     </tr>`;
@@ -3271,7 +3273,7 @@ function viewEmp(id){
           📷<input type="file" accept="image/*" style="display:none" onchange="uploadPhotoFile(${id},this)">
         </label>`:''}
       </div>
-      <div style="flex:1"><div style="font-size:16px;font-weight:600">${emp.name}</div><div class="tm ts">${emp.role} · ${emp.dept}</div><div style="margin-top:6px"><div style=\"display:flex;gap:5px;flex-wrap:wrap\">${sB(emp.status)}${emp.attendanceEditor?'<span class="badge" style="background:#1E144520;color:#1E1445">&#x1F4CA; Att. Editor</span>':''}</div></div></div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:600">${emp.name}</div><div class="tm ts">${emp.role} · ${emp.dept}</div><div style="margin-top:6px"><div style=\"display:flex;gap:5px;flex-wrap:wrap\">${sB(emp.status)}${emp.isHOD?'<span class="badge" style="background:#BA751720;color:#BA7517">&#x1F451; HOD</span>':''}${emp.isSeniorHOD?'<span class="badge" style="background:#7F77DD20;color:#7F77DD">&#11088; Senior HOD</span>':''}${emp.attendanceEditor?'<span class="badge" style="background:#1E144520;color:#1E1445">&#x1F4CA; Att. Editor</span>':''}</div></div></div>
       <div style="display:flex;gap:6px;flex-direction:column;align-items:flex-end">
         <button class="btn btn-sm pdf-btn" onclick="generateEmployeePDF(${id})">⬇ PDF Report</button>
         ${canEdit()?`<button class="btn btn-sm btn-primary" onclick="closeModal();openModal('editEmployee',${id})">Edit</button>`:''}
@@ -3757,6 +3759,8 @@ function submitAdd(){
     files:[],photoUrl:null,
     clockMode:document.getElementById('fclockmode')?.value||'kiosk',
     attendanceEditor:document.getElementById('fatt-editor')?.checked||false,
+    isHOD:document.getElementById('fis-hod')?.checked||false,
+    isSeniorHOD:document.getElementById('fis-senior-hod')?.checked||false,
     pinHash:(()=>{const p=(document.getElementById('femp-pin')?.value||'').replace(/[^0-9]/g,'');return p.length===4?simpleHash(p):null;})(),
   };
   showLoader('Saving…');
@@ -3876,6 +3880,10 @@ function submitEdit(id){
   if(cmEl2) emp.clockMode=cmEl2.value||'kiosk';
   const attEdEl=document.getElementById('fatt-editor');
   if(attEdEl!==null) emp.attendanceEditor=attEdEl.checked;
+  const hodEl=document.getElementById('fis-hod');
+  if(hodEl!==null) emp.isHOD=hodEl.checked;
+  const shodEl=document.getElementById('fis-senior-hod');
+  if(shodEl!==null) emp.isSeniorHOD=shodEl.checked;
   // Duplicate PIN check
   const rawPin = (document.getElementById('femp-pin')?.value||'').trim();
   if(rawPin){
@@ -4671,12 +4679,28 @@ function renderSettings(){
 
 function applyAttEditorPerm(){
   if(!CU) return;
-  if(CU.role==='admin'||CU.role==='hr'||CU.role==='manager') return; // already have view_attendance
   const empId = CU.empId;
-  if(!empId) return;
-  const emp = gE(empId);
+  const emp = empId ? gE(empId) : null;
+  const perms = new Set(CU.customPerms||[]);
+  // Admin/HR already have all perms via ROLE_PERMS
+  if(CU.role==='admin'||CU.role==='hr') return;
+  // HOD flag — grant leave approval and attendance access
+  if(emp?.isHOD || CU.role==='manager'){
+    ['view_employees','view_events','view_training','view_attendance',
+     'log_events','view_leave','approve_leave'].forEach(p=>perms.add(p));
+  }
+  // Senior HOD — same as HOD plus cross-dept visibility
+  if(emp?.isSeniorHOD){
+    perms.add('senior_hod');
+  }
+  // Attendance editor
   if(emp?.attendanceEditor){
-    CU.customPerms = [...(CU.customPerms||[]),'view_attendance','view_employees'];
+    perms.add('view_attendance'); perms.add('view_employees');
+  }
+  CU.customPerms = [...perms];
+  // Also update CU.role so nav tabs show correctly for HOD
+  if((emp?.isHOD||emp?.isSeniorHOD) && CU.role==='viewer'){
+    CU.role = 'manager';
   }
 }
 
@@ -7281,7 +7305,9 @@ async function submitLeaveRequest(){
     (CU.empId&&String(u.empId)===String(CU.empId))||
     (CU.id&&String(u.id)===String(CU.id))
   );
-  const requesterIsHOD = requesterUser?.role==='manager';
+  // HOD = employee with isHOD flag OR user with role=manager
+  const requesterEmp  = CU.empId ? gE(CU.empId) : null;
+  const requesterIsHOD = requesterEmp?.isHOD || requesterUser?.role==='manager' || false;
   const requesterIsHR  = CU.role==='admin'||CU.role==='hr';
 
   const req = {
@@ -9782,19 +9808,26 @@ function toggleEmpClockMode(empId, newMode){
 // ════════════════════════════════════════════════════════════════════════════
 
 function getLeaveApprovalContext(){
-  // Who is the current user in terms of leave approval?
+  const isHR = CU.role==='admin'||CU.role==='hr';
+  // Check employee record for HOD flags (primary source of truth)
+  const emp = CU.empId ? gE(CU.empId) : null;
+  // Also check hr_users for legacy role=manager support
   const u = getUsers().find(u=>
     (CU.empId&&String(u.empId)===String(CU.empId))||
     (CU.id&&String(u.id)===String(CU.id))
   );
+  const isHOD      = emp?.isHOD      || CU.role==='manager' || false;
+  const isSeniorHOD= emp?.isSeniorHOD|| u?.seniorHOD        || false;
   return {
-    isHR:         CU.role==='admin'||CU.role==='hr',
-    isManager:    CU.role==='manager',
-    isSeniorHOD:  u?.seniorHOD||false,
-    canCrossView: u?.crossLeaveVisibility||false,
+    isHR,
+    isManager:    isHOD,
+    isHOD,
+    isSeniorHOD,
+    canCrossView: isSeniorHOD || u?.crossLeaveVisibility || false,
     userName:     CU.name,
     userEmpId:    CU.empId||null,
-    userData:     u
+    userData:     u,
+    empData:      emp
   };
 }
 
@@ -9808,13 +9841,14 @@ function canApproveRequest(req){
   // Senior HOD can approve other HODs' leave
   if(req.requesterIsHOD && ctx.isSeniorHOD) return true;
 
-  // Manager can approve their own department employees at HOD stage
-  if(ctx.isManager && req.hodStatus==='pending'){
-    // Check if employee is in manager's department
-    const myEmps = getEmps().filter(e=>
-      e.manager===CU.name||String(e.managerId)===String(CU.empId)
-    );
-    if(myEmps.find(e=>String(e.id)===String(req.empId))) return true;
+  // HOD can approve team members whose 'manager' field matches their name
+  if(ctx.isHOD && req.hodStatus==='pending'){
+    const reqEmp = gE(req.empId);
+    // Match by manager name OR by empId
+    if(reqEmp && (
+      reqEmp.manager === CU.name ||
+      (CU.empId && String(reqEmp.managerId)===String(CU.empId))
+    )) return true;
   }
 
   return false;
@@ -9823,32 +9857,18 @@ function canApproveRequest(req){
 function canViewRequest(req){
   const ctx = getLeaveApprovalContext();
   if(ctx.isHR) return true;
-
-  const emp = gE(req.empId);
-  if(!emp) return false;
-
-  // Own requests always visible
-  if(String(req.empId)===String(ctx.userEmpId)) return true;
-
-  // Manager sees their department
-  if(ctx.isManager){
-    const myEmps = getEmps().filter(e=>
-      e.manager===CU.name||String(e.managerId)===String(CU.empId)
-    );
-    if(myEmps.find(e=>String(e.id)===String(req.empId))) return true;
+  if(ctx.isSeniorHOD) return true; // senior HOD sees all HOD requests
+  if(ctx.isHOD){
+    const reqEmp = gE(req.empId);
+    // See own team's requests
+    if(reqEmp&&(reqEmp.manager===CU.name||(CU.empId&&String(reqEmp.managerId)===String(CU.empId)))) return true;
+    // Also see own leave requests
+    if(CU.empId&&String(req.empId)===String(CU.empId)) return true;
   }
-
-  // Cross-leave visibility — see other HODs' leave
-  if(ctx.canCrossView){
-    const empUser = getUsers().find(u=>String(u.empId)===String(req.empId));
-    if(empUser?.role==='manager') return true;
-  }
-
-  // Senior HOD sees all HOD requests
-  if(ctx.isSeniorHOD && req.requesterIsHOD) return true;
-
-  return false;
+  // Regular employee sees only their own
+  return CU.empId&&String(req.empId)===String(CU.empId);
 }
+
 
 function getRequestDisplayStatus(req){
   // Returns a user-friendly status based on the two-stage approval
@@ -10062,24 +10082,37 @@ async function notifyHODofLeaveRequest(req){
   if(!emp) return;
 
   if(req.requesterIsHOD){
-    // Notify all senior HODs
-    const seniorHODs = getUsers().filter(u=>u.seniorHOD&&u.active);
-    seniorHODs.forEach(u=>{
-      addNotif(`${emp.name} (HOD) requested ${req.days}d ${LEAVE_TYPES[req.type]?.label||req.type} — awaiting your approval.`,'info');
+    // Notify all senior HODs (by employee flag or hr_users flag)
+    const seniorHODs = getEmps().filter(e=>e.isSeniorHOD&&e.status!=='offboarded');
+    seniorHODs.forEach(e=>{
+      addNotif(`${emp.name} (HOD) requested ${req.days}d leave — awaiting your approval.`,'info');
+    });
+    // Also notify hr_users with seniorHOD flag (legacy)
+    getUsers().filter(u=>u.seniorHOD&&u.active).forEach(u=>{
+      addNotif(`${emp.name} (HOD) requested ${req.days}d leave — awaiting your approval.`,'info');
     });
   } else {
-    // Notify the employee's HOD (manager)
-    const mgr = getUsers().find(u=>
-      u.role==='manager'&&(
-        u.name===emp.manager||
-        (u.empId&&String(u.empId)===String(emp.managerId))
+    // Notify the employee's HOD — find by manager name match
+    // Primary: find employee with isHOD=true whose name matches emp.manager
+    const hodEmp = getEmps().find(e=>
+      e.isHOD && e.status!=='offboarded' &&
+      (e.name===emp.manager || String(e.id)===String(emp.managerId))
+    );
+    if(hodEmp){
+      addNotif(`${emp.name} requested ${req.days}d leave — requires your approval.`,'info');
+    }
+    // Fallback: notify hr_users with role=manager whose name matches
+    const mgrUser = getUsers().find(u=>
+      u.role==='manager'&&u.active&&(
+        u.name===emp.manager||(u.empId&&String(u.empId)===String(emp.managerId))
       )
     );
-    if(mgr){
-      addNotif(`${emp.name} requested ${req.days}d ${LEAVE_TYPES[req.type]?.label||req.type} — requires your approval.`,'info');
+    if(mgrUser&&!hodEmp){
+      addNotif(`${emp.name} requested ${req.days}d leave — requires your approval.`,'info');
     }
   }
 }
+
 
 
 // ── JOB TITLES + CUSTOM EVENT TYPES + KIOSK LEAVE ───────────────────────────
@@ -10089,8 +10122,7 @@ function removeJobTitle(i){var cs=getSettings();cs.jobTitles.splice(i,1);S.set('
 function renderCustomEventTypes(){var el=document.getElementById('custom-event-types-list');if(!el)return;var t=getSettings().customEventTypes||[];if(!t.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">No custom types yet. Built-in: Absence, Warning, Training, Milestone.</div>';return;}el.innerHTML='<table style="width:100%;font-size:12.5px;border-collapse:collapse"><thead><tr style="background:var(--bg2)"><th style="padding:6px 10px;text-align:left">Name</th><th style="padding:6px 10px;text-align:left">Key</th><th style="padding:6px 10px;text-align:left">Colour</th><th></th></tr></thead><tbody>'+t.map(function(x,i){return '<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 10px"><span style="background:'+(x.bg||'#f5f5f5')+';color:'+x.color+';padding:2px 8px;border-radius:20px;font-size:12px;font-weight:600">'+x.label+'</span></td><td style="padding:7px 10px;color:var(--text3)">'+x.key+'</td><td style="padding:7px 10px"><span style="display:inline-block;width:20px;height:20px;border-radius:4px;background:'+x.color+'"></span></td><td style="padding:7px 10px;text-align:right"><button class="btn btn-xs btn-danger" onclick="removeCustomEventType('+i+')">Remove</button></td></tr>';}).join('')+'</tbody></table>';}
 function addCustomEventType(){var label=document.getElementById('new-evt-label');var key=document.getElementById('new-evt-key');var colorEl=document.getElementById('new-evt-color');var lv=label&&label.value.trim();var kv=(key&&key.value.trim()||'').toLowerCase().replace(/[^a-z0-9_]/g,'_');var color=colorEl&&colorEl.value||'#6c3483';if(!lv||!kv){toast('Enter name and key.','error');return;}var cs=getSettings();if((cs.customEventTypes||[]).find(function(t){return t.key===kv;})||TCFG_BASE[kv]){toast('Key already exists.','error');return;}cs.customEventTypes=(cs.customEventTypes||[]).concat([{label:lv,key:kv,color:color,bg:color+'22'}]);S.set('companySettings',cs);if(label)label.value='';if(key)key.value='';renderCustomEventTypes();toast('Event type added.','success');}
 function removeCustomEventType(i){var cs=getSettings();cs.customEventTypes.splice(i,1);S.set('companySettings',cs);renderCustomEventTypes();}
-function populateKioskLeaveEmpSelect(){var sel=document.getElementById('kiosk-leave-emp');if(!sel)return;var emps=getEmps().filter(function(e){return e.status!=='offboarded'&&e.clockMode==='kiosk';});sel.innerHTML='<option value="">— Select employee —</option>'+emps.map(function(e){return '<option value="'+e.id+'">'+e.name+' — '+(e.dept||'')+'</option>';}).join('');}
-async function submitKioskLeave(){var empId=document.getElementById('kiosk-leave-emp')&&document.getElementById('kiosk-leave-emp').value;var type=document.getElementById('kiosk-leave-type')&&document.getElementById('kiosk-leave-type').value;var from=document.getElementById('kiosk-leave-from')&&document.getElementById('kiosk-leave-from').value;var to=document.getElementById('kiosk-leave-to')&&document.getElementById('kiosk-leave-to').value;var reason=(document.getElementById('kiosk-leave-reason')&&document.getElementById('kiosk-leave-reason').value)||'';if(!empId||!from||!to){toast('Fill employee and dates.','error');return;}if(to<from){toast('End date must be after start.','error');return;}var days=countWorkingDays(from,to);if(!days){toast('No working days in range.','error');return;}var req={id:Date.now(),empId:empId,type:type,fromDate:from,toDate:to,days:days,reason:reason,status:'approved',hodStatus:'approved',hodApprovedBy:CU.name,hodApprovedAt:new Date().toISOString(),hrStatus:'approved',hrApprovedBy:CU.name,hrApprovedAt:new Date().toISOString(),reviewedBy:CU.name,reviewNote:'Submitted by HR on behalf of kiosk employee',createdAt:new Date().toISOString(),submittedByHR:true};showLoader('Saving...');try{var saved=await dbSaveLeaveRequest(req);_leaveRequests.unshift(saved||req);await deductLeaveBalance(req);hideLoader();toast((gE(empId)&&gE(empId).name||'Employee')+': '+days+' day(s) leave recorded.','success');['kiosk-leave-emp','kiosk-leave-from','kiosk-leave-to','kiosk-leave-reason'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});dbAddAudit(CU.name,'Kiosk leave: '+(gE(empId)&&gE(empId).name||empId)+' '+from+' to '+to);}catch(e){hideLoader();toast('Error: '+(e.message||e),'error');}}
+function populateKioskLeaveEmpSelect(){var sel=document.getElementById('kiosk-leave-emp');if(!sel)return;var emps=getEmps().filter(function(e){return e.status!=='offboarded'&&e.clockMode==='kiosk';});sel.innerHTML='<option value="">— Select employee —</option>'+emps.map(function(e){return '<option value="'+e.id+'">'+e.name+' — '+(e.dept||'')+'</option>';}).join('');}async function submitKioskLeave(){var empId=document.getElementById('kiosk-leave-emp')&&document.getElementById('kiosk-leave-emp').value;var type=document.getElementById('kiosk-leave-type')&&document.getElementById('kiosk-leave-type').value;var from=document.getElementById('kiosk-leave-from')&&document.getElementById('kiosk-leave-from').value;var to=document.getElementById('kiosk-leave-to')&&document.getElementById('kiosk-leave-to').value;var reason=(document.getElementById('kiosk-leave-reason')&&document.getElementById('kiosk-leave-reason').value)||'';if(!empId||!from||!to){toast('Fill employee and dates.','error');return;}if(to<from){toast('End date must be after start.','error');return;}var days=countWorkingDays(from,to);if(!days){toast('No working days in range.','error');return;}var req={id:Date.now(),empId:empId,type:type,fromDate:from,toDate:to,days:days,reason:reason,status:'approved',hodStatus:'approved',hodApprovedBy:CU.name,hodApprovedAt:new Date().toISOString(),hrStatus:'approved',hrApprovedBy:CU.name,hrApprovedAt:new Date().toISOString(),reviewedBy:CU.name,reviewNote:'Submitted by HR on behalf of kiosk employee',createdAt:new Date().toISOString(),submittedByHR:true};showLoader('Saving...');try{var saved=await dbSaveLeaveRequest(req);_leaveRequests.unshift(saved||req);await deductLeaveBalance(req);hideLoader();toast((gE(empId)&&gE(empId).name||'Employee')+': '+days+' day(s) leave recorded.','success');['kiosk-leave-emp','kiosk-leave-from','kiosk-leave-to','kiosk-leave-reason'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});dbAddAudit(CU.name,'Kiosk leave: '+(gE(empId)&&gE(empId).name||empId)+' '+from+' to '+to);}catch(e){hideLoader();toast('Error: '+(e.message||e),'error');}}
 </script>
 
 <!-- KIOSK / PIN SCREEN -->
