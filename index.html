@@ -1068,6 +1068,45 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
           <button class="btn btn-primary" onclick="saveCompanySettings()">💾 Save changes</button>
         </div>
       </div>
+      <!-- JOB TITLES -->
+      <div class="card" style="margin-top:14px">
+        <div class="ch"><span class="ct">Job Titles</span><span style="font-size:12px;color:var(--text3)">Available in the employee role dropdown</span></div>
+        <div class="cb">
+          <div id="job-titles-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px">
+            <input class="fi" id="new-job-title" placeholder="e.g. Grief Counsellor" style="flex:1">
+            <button class="btn btn-primary" onclick="addJobTitle()">+ Add</button>
+          </div>
+        </div>
+      </div>
+      <!-- CUSTOM EVENT TYPES -->
+      <div class="card" style="margin-top:14px">
+        <div class="ch"><span class="ct">Event &amp; Warning Types</span><span style="font-size:12px;color:var(--text3)">Custom types for the Events log</span></div>
+        <div class="cb">
+          <div id="custom-event-types-list" style="margin-bottom:12px"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 100px auto;gap:8px;align-items:end">
+            <div class="fg" style="margin:0"><label class="fl">Event name</label><input class="fi" id="new-evt-label" placeholder="e.g. Formal Warning"></div>
+            <div class="fg" style="margin:0"><label class="fl">Key (no spaces)</label><input class="fi" id="new-evt-key" placeholder="e.g. formal_warning"></div>
+            <div class="fg" style="margin:0"><label class="fl">Colour</label><input type="color" id="new-evt-color" value="#6c3483" style="width:100%;height:36px;border-radius:6px;border:1px solid var(--border2);cursor:pointer"></div>
+            <button class="btn btn-primary" style="align-self:end" onclick="addCustomEventType()">+ Add</button>
+          </div>
+        </div>
+      </div>
+      <!-- KIOSK LEAVE -->
+      <div class="card" style="margin-top:14px">
+        <div class="ch"><span class="ct">Leave for Kiosk-Only Employees</span><span style="font-size:12px;color:var(--text3)">Submit leave on behalf of kiosk-only staff</span></div>
+        <div class="cb">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div class="fg"><label class="fl">Employee</label><select class="fs" id="kiosk-leave-emp"><option value="">— Select employee —</option></select></div>
+            <div class="fg"><label class="fl">Leave type</label><select class="fs" id="kiosk-leave-type"><option value="annual">Annual Leave</option><option value="sick">Sick Leave</option><option value="casual">Casual Leave</option><option value="maternity">Maternity Leave</option><option value="paternity">Paternity Leave</option><option value="bereavement">Bereavement Leave</option><option value="other">Other</option></select></div>
+            <div class="fg"><label class="fl">From date</label><input class="fi" id="kiosk-leave-from" type="date"></div>
+            <div class="fg"><label class="fl">To date</label><input class="fi" id="kiosk-leave-to" type="date"></div>
+          </div>
+          <div class="fg"><label class="fl">Reason (optional)</label><input class="fi" id="kiosk-leave-reason" placeholder="e.g. Annual family trip"></div>
+          <div style="margin-top:10px;text-align:right"><button class="btn btn-primary" onclick="submitKioskLeave()">&#10003; Submit Leave</button></div>
+        </div>
+      </div>
+
       <div class="g2" style="align-items:start;gap:16px">
 
         <!-- LEFT COLUMN -->
@@ -2783,12 +2822,14 @@ const gEE=id=>getEvts().filter(e=>String(e.empId)===String(id));
 const gEA=id=>getTrAsgn().filter(a=>String(a.empId)===String(id));
 const gP=id=>getTrProgs().find(p=>String(p.id)===String(id));
 
-const TCFG={
+const TCFG_BASE={
   absence:{label:'Absence',color:'#D85A30',bg:'#FAECE7'},
   warning:{label:'Warning',color:'#BA7517',bg:'#FAEEDA'},
   training:{label:'Training',color:'#185FA5',bg:'#E6F1FB'},
   milestone:{label:'Milestone',color:'#085041',bg:'#E1F5EE'}
 };
+function getTCFG(){const m={...TCFG_BASE};(getSettings().customEventTypes||[]).forEach(t=>{m[t.key]={label:t.label,color:t.color,bg:t.bg||'#f5f5f5'};});return m;}
+const TCFG=new Proxy({},{get(_,k){return getTCFG()[k];}});
 const TRST={'not-started':{label:'Not Started',cls:'b-not-started'},'in-progress':{label:'In Progress',cls:'b-in-progress'},completed:{label:'Completed',cls:'b-completed'},failed:{label:'Failed',cls:'b-failed'},overdue:{label:'Overdue',cls:'b-overdue'}};
 const TRCOL={'not-started':'#888','in-progress':'#378ADD',completed:'#1D9E75',failed:'#D85A30',overdue:'#BA7517'};
 const sB=s=>({active:'<span class="badge b-active">Active</span>',onboarding:'<span class="badge b-onboarding">Onboarding</span>',offboarded:'<span class="badge b-offboarded">Offboarded</span>'}[s]||s);
@@ -3357,7 +3398,7 @@ function openModal(type,pid,pid2){
       <div class="fr"><div class="fg"><label class="fl">Phone</label><input class="fi" id="fph" value="${emp?.phone||''}" placeholder="+230 or +27 number"></div>
       <div class="fg"><label class="fl">Start date</label><input class="fi" id="fst" type="date" value="${emp?.start||td()}"></div></div>
       <div class="fsec">Role</div>
-      <div class="fr"><div class="fg"><label class="fl">Job title / Role</label><input class="fi" id="fr2" value="${emp?.role||''}" placeholder="Software Engineer"></div>
+      <div class="fr"><div class="fg"><label class="fl">Job title / Role</label><select class="fs" id="fr2"><option value="">— Select title —</option>${getSettings().jobTitles.map(t=>`<option value="${t}" ${emp?.role===t?"selected":""}>${t}</option>`).join("")}${emp?.role&&!getSettings().jobTitles.includes(emp.role)?`<option value="${emp.role}" selected>${emp.role}</option>`:""}<option value="__custom">&#9999; Other (type below)&hellip;</option></select><input class="fi" id="fr2c" placeholder="Custom title&hellip;" style="margin-top:5px" value="${emp?.role&&!getSettings().jobTitles.includes(emp.role)?emp.role:""}" oninput="document.getElementById('fr2').value='__custom'"></div>
       <div class="fg"><label class="fl">Department</label><select class="fs" id="fd">${getDepts().map(d=>`<option ${emp?.dept===d?'selected':''}>${d}</option>`).join('')}</select></div></div>
       <div class="fg"><label class="fl">Manager</label><input class="fi" id="fm" value="${emp?.manager||''}" placeholder="Manager name"></div>
       <div class="fg"><label class="fl">Mobile clock-in</label>
@@ -3401,7 +3442,7 @@ function openModal(type,pid,pid2){
     const ae=getEmps().filter(e=>e.status!=='offboarded');
     mb.innerHTML=`<div class="modal-title">Log Event <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="fg"><label class="fl">Employee *</label><select class="fs" id="femp">${ae.map(e=>`<option value="${e.id}"${String(e.id)===String(pid)?' selected':''}>${e.name} — ${e.dept}</option>`).join('')}</select></div>
-      <div class="fr"><div class="fg"><label class="fl">Type</label><select class="fs" id="ftyp"><option value="absence">Absence</option><option value="warning">Warning</option><option value="training">Training</option><option value="milestone">Milestone</option></select></div>
+      <div class="fr"><div class="fg"><label class="fl">Type</label><select class="fs" id="ftyp">${Object.entries(getTCFG()).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}</select></div>
       <div class="fg"><label class="fl">Date</label><input class="fi" id="fdt" type="date" value="${td()}"></div></div>
       <div class="fg"><label class="fl">Description *</label><textarea class="ft" id="fdes" placeholder="Describe the event…"></textarea></div>
       <div class="fg"><label class="fl">Logged by</label><input class="fi" id="flb" value="${CU?.name||''}"></div>
@@ -7116,6 +7157,7 @@ async function submitLeaveRequest(){
   hideLoader();
   if(!_leaveRequests.find(r=>String(r.id)===String(saved.id))) _leaveRequests.unshift(saved);
   S.set('leaveRequests', _leaveRequests);
+  notifyHODofLeaveRequest(saved||req);
 
   const emp = gE(empId);
   addNotif((emp?emp.name:'Employee')+' submitted '+LEAVE_TYPES[type].label+' request ('+days+' days)','info');
@@ -8083,6 +8125,8 @@ function getWorkingHoursSettings(){
     otWeekday:    cs.otWeekday    || 1.5,
     otWeekend:    cs.otWeekend    || 2.0,
     otHoliday:    cs.otHoliday    || 2.5,
+    jobTitles:       cs.jobTitles       || ['Funeral Director','Embalmer','Mortuary Technician','Hearse Driver','Administrative Assistant','Accounts Officer','HR Manager','Operations Manager','Funeral Arranger','Receptionist'],
+    customEventTypes: cs.customEventTypes || [],
   };
 }
 
@@ -9803,6 +9847,16 @@ async function notifyHODofLeaveRequest(req){
   }
 }
 
+
+// ── JOB TITLES + CUSTOM EVENT TYPES + KIOSK LEAVE ───────────────────────────
+function renderJobTitles(){var el=document.getElementById('job-titles-list');if(!el)return;var t=getSettings().jobTitles||[];el.innerHTML=t.map(function(x,i){return '<span style="display:inline-flex;align-items:center;gap:4px;background:var(--bg2);border-radius:20px;padding:4px 10px;font-size:12.5px">'+x+'<button onclick="removeJobTitle('+i+')" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:15px;padding:0 2px">&times;</button></span>';}).join('');}
+function addJobTitle(){var inp=document.getElementById('new-job-title');var val=inp&&inp.value.trim();if(!val){toast('Enter a job title.','error');return;}var cs=getSettings();if((cs.jobTitles||[]).indexOf(val)>=0){toast('Already exists.','info');return;}cs.jobTitles=(cs.jobTitles||[]).concat([val]);S.set('companySettings',cs);inp.value='';renderJobTitles();toast('Job title added.','success');}
+function removeJobTitle(i){var cs=getSettings();cs.jobTitles.splice(i,1);S.set('companySettings',cs);renderJobTitles();}
+function renderCustomEventTypes(){var el=document.getElementById('custom-event-types-list');if(!el)return;var t=getSettings().customEventTypes||[];if(!t.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">No custom types yet. Built-in: Absence, Warning, Training, Milestone.</div>';return;}el.innerHTML='<table style="width:100%;font-size:12.5px;border-collapse:collapse"><thead><tr style="background:var(--bg2)"><th style="padding:6px 10px;text-align:left">Name</th><th style="padding:6px 10px;text-align:left">Key</th><th style="padding:6px 10px;text-align:left">Colour</th><th></th></tr></thead><tbody>'+t.map(function(x,i){return '<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 10px"><span style="background:'+(x.bg||'#f5f5f5')+';color:'+x.color+';padding:2px 8px;border-radius:20px;font-size:12px;font-weight:600">'+x.label+'</span></td><td style="padding:7px 10px;color:var(--text3)">'+x.key+'</td><td style="padding:7px 10px"><span style="display:inline-block;width:20px;height:20px;border-radius:4px;background:'+x.color+'"></span></td><td style="padding:7px 10px;text-align:right"><button class="btn btn-xs btn-danger" onclick="removeCustomEventType('+i+')">Remove</button></td></tr>';}).join('')+'</tbody></table>';}
+function addCustomEventType(){var label=document.getElementById('new-evt-label');var key=document.getElementById('new-evt-key');var colorEl=document.getElementById('new-evt-color');var lv=label&&label.value.trim();var kv=(key&&key.value.trim()||'').toLowerCase().replace(/[^a-z0-9_]/g,'_');var color=colorEl&&colorEl.value||'#6c3483';if(!lv||!kv){toast('Enter name and key.','error');return;}var cs=getSettings();if((cs.customEventTypes||[]).find(function(t){return t.key===kv;})||TCFG_BASE[kv]){toast('Key already exists.','error');return;}cs.customEventTypes=(cs.customEventTypes||[]).concat([{label:lv,key:kv,color:color,bg:color+'22'}]);S.set('companySettings',cs);if(label)label.value='';if(key)key.value='';renderCustomEventTypes();toast('Event type added.','success');}
+function removeCustomEventType(i){var cs=getSettings();cs.customEventTypes.splice(i,1);S.set('companySettings',cs);renderCustomEventTypes();}
+function populateKioskLeaveEmpSelect(){var sel=document.getElementById('kiosk-leave-emp');if(!sel)return;var emps=getEmps().filter(function(e){return e.status!=='offboarded'&&e.clockMode==='kiosk';});sel.innerHTML='<option value="">— Select employee —</option>'+emps.map(function(e){return '<option value="'+e.id+'">'+e.name+' — '+(e.dept||'')+'</option>';}).join('');}
+async function submitKioskLeave(){var empId=document.getElementById('kiosk-leave-emp')&&document.getElementById('kiosk-leave-emp').value;var type=document.getElementById('kiosk-leave-type')&&document.getElementById('kiosk-leave-type').value;var from=document.getElementById('kiosk-leave-from')&&document.getElementById('kiosk-leave-from').value;var to=document.getElementById('kiosk-leave-to')&&document.getElementById('kiosk-leave-to').value;var reason=(document.getElementById('kiosk-leave-reason')&&document.getElementById('kiosk-leave-reason').value)||'';if(!empId||!from||!to){toast('Fill employee and dates.','error');return;}if(to<from){toast('End date must be after start.','error');return;}var days=countWorkingDays(from,to);if(!days){toast('No working days in range.','error');return;}var req={id:Date.now(),empId:empId,type:type,fromDate:from,toDate:to,days:days,reason:reason,status:'approved',hodStatus:'approved',hodApprovedBy:CU.name,hodApprovedAt:new Date().toISOString(),hrStatus:'approved',hrApprovedBy:CU.name,hrApprovedAt:new Date().toISOString(),reviewedBy:CU.name,reviewNote:'Submitted by HR on behalf of kiosk employee',createdAt:new Date().toISOString(),submittedByHR:true};showLoader('Saving...');try{var saved=await dbSaveLeaveRequest(req);_leaveRequests.unshift(saved||req);await deductLeaveBalance(req);hideLoader();toast((gE(empId)&&gE(empId).name||'Employee')+': '+days+' day(s) leave recorded.','success');['kiosk-leave-emp','kiosk-leave-from','kiosk-leave-to','kiosk-leave-reason'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});dbAddAudit(CU.name,'Kiosk leave: '+(gE(empId)&&gE(empId).name||empId)+' '+from+' to '+to);}catch(e){hideLoader();toast('Error: '+(e.message||e),'error');}}
 </script>
 
 <!-- KIOSK / PIN SCREEN -->
