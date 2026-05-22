@@ -7531,11 +7531,11 @@ async function loginPinSubmit(){
 
   // Reload employees AND users fresh from DB/localStorage before PIN lookup
   // This ensures pinHash fields are current even on first page load
-  if(!_cache.emps.length){
-    try{ _cache.emps = await dbGetEmployees(); } catch(e){}
-  } else if(sbReady()){
-    // Silently refresh in background to pick up newly assigned PINs
-    dbGetEmployees().then(emps=>{ if(emps.length) _cache.emps=emps; }).catch(()=>{});
+  // Always reload fresh from DB to get latest pinHash values
+  if(sbReady()){
+    try{ const fresh=await dbGetEmployees(); if(fresh.length) _cache.emps=fresh; } catch(e){}
+  } else if(!_cache.emps.length){
+    _cache.emps = S.get('employees',[]);
   }
   // Ensure user cache is populated (needed for user↔employee linking)
   if(!_userCache.length){
@@ -7555,8 +7555,15 @@ async function loginPinSubmit(){
     _loginPin='';
     updateLoginDots();
     const errEl=document.getElementById('lerr-pin');
-    if(errEl){errEl.textContent='PIN not recognised. Try again.';errEl.style.display='block';}
-    setTimeout(()=>{ if(errEl)errEl.style.display='none'; },3000);
+    // Debug: show how many employees loaded and their PIN status
+    const withPin=allEmps.filter(e=>e.pinHash).length;
+    const msg = allEmps.length===0
+      ? 'No employees loaded. Check Supabase connection.'
+      : withPin===0
+      ? 'No PINs set. Edit an employee and enter a 4-digit PIN.'
+      : 'PIN not recognised. Try again.';
+    if(errEl){errEl.textContent=msg;errEl.style.display='block';}
+    setTimeout(()=>{ if(errEl)errEl.style.display='none'; },4000);
     return;
   }
   // If multiple matches (duplicate PIN — shouldn't happen but handle gracefully)
