@@ -701,44 +701,41 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
         </div>
       </div>
 
-      <!-- Overtime Report -->
-      <div class="card" style="margin-bottom:14px">
-        <div class="ch">
-          <span class="ct">&#9201; Overtime Report</span>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input type="date" class="si" id="ot-date-from" style="width:140px">
-            <span class="tm txs">to</span>
-            <input type="date" class="si" id="ot-date-to" style="width:140px">
-            <select class="si" id="ot-dept-filter" style="width:130px">
-              <option value="">All departments</option>
-            </select>
-            <button class="btn btn-primary" onclick="runOvertimeReport()">Calculate</button>
-            <button class="btn" onclick="exportOvertimeCSV()">&#x2B07; Export</button>
-          </div>
-        </div>
-        <div id="ot-summary" style="display:none;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg2)"></div>
-        <div id="ot-body">
-          <div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Select a date range and click Calculate.</div>
-        </div>
-      </div>
+
 
       <!-- Report filters -->
       <div class="card">
         <div class="ch">
-          <span class="ct">Attendance report</span>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input type="date" class="si" id="att-date-from" style="width:140px">
+          <span class="ct">Records</span>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <input type="date" class="si" id="att-date-from" style="width:130px">
             <span class="tm txs">to</span>
-            <input type="date" class="si" id="att-date-to" style="width:140px">
+            <input type="date" class="si" id="att-date-to" style="width:130px">
             <select class="si" id="att-dept-filter" style="width:130px" onchange="renderAttendanceReport()">
               <option value="">All departments</option>
             </select>
             <button class="btn btn-primary" onclick="renderAttendanceReport()">Filter</button>
+            <button class="btn" onclick="exportAttendanceCSV()">&#x2B07; CSV</button>
           </div>
         </div>
-        <div class="cb" style="padding:0">
-          <table class="att-report-table">
-            <thead><tr><th>Employee</th><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Hours</th><th>Location</th><th>Notes</th><th class="ahr-btn">Action</th></tr></thead>
+        <!-- Sub-tab bar -->
+        <div style="display:flex;gap:0;border-bottom:1px solid var(--border)">
+          <button id="att-tab-all"      class="tbb active" onclick="setAttTab('all',this)"      style="font-size:12px;padding:7px 14px">All records</button>
+          <button id="att-tab-employee" class="tbb"        onclick="setAttTab('employee',this)" style="font-size:12px;padding:7px 14px">By employee</button>
+          <button id="att-tab-anomaly"  class="tbb"        onclick="setAttTab('anomaly',this)"  style="font-size:12px;padding:7px 14px">Anomalies only</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:650px">
+            <thead><tr style="background:var(--bg2)">
+              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2);white-space:nowrap">Employee</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Date</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Clock in</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Clock out</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Duration</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Location</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Notes</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)"></th>
+            </tr></thead>
             <tbody id="att-tbody"></tbody>
           </table>
         </div>
@@ -1281,45 +1278,14 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 
           <div class="card" style="margin-bottom:14px">
             <div class="ch"><span class="ct">✅ Onboarding Checklist Defaults</span></div>
-            <div class="cb">
-              <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px">Items added to every new hire's checklist</div>
-              <div id="checklist-defaults-list" style="margin-bottom:10px"></div>
-              <div style="display:flex;gap:8px">
-                <input class="fi" id="new-checklist-item" placeholder="Add checklist item…" onkeydown="if(event.key==='Enter')addChecklistDefault()">
-                <button class="btn btn-sm btn-primary" onclick="addChecklistDefault()">+ Add</button>
-              </div>
             </div>
           </div>
-
-          <!-- Current settings summary -->
-          <div class="card">
-            <div class="ch"><span class="ct">📋 Current Configuration</span></div>
-            <div class="cb" id="settings-summary" style="font-size:13px"></div>
-          </div>
         </div>
-
       </div>
     </div>
-
-  </div>
-</div>
-</div>
-
-<!-- MODAL -->
-
-<div id="att-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;align-items:center;justify-content:center;padding:20px">
-  <div style="background:var(--bg);border-radius:var(--radius-lg);width:400px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
-    <div id="att-modal-content"></div>
   </div>
 </div>
 
-<div class="modal-backdrop" id="mb" onclick="if(event.target===this)closeModal()">
-  <div class="modal-box" id="mbox"></div>
-</div>
-<div class="loader-overlay" id="loader-overlay">
-  <div class="loader-box"><div class="loader-spinner"></div><span id="loader-msg">Loading…</span></div>
-</div>
-<div class="toast-container" id="tc"></div>
 <script>
 
 
@@ -4619,7 +4585,8 @@ function exportCSV(type){
 
 // ─── TOAST ────────────────────────────────────────────────────────────────────
 function toast(msg,type='info'){
-  const t=document.createElement('div');t.className='toast '+type;t.textContent=msg;
+  const t=document.createElement('div');t.className='toast '+type;
+  if(msg.includes('<')) t.innerHTML=msg; else t.textContent=msg;
   document.getElementById('tc').appendChild(t);setTimeout(()=>t.remove(),4000);
 }
 
@@ -5948,34 +5915,138 @@ function renderAttReportFilters(){
 }
 
 async function renderAttendanceReport(){
-  const from = document.getElementById('att-date-from');
-  const to = document.getElementById('att-date-to');
-  const deptF = document.getElementById('att-dept-filter');
+  const from   = document.getElementById('att-date-from');
+  const to     = document.getElementById('att-date-to');
+  const deptF  = document.getElementById('att-dept-filter');
   if(!from||!to) return;
-  const recs = await dbGetAttendance(from.value, to.value);
-  _attendance = recs;
-  const empIds = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||!deptF.value||e.dept===deptF.value)).map(e=>e.id);
+  const recs   = await dbGetAttendance(from.value, to.value);
+  _attendance  = recs;
+  const allEmps= getEmps().filter(e=>e.status!=='offboarded'&&
+    (!deptF||!deptF.value||e.dept===deptF.value));
+  const empIds = allEmps.map(e=>e.id);
   let list = recs.filter(r=>empIds.some(id=>String(id)===String(r.empId)));
   list.sort((a,b)=>new Date(b.clockIn)-new Date(a.clockIn));
+
+  // Current sub-tab filter
+  const tab = document.getElementById('att-tab-all')?.classList.contains('active') ? 'all'
+            : document.getElementById('att-tab-employee')?.classList.contains('active') ? 'employee'
+            : 'anomaly';
+
+  // Anomaly detection helper
+  function isAnomalous(r){
+    if(!r.clockOut) return {flag:true, reason:'Missing clock-out'};
+    const dur = r.durationMinutes||0;
+    if(dur < 240) return {flag:true, reason:'Short shift (under 4h)'};
+    const hour = new Date(r.clockIn).getHours();
+    if(hour >= 9) return {flag:true, reason:'Late arrival (after 09:00)'};
+    return {flag:false, reason:''};
+  }
+
+  if(tab==='anomaly') list = list.filter(r=>isAnomalous(r).flag);
+
   const tbody = document.getElementById('att-tbody');
   if(!tbody) return;
-  tbody.innerHTML = list.length===0
-    ? '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:20px">No records for this period.</td></tr>'
-    : list.map(r=>{
-        const emp=gE(r.empId),c=emp?aColor(emp.name):'#888';
-        const dur=r.durationMinutes,cls=dur>=480?'good':dur>=240?'warn':'low';
-        return '<tr>'+
-          '<td><div class="emp-cell"><div class="avatar" style="background:'+c+'22;color:'+c+';width:26px;height:26px;font-size:10px">'+( emp?inits(emp.name):'?')+'</div><div style="font-weight:500">'+(emp?emp.name:'Unknown')+'</div></div></td>'+
-          '<td class="tm">'+fDate(r.date)+'</td>'+
-          '<td style="font-weight:500;color:var(--green)">'+fmtTime(r.clockIn)+'</td>'+
-          '<td style="color:'+(r.clockOut?'var(--red)':'var(--amber)')+'">'+( r.clockOut?fmtTime(r.clockOut):'<span class="badge b-in-progress">On site</span>')+'</td>'+
-          '<td>'+(dur?'<span class="hours-pill '+cls+'">'+fmtDuration(dur)+'</span>':'—')+'</td>'+
-          '<td class="tm txs">'+(r.location||'—')+'</td>'+
-          '<td class="tm txs">'+(r.notes||'—')+'</td>'+
-          '<td>'+(canEdit()?'<div style="display:flex;gap:4px">'+(!r.clockOut?'<button class="btn btn-xs btn-primary" onclick="manualClockOut('+JSON.stringify(r.id)+')">Clock out</button>':'')+' <button class="btn btn-xs btn-danger" onclick="deleteAttRecord('+JSON.stringify(r.id)+')" >X</button></div>':'')+'</td>'+
-        '</tr>';
-      }).join('');
+
+  if(!list.length){
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:24px;font-size:13px">
+      ${tab==='anomaly'?'No anomalies found for this period ✓':'No records for this period.'}</td></tr>`;
+    return;
+  }
+
+  // By-employee grouping
+  if(tab==='employee'){
+    const byEmp = {};
+    list.forEach(r=>{
+      if(!byEmp[r.empId]) byEmp[r.empId]=[];
+      byEmp[r.empId].push(r);
+    });
+    tbody.innerHTML = Object.entries(byEmp).map(([eid,recs])=>{
+      const emp=gE(eid), c=emp?aColor(emp.name):'#888';
+      const totalMins = recs.reduce((s,r)=>s+(r.durationMinutes||0),0);
+      const days = [...new Set(recs.map(r=>r.date))].length;
+      const anoms = recs.filter(r=>isAnomalous(r).flag).length;
+      const pct = Math.min(100,Math.round(totalMins/((days||1)*480)*100));
+      const barColor = pct>=90?'var(--green)':pct>=50?'var(--amber)':'var(--red)';
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:10px 12px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="avatar" style="background:${c}22;color:${c};width:28px;height:28px;font-size:10px;flex-shrink:0">${emp?inits(emp.name):'?'}</div>
+            <div><div style="font-weight:500">${emp?emp.name:'Unknown'}</div>
+            <div style="font-size:11px;color:var(--text3)">${emp?.dept||'—'} · ${emp?.role||''}</div></div>
+          </div>
+        </td>
+        <td style="padding:10px 12px;color:var(--text2)">${days} days</td>
+        <td style="padding:10px 12px;color:var(--green);font-weight:500">${recs[recs.length-1]?fmtTime(recs[recs.length-1].clockIn):'—'}</td>
+        <td style="padding:10px 12px;color:var(--text2)">${recs[0]?.clockOut?fmtTime(recs[0].clockOut):'—'}</td>
+        <td style="padding:10px 12px;min-width:110px">
+          <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px">
+            <span style="font-weight:500">${fmtDuration(totalMins)}</span>
+            <span style="color:var(--text3)">${pct}%</span>
+          </div>
+          <div style="height:5px;background:var(--bg3);border-radius:3px">
+            <div style="height:5px;border-radius:3px;background:${barColor};width:${pct}%"></div>
+          </div>
+          <div style="font-size:10.5px;color:var(--text3);margin-top:2px">${recs.length} records</div>
+        </td>
+        <td style="padding:10px 12px;color:var(--text2)">${recs[0]?.location||'—'}</td>
+        <td style="padding:10px 12px">${anoms?`<span style="color:var(--amber);font-size:11.5px">⚠ ${anoms} anomal${anoms>1?'ies':'y'}</span>`:'<span style="color:var(--green);font-size:11.5px">✓ Clean</span>'}</td>
+        <td style="padding:10px 12px"></td>
+      </tr>`;
+    }).join('');
+    return;
+  }
+
+  // All records / Anomalies view
+  tbody.innerHTML = list.map(r=>{
+    const emp=gE(r.empId), c=emp?aColor(emp.name):'#888';
+    const dur = r.durationMinutes||0;
+    const pct = Math.min(100,Math.round(dur/480*100));
+    const barColor = pct>=90?'var(--green)':pct>=50?'var(--amber)':'var(--red)';
+    const anom = isAnomalous(r);
+    const isLate = r.clockIn && new Date(r.clockIn).getHours()>=9;
+    const rowBg  = anom.flag ? 'background:#FAEEDA33' : '';
+    const onSite = !r.clockOut;
+    return `<tr style="border-bottom:1px solid var(--border);${rowBg}">
+      <td style="padding:8px 12px">
+        <div style="display:flex;align-items:center;gap:7px">
+          <div class="avatar" style="background:${c}22;color:${c};width:24px;height:24px;font-size:9px;flex-shrink:0">${emp?inits(emp.name):'?'}</div>
+          <div style="font-weight:500;font-size:12.5px">${emp?emp.name:'Unknown'}</div>
+        </div>
+      </td>
+      <td style="padding:8px 12px;color:var(--text2);font-size:12px">${fDate(r.date)}</td>
+      <td style="padding:8px 12px;color:var(--green);font-weight:500;font-size:12.5px">${fmtTime(r.clockIn)}</td>
+      <td style="padding:8px 12px;font-size:12.5px">${
+        onSite
+          ? '<span class="badge b-in-progress" style="font-size:11px">On site</span>'
+          : `<span style="color:var(--red-deep)">${fmtTime(r.clockOut)}</span>`
+      }</td>
+      <td style="padding:8px 12px;min-width:100px">
+        ${dur ? `<div style="font-weight:500;font-size:12.5px;color:${pct>=90?'var(--green)':pct>=50?'var(--amber)':'var(--red)'}">${fmtDuration(dur)}</div>
+          <div style="height:4px;background:var(--bg3);border-radius:2px;margin-top:3px;width:80px">
+            <div style="height:4px;border-radius:2px;background:${barColor};width:${pct}%"></div>
+          </div>` : '<span style="color:var(--text3)">—</span>'}
+      </td>
+      <td style="padding:8px 12px;color:var(--text2);font-size:12px">${r.location||'—'}</td>
+      <td style="padding:8px 12px;font-size:11.5px">
+        ${anom.flag?`<span style="color:var(--amber)">⚠ ${anom.reason}</span>`:''}
+        ${r.notes&&!anom.flag?`<span style="color:var(--text3)">${r.notes}</span>`:''}
+      </td>
+      <td style="padding:8px 12px">
+        ${canEdit()?`<div style="display:flex;gap:3px">
+          ${onSite?`<button class="btn btn-xs btn-primary" onclick="manualClockOut(${JSON.stringify(r.id)})">Clock out</button>`:''}
+          <button class="btn btn-xs btn-danger" onclick="deleteAttRecord(${JSON.stringify(r.id)})">✕</button>
+        </div>`:''}
+      </td>
+    </tr>`;
+  }).join('');
 }
+
+function setAttTab(tab, el){
+  document.querySelectorAll('#att-tab-all,#att-tab-employee,#att-tab-anomaly').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  renderAttendanceReport();
+}
+
 
 function openAttendanceModal(type){
   const modal=document.getElementById('att-modal');
@@ -6211,7 +6282,8 @@ function exportAttendanceCSV(){
 }
 
 // Close att modal on backdrop click
-document.getElementById('att-modal').addEventListener('click',function(e){if(e.target===document.getElementById('att-modal'))closeAttModal();});
+const _attModal=document.getElementById('att-modal');
+if(_attModal) _attModal.addEventListener('click',function(e){if(e.target===document.getElementById('att-modal'))closeAttModal();});
 
 // Hook showPage to render attendance
 const _showPageOrigAtt = showPage;
@@ -9963,6 +10035,7 @@ async function hodApproveLeave(reqId, approve){
   hideLoader();
   dbAddAudit(ctx.userName, `${approve?'Approved':'Rejected'} leave (HOD stage) for ${gE(req.empId)?.name}`);
   toast(approve?'Leave approved.':'Leave rejected.', approve?'success':'info');
+  notifyEmployeeLeaveResult(req, approve, note);
   renderLeave();
 }
 
@@ -9989,6 +10062,7 @@ async function hrConfirmLeave(reqId, approve){
   hideLoader();
   dbAddAudit(CU.name, `HR ${approve?'confirmed':'rejected'} leave for ${gE(req.empId)?.name}`);
   toast(approve?'Leave confirmed by HR.':'Leave rejected.', approve?'success':'info');
+  notifyEmployeeLeaveResult(req, approve, note);
   renderLeave();
 }
 
@@ -10227,6 +10301,41 @@ function showHODLeaveNotifModal(req){
       <button class="btn" onclick="closeModal()">Close</button>
     </div>`;
   document.getElementById('mb').classList.add('open');
+}
+
+// ── NOTIFY EMPLOYEE OF LEAVE RESULT ─────────────────────────────────────────
+async function notifyEmployeeLeaveResult(req, approved, note){
+  const emp = gE(req.empId);
+  if(!emp) return;
+  const leaveLabel = LEAVE_TYPES[req.type]?.label || req.type;
+  const dateRange  = req.days > 1
+    ? fDate(req.fromDate) + ' – ' + fDate(req.toDate)
+    : fDate(req.fromDate);
+
+  // In-app notification (shows in bell if employee is logged in)
+  const statusLabel = approved ? '✅ Approved' : '❌ Rejected';
+  addNotif(
+    `${statusLabel}: Your ${leaveLabel} request (${dateRange}) has been ${approved?'approved':'rejected'}.`
+    + (note ? ' Reason: ' + note : ''),
+    approved ? 'success' : 'error'
+  );
+
+  // WhatsApp button for HR to notify employee
+  if(canEdit() && emp.phone){
+    const clean = emp.phone.replace(/[^0-9+]/g,'');
+    const to    = clean.startsWith('+') ? clean.slice(1) : clean;
+    const msg   = approved
+      ? `Hi ${emp.name}, your ${leaveLabel} request for ${dateRange} (${req.days} day${req.days>1?'s':''}) has been approved. Enjoy your leave!`
+      : `Hi ${emp.name}, your ${leaveLabel} request for ${dateRange} has been rejected.${note?' Reason: '+note:''} Please contact HR for more information.`;
+    const waUrl = `https://wa.me/${to}?text=${encodeURIComponent(msg)}`;
+    // Show a brief toast with WA link
+    toast(
+      `${emp.name} notified in-app. <a href="${waUrl}" target="_blank" rel="noopener" style="color:#25D366;font-weight:600;margin-left:6px">📲 Also send WhatsApp</a>`,
+      approved ? 'success' : 'info'
+    );
+  } else {
+    toast(`Leave ${approved?'approved':'rejected'} for ${emp.name}.`, approved?'success':'info');
+  }
 }
 </script>
 
