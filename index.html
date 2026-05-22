@@ -3466,7 +3466,7 @@ function openModal(type,pid,pid2){
       </div></div>
       <div class="fg"><label class="fl">Kiosk PIN (4 digits)</label>
         <input class="fi" id="femp-pin" type="password" inputmode="numeric" maxlength="4"
-          value="${emp?.pin?'••••':''}" placeholder="Leave blank — employee selects their name and taps confirm (no PIN needed)"
+          value="" placeholder="Enter 4-digit PIN (leave blank to keep existing)"
           style="letter-spacing:.2em;font-size:18px">
         <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Used for clock in/out on the shared tablet kiosk. Leave blank to disable kiosk access for this employee.</div>
       </div>
@@ -3897,8 +3897,9 @@ function submitEdit(id){
     if(dupPinE){toast('PIN already used by '+dupPinE.name+'. Each employee must have a unique PIN.','error');return;}
   }
   // Save new PIN if entered
-  const rawPinSave = (document.getElementById('femp-pin')?.value||'').trim();
-  if(rawPinSave) emp.pinHash = simpleHash(rawPinSave);
+  const rawPinSave = (document.getElementById('femp-pin')?.value||'').replace(/[^0-9]/g,'').trim();
+  if(rawPinSave.length===4) emp.pinHash = simpleHash(rawPinSave);
+  // If blank — keep existing pinHash
   const cmEl2=document.getElementById('fclockmode');
   if(cmEl2) emp.clockMode=cmEl2.value||'kiosk';
   const attEdEl=document.getElementById('fatt-editor');
