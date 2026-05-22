@@ -3766,13 +3766,6 @@ function submitAdd(){
     const dupEmail = allEmps.find(e=>e.email&&e.email.toLowerCase()===email.toLowerCase());
     if(dupEmail){toast('Email already used by '+dupEmail.name+'. Each employee must have a unique email.','error');return;}
   }
-  // Duplicate PIN check
-  const rawPin = (document.getElementById('femp-pin')?.value||'').trim();
-  if(rawPin){
-    const pinH = simpleHash(rawPin);
-    const dupPin = allEmps.find(e=>e.pinHash&&e.pinHash===pinH);
-    if(dupPin){toast('PIN already used by '+dupPin.name+'. Each employee must have a unique PIN.','error');return;}
-  }
   const sa=parseFloat(document.getElementById('fsal').value);
   const newEmp={
     id:Date.now(),name,email,phone,
@@ -3903,6 +3896,9 @@ function submitEdit(id){
     const dupPinE = others.find(e=>e.pinHash&&e.pinHash===pinHE);
     if(dupPinE){toast('PIN already used by '+dupPinE.name+'. Each employee must have a unique PIN.','error');return;}
   }
+  // Save new PIN if entered
+  const rawPinSave = (document.getElementById('femp-pin')?.value||'').trim();
+  if(rawPinSave) emp.pinHash = simpleHash(rawPinSave);
   const cmEl2=document.getElementById('fclockmode');
   if(cmEl2) emp.clockMode=cmEl2.value||'kiosk';
   const attEdEl=document.getElementById('fatt-editor');
@@ -3911,13 +3907,6 @@ function submitEdit(id){
   if(hodEl!==null) emp.isHOD=hodEl.checked;
   const shodEl=document.getElementById('fis-senior-hod');
   if(shodEl!==null) emp.isSeniorHOD=shodEl.checked;
-  // Duplicate PIN check
-  const rawPin = (document.getElementById('femp-pin')?.value||'').trim();
-  if(rawPin){
-    const pinH = simpleHash(rawPin);
-    const dupPin = allEmps.find(e=>e.pinHash&&e.pinHash===pinH);
-    if(dupPin){toast('PIN already used by '+dupPin.name+'. Each employee must have a unique PIN.','error');return;}
-  }
   const sa=parseFloat(document.getElementById('fsal').value);
   if(sa){if(!emp.salary)emp.salary={amount:sa,currency:'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[]};
     emp.salary.amount=sa;emp.salary.currency=document.getElementById('fcur').value;emp.salary.frequency=document.getElementById('ffreq').value;emp.salary.nextReview=document.getElementById('fnr').value||emp.salary.nextReview;}
@@ -7371,6 +7360,8 @@ async function submitLeaveRequest(){
   closeModal();
   renderLeave();
   toast('Leave request submitted.','success');
+  // Prompt HR to send WhatsApp notification to HOD
+  if(canEdit()) setTimeout(()=>showHODLeaveNotifModal(saved||req), 400);
 }
 
 async function reviewLeave(reqId, newStatus){
@@ -10049,8 +10040,10 @@ function renderLeaveTable(){
           <button class="btn btn-xs btn-primary" onclick="hrConfirmLeave('${req.id}',true)">✓ HR Confirm</button>
           <button class="btn btn-xs btn-danger" onclick="hrConfirmLeave('${req.id}',false)">✗ Reject</button>`;
       } else if(ctx.isHR && req.hodStatus==='pending'){
-        // HR can skip HOD and approve directly
+        // HR can skip HOD and approve directly, or send WA to HOD
         actionBtns = `
+          <button class="btn btn-xs" style="background:#25D366;color:#fff;border-color:#25D366" onclick="showHODLeaveNotifModal(_leaveRequests.find(r=>String(r.id)==='${req.id}'))">&#128172; Notify HOD</button>
+          ` + `
           <button class="btn btn-xs btn-primary" onclick="hrConfirmLeave('${req.id}',true)">✓ Approve (skip HOD)</button>
           <button class="btn btn-xs btn-danger" onclick="hrConfirmLeave('${req.id}',false)">✗ Reject</button>`;
       } else if(ctx.isManager && req.hodStatus==='pending' && !req.requesterIsHOD){
@@ -10150,6 +10143,83 @@ function renderCustomEventTypes(){var el=document.getElementById('custom-event-t
 function addCustomEventType(){var label=document.getElementById('new-evt-label');var key=document.getElementById('new-evt-key');var colorEl=document.getElementById('new-evt-color');var lv=label&&label.value.trim();var kv=(key&&key.value.trim()||'').toLowerCase().replace(/[^a-z0-9_]/g,'_');var color=colorEl&&colorEl.value||'#6c3483';if(!lv||!kv){toast('Enter name and key.','error');return;}var cs=getSettings();if((cs.customEventTypes||[]).find(function(t){return t.key===kv;})||TCFG_BASE[kv]){toast('Key already exists.','error');return;}cs.customEventTypes=(cs.customEventTypes||[]).concat([{label:lv,key:kv,color:color,bg:color+'22'}]);S.set('companySettings',cs);if(label)label.value='';if(key)key.value='';renderCustomEventTypes();toast('Event type added.','success');}
 function removeCustomEventType(i){var cs=getSettings();cs.customEventTypes.splice(i,1);S.set('companySettings',cs);renderCustomEventTypes();}
 function populateKioskLeaveEmpSelect(){var sel=document.getElementById('kiosk-leave-emp');if(!sel)return;var emps=getEmps().filter(function(e){return e.status!=='offboarded'&&e.clockMode==='kiosk';});sel.innerHTML='<option value="">— Select employee —</option>'+emps.map(function(e){return '<option value="'+e.id+'">'+e.name+' — '+(e.dept||'')+'</option>';}).join('');}async function submitKioskLeave(){var empId=document.getElementById('kiosk-leave-emp')&&document.getElementById('kiosk-leave-emp').value;var type=document.getElementById('kiosk-leave-type')&&document.getElementById('kiosk-leave-type').value;var from=document.getElementById('kiosk-leave-from')&&document.getElementById('kiosk-leave-from').value;var to=document.getElementById('kiosk-leave-to')&&document.getElementById('kiosk-leave-to').value;var reason=(document.getElementById('kiosk-leave-reason')&&document.getElementById('kiosk-leave-reason').value)||'';if(!empId||!from||!to){toast('Fill employee and dates.','error');return;}if(to<from){toast('End date must be after start.','error');return;}var days=countWorkingDays(from,to);if(!days){toast('No working days in range.','error');return;}var req={id:Date.now(),empId:empId,type:type,fromDate:from,toDate:to,days:days,reason:reason,status:'approved',hodStatus:'approved',hodApprovedBy:CU.name,hodApprovedAt:new Date().toISOString(),hrStatus:'approved',hrApprovedBy:CU.name,hrApprovedAt:new Date().toISOString(),reviewedBy:CU.name,reviewNote:'Submitted by HR on behalf of kiosk employee',createdAt:new Date().toISOString(),submittedByHR:true};showLoader('Saving...');try{var saved=await dbSaveLeaveRequest(req);_leaveRequests.unshift(saved||req);await deductLeaveBalance(req);hideLoader();toast((gE(empId)&&gE(empId).name||'Employee')+': '+days+' day(s) leave recorded.','success');['kiosk-leave-emp','kiosk-leave-from','kiosk-leave-to','kiosk-leave-reason'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});dbAddAudit(CU.name,'Kiosk leave: '+(gE(empId)&&gE(empId).name||empId)+' '+from+' to '+to);}catch(e){hideLoader();toast('Error: '+(e.message||e),'error');}}
+
+// ── WHATSAPP HOD NOTIFICATION ────────────────────────────────────────────────
+function buildHODWhatsAppLink(emp, hodPhone, req){
+  if(!hodPhone) return null;
+  const clean = hodPhone.replace(/[^0-9+]/g,'');
+  const leaveLabel = LEAVE_TYPES[req.type]?.label || req.type;
+  const from = fDate(req.fromDate), to = fDate(req.toDate);
+  const msg = encodeURIComponent(
+    `Hi, ${emp.name} has submitted a ${req.days}-day ${leaveLabel} request`
+    + ` (${from}${req.days>1?' – '+to:''}).`
+    + `\n\nPlease log in to approve or reject this request.`
+    + `\n\nThank you.`
+  );
+  return `https://wa.me/${clean.replace('+','')}?text=${msg}`;
+}
+
+function showHODLeaveNotifModal(req){
+  const emp = gE(req.empId);
+  if(!emp) return;
+
+  // Find HOD — employee with isHOD whose name matches emp.manager, OR senior HOD for HOD requests
+  let hodList = [];
+  if(req.requesterIsHOD){
+    // Notify senior HODs
+    hodList = getEmps().filter(e=>e.isSeniorHOD && e.status!=='offboarded' && e.phone);
+    if(!hodList.length) hodList = getEmps().filter(e=>e.isSeniorHOD && e.status!=='offboarded');
+  } else {
+    // Notify the employee's HOD
+    const hod = getEmps().find(e=>
+      e.isHOD && e.status!=='offboarded' &&
+      (e.name===emp.manager || (emp.managerId && String(e.id)===String(emp.managerId)))
+    );
+    if(hod) hodList = [hod];
+  }
+
+  if(!hodList.length){
+    toast('No HOD found for this employee. Check the Manager field.','info');
+    return;
+  }
+
+  const leaveLabel = LEAVE_TYPES[req.type]?.label || req.type;
+  const mb = document.getElementById('mbox');
+  mb.className = 'modal-box';
+  mb.innerHTML = `
+    <div class="modal-title">
+      <span>&#128172; Notify HOD via WhatsApp</span>
+      <button class="modal-close" onclick="closeModal()">&#x2715;</button>
+    </div>
+    <div style="background:var(--bg2);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;font-size:13px">
+      <strong>${emp.name}</strong> submitted ${req.days}d <strong>${leaveLabel}</strong>
+      &nbsp;(${fDate(req.fromDate)}${req.days>1?' – '+fDate(req.toDate):''})
+    </div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px">Send to HOD${hodList.length>1?'s':''}:</div>
+    ${hodList.map(hod=>{
+      const link = buildHODWhatsAppLink(emp, hod.phone, req);
+      const c = aColor(hod.name);
+      return `<div style="display:flex;align-items:center;gap:10px;padding:10px;background:#fff;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px">
+        <div class="avatar" style="background:${c}22;color:${c};width:32px;height:32px;font-size:11px">${inits(hod.name)}</div>
+        <div style="flex:1">
+          <div style="font-weight:500;font-size:13px">${hod.name}</div>
+          <div style="font-size:11.5px;color:var(--text3)">${hod.phone||'No phone number'}</div>
+        </div>
+        ${link
+          ? `<a href="${link}" target="_blank" rel="noopener"
+               style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#25D366;color:#fff;border-radius:var(--radius);font-size:13px;font-weight:500;text-decoration:none">
+               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.116 1.526 5.845L0 24l6.341-1.496A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.848 0-3.578-.495-5.065-1.362l-.361-.214-3.765.888.937-3.667-.235-.378A9.937 9.937 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
+               Send WhatsApp
+             </a>`
+          : `<span style="font-size:12px;color:var(--red)">No phone number — add one to the HOD's profile</span>`
+        }
+      </div>`;
+    }).join('')}
+    <div class="mf">
+      <button class="btn" onclick="closeModal()">Close</button>
+    </div>`;
+  document.getElementById('mb').classList.add('open');
+}
 </script>
 
 <!-- KIOSK / PIN SCREEN -->
