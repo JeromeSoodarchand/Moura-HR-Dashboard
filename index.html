@@ -854,6 +854,23 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
         </div>
       </div>
     </div>
+      <!-- Kiosk Leave — Admin/HR only -->
+      <div id="kiosk-leave-section">
+        <div class="card" style="margin-top:14px">
+                <div class="ch"><span class="ct">Leave for Kiosk-Only Employees</span><span style="font-size:12px;color:var(--text3)">Submit leave on behalf of kiosk-only staff</span></div>
+                <div class="cb">
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+                    <div class="fg"><label class="fl">Employee</label><select class="fs" id="kiosk-leave-emp"><option value="">— Select employee —</option></select></div>
+                    <div class="fg"><label class="fl">Leave type</label><select class="fs" id="kiosk-leave-type"><option value="annual">Annual Leave</option><option value="sick">Sick Leave</option><option value="casual">Casual Leave</option><option value="maternity">Maternity Leave</option><option value="paternity">Paternity Leave</option><option value="bereavement">Bereavement Leave</option><option value="other">Other</option></select></div>
+                    <div class="fg"><label class="fl">From date</label><input class="fi" id="kiosk-leave-from" type="date"></div>
+                    <div class="fg"><label class="fl">To date</label><input class="fi" id="kiosk-leave-to" type="date"></div>
+                  </div>
+                  <div class="fg"><label class="fl">Reason (optional)</label><input class="fi" id="kiosk-leave-reason" placeholder="e.g. Annual family trip"></div>
+                  <div style="margin-top:10px;text-align:right"><button class="btn btn-primary" onclick="submitKioskLeave()">&#10003; Submit Leave</button></div>
+                </div>
+              </div>
+      </div>
+
 
     <!-- TRAINING -->
     <div class="page" id="page-training">
@@ -1114,20 +1131,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
           </div>
         </div>
       </div>
-      <!-- KIOSK LEAVE -->
-      <div class="card" style="margin-top:14px">
-        <div class="ch"><span class="ct">Leave for Kiosk-Only Employees</span><span style="font-size:12px;color:var(--text3)">Submit leave on behalf of kiosk-only staff</span></div>
-        <div class="cb">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-            <div class="fg"><label class="fl">Employee</label><select class="fs" id="kiosk-leave-emp"><option value="">— Select employee —</option></select></div>
-            <div class="fg"><label class="fl">Leave type</label><select class="fs" id="kiosk-leave-type"><option value="annual">Annual Leave</option><option value="sick">Sick Leave</option><option value="casual">Casual Leave</option><option value="maternity">Maternity Leave</option><option value="paternity">Paternity Leave</option><option value="bereavement">Bereavement Leave</option><option value="other">Other</option></select></div>
-            <div class="fg"><label class="fl">From date</label><input class="fi" id="kiosk-leave-from" type="date"></div>
-            <div class="fg"><label class="fl">To date</label><input class="fi" id="kiosk-leave-to" type="date"></div>
-          </div>
-          <div class="fg"><label class="fl">Reason (optional)</label><input class="fi" id="kiosk-leave-reason" placeholder="e.g. Annual family trip"></div>
-          <div style="margin-top:10px;text-align:right"><button class="btn btn-primary" onclick="submitKioskLeave()">&#10003; Submit Leave</button></div>
-        </div>
-      </div>
+      
 
       <div class="g2" style="align-items:start;gap:16px">
 
@@ -7235,6 +7239,10 @@ function leaveTypeBadge(type){
 
 // ── Render ────────────────────────────────────────────────────────────────────
 async function renderLeave(){
+  // Show kiosk leave section only for admin/HR
+  const _kls = document.getElementById('kiosk-leave-section');
+  if(_kls) _kls.style.display = (CU&&(CU.role==='admin'||CU.role==='hr'))?'block':'none';
+
   [_leaveRequests, _leaveBalances] = await Promise.all([dbGetLeaveRequests(), dbGetLeaveBalances()]);
   renderLeaveMetrics();
   renderLeavePending();
