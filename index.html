@@ -7366,7 +7366,10 @@ function updateLeaveDays(){
   el.innerHTML = `<strong>${days} working day${days!==1?'s':''}</strong> (excluding weekends & public holidays)`;
 }
 
+let _submittingLeave = false;
 async function submitLeaveRequest(){
+  if(_submittingLeave){ toast('Already submitting, please wait…','info'); return; }
+  _submittingLeave = true;
   const empId  = document.getElementById('lv-emp')?.value;
   const type   = document.getElementById('lv-type')?.value;
   const from   = document.getElementById('lv-from')?.value;
@@ -7424,6 +7427,7 @@ async function submitLeaveRequest(){
   try{
     saved = await dbSaveLeaveRequest(req);
   } catch(err){
+    _submittingLeave = false;
     hideLoader();
     toast('Failed to save leave request: '+(err.message||err),'error');
     return;
@@ -7436,6 +7440,7 @@ async function submitLeaveRequest(){
   const emp = gE(empId);
   addNotif((emp?emp.name:'Employee')+' submitted '+LEAVE_TYPES[type].label+' request ('+days+' days)','info');
   dbAddAudit(CU.name,'Leave request submitted for '+(emp?emp.name:empId)+': '+LEAVE_TYPES[type].label+' '+from+' to '+to);
+  _submittingLeave = false;
   closeModal();
   renderLeave();
   toast('Leave request submitted.','success');
