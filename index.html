@@ -1298,6 +1298,9 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
+// Embedded Supabase credentials — works in incognito without localStorage setup
+const _SB_URL = 'https://zkrhhelxapixvuumyvug.supabase.co';
+const _SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InprcmhoZWx4YXBpeHZ1dW15dnVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc4OTM1NTEsImV4cCI6MjA2MzQ2OTU1MX0.Zy_yhJGPBMNnMPLkUCJuFYxEbGAq7aN3IFDrFPVpHmk';
 
 function initSupabase(){
   // ── Read credentials from URL params first (shared onboarding links) ────────
@@ -1344,7 +1347,18 @@ function initSupabase(){
     if(setupSec) setupSec.style.display = 'none';
     return true;
   }
-  // No credentials yet — show the connection panel on the login screen
+  // Use embedded credentials as fallback (works in incognito)
+  if(_SB_URL && _SB_KEY){
+    _sb = supabase.createClient(_SB_URL, _SB_KEY, {global:{headers:{'x-app-secret':_APP_SECRET}}});
+    // Save to localStorage for future use
+    localStorage.setItem('sb_url', _SB_URL);
+    localStorage.setItem('sb_key', _SB_KEY);
+    localStorage.setItem('sb_connected', '1');
+    const loginSec = document.getElementById('sb-config-section');
+    if(loginSec) loginSec.style.display = 'none';
+    return true;
+  }
+  // No credentials at all — show connection panel
   const loginSec = document.getElementById('sb-config-section');
   if(loginSec) loginSec.style.display = 'block';
   return false;
@@ -3427,7 +3441,21 @@ function openModal(type,pid,pid2){
       <div class="fsec">Role</div>
       <div class="fr"><div class="fg"><label class="fl">Job title / Role</label><select class="fs" id="fr2"><option value="">— Select title —</option>${(getSettings().jobTitles||[]).map(t=>`<option value="${t}" ${emp?.role===t?"selected":""}>${t}</option>`).join("")}${emp?.role&&!(getSettings().jobTitles||[]).includes(emp.role)?`<option value="${emp.role}" selected>${emp.role}</option>`:""}<option value="__custom">&#9999; Other (type below)&hellip;</option></select><input class="fi" id="fr2c" placeholder="Custom title&hellip;" style="margin-top:5px" value="${emp?.role&&!(getSettings().jobTitles||[]).includes(emp.role)?emp.role:""}" oninput="document.getElementById('fr2').value='__custom'"></div>
       <div class="fg"><label class="fl">Department</label><select class="fs" id="fd">${getDepts().map(d=>`<option ${emp?.dept===d?'selected':''}>${d}</option>`).join('')}</select></div></div>
-      <div class="fg"><label class="fl">Manager</label><input class="fi" id="fm" value="${emp?.manager||''}" placeholder="Manager name"></div>
+      <div class="fg"><label class="fl">Manager</label>
+<select class="fs" id="fm" onchange="document.getElementById('fm-custom').style.display=this.value==='__other'?'block':'none'">
+  <option value="">— Select manager —</option>
+  ${(()=>{
+    const mgrs=getEmps().filter(e=>e.status!=='offboarded'&&(e.isHOD||e.isSeniorHOD||(e.role&&/manager|admin|hr|director|head|supervisor/i.test(e.role))));
+    const cur=emp?.manager||'';
+    const hasMatch=mgrs.some(m=>m.name===cur);
+    return mgrs.map(m=>'<option value="'+m.name+'" '+(cur===m.name?'selected':'')+'>'+m.name+(m.role?' ('+m.role+')':'')+'</option>').join('')
+      +'<option value="__other" '+(cur&&!hasMatch?'selected':'')+'>✏ Other (type below)…</option>';
+  })()}
+</select>
+<input class="fi" id="fm-custom" placeholder="Type manager name…" style="margin-top:5px"
+  value="${(()=>{const cur=emp?.manager||'';const mgrs=getEmps().filter(e=>e.status!=='offboarded'&&(e.isHOD||e.isSeniorHOD||(e.role&&/manager|admin|hr|director|head|supervisor/i.test(e.role))));return cur&&!mgrs.some(m=>m.name===cur)?cur:'';})()}"
+  oninput="document.getElementById('fm').value='__other'">
+</div>
       <div class="fg"><label class="fl">Mobile clock-in</label>
         <select class="fs" id="fclockmode">
           <option value="kiosk">Kiosk only — must use the entrance tablet (default)</option>
@@ -3743,7 +3771,7 @@ function submitAdd(){
     id:Date.now(),name,email,phone,
     role:(()=>{const rv=(document.getElementById('fr2')?.value||'').trim();return rv&&rv!=='__custom'?rv:(document.getElementById('fr2c')?.value||'').trim()||'—';})(),
     dept:document.getElementById('fd').value,
-    manager:document.getElementById('fm').value||'—',
+    manager:(()=>{const v=(document.getElementById('fm')?.value||'').trim();return v&&v!=='__other'?v:(document.getElementById('fm-custom')?.value||'').trim()||'—';})(),
     start:document.getElementById('fst').value||td(),
     status:'onboarding',
     salary:sa?{amount:sa,currency:document.getElementById('fcur').value,frequency:document.getElementById('ffreq').value,lastReview:null,nextReview:document.getElementById('fnr').value||null,history:[{date:document.getElementById('fst').value||td(),amount:sa,note:'Starting salary'}]}:null,
@@ -3769,9 +3797,10 @@ function submitAdd(){
       employeeName:name, role:newEmp.role, dept:newEmp.dept,
       startDate:newEmp.start, manager:newEmp.manager, addedBy:CU.name
     });
+    // Auto-create HR account for new employee
+    autoCreateAccountForNewEmployee(s).catch(e=>console.error('Auto-account error:',e));
     closeModal();
     renderDashboard();
-    // Re-render employees page too so rows use the Supabase id
     if(document.getElementById('page-employees')?.classList.contains('active')) renderEmployees();
     toast(name+' added. Kiosk access ready.','success');
   }).catch(err=>{
@@ -3780,6 +3809,7 @@ function submitAdd(){
     _cache.emps.unshift(newEmp);
     saveEmps(_cache.emps);
     addNotif('New hire added locally: '+name,'success');
+    autoCreateAccountForNewEmployee(newEmp).catch(()=>{});
     closeModal();renderDashboard();
     if(document.getElementById('page-employees')?.classList.contains('active')) renderEmployees();
     toast(name+' added (saved locally).','success');
@@ -3860,7 +3890,7 @@ function submitEdit(id){
   emp.email = document.getElementById('fe').value.trim()||emp.email;
   emp.phone = newPhone;
   emp.role=(()=>{const rv=(document.getElementById('fr2')?.value||'').trim();return rv&&rv!=='__custom'?rv:(document.getElementById('fr2c')?.value||'').trim()||emp.role;})();
-  emp.dept=document.getElementById('fd').value;emp.manager=document.getElementById('fm').value||emp.manager;
+  emp.dept=document.getElementById('fd').value;emp.manager=(()=>{const v=(document.getElementById('fm')?.value||'').trim();return v&&v!=='__other'?v:(document.getElementById('fm-custom')?.value||'').trim()||emp.manager;})();
   // Duplicate PIN check (excluding self)
   const rawPinE = (document.getElementById('femp-pin')?.value||'').trim();
   if(rawPinE){
@@ -3890,7 +3920,19 @@ function submitEdit(id){
     const idx=_cache.emps.findIndex(e=>String(e.id)===String(s.id));
     if(idx>=0)_cache.emps[idx]=s;
     dbAddAudit(CU.name,'Edited employee: '+emp.name);
-    closeModal();
+    // Update HR account role if HOD status changed
+  const linkedUser = getUsers().find(u=>u.empId&&String(u.empId)===String(id));
+  if(linkedUser){
+    const newRole = (emp.isHOD||emp.isSeniorHOD)?'manager':'viewer';
+    if(linkedUser.role!==newRole){
+      linkedUser.role=newRole;
+      dbSaveUser(linkedUser).catch(()=>{});
+    }
+  } else {
+    // No account yet — create one now
+    autoCreateAccountForNewEmployee(emp).catch(()=>{});
+  }
+  closeModal();
   if(document.getElementById('page-employees')?.classList.contains('active')) renderEmployees();
   toast('Profile updated.','success');
   }).catch(err=>{
@@ -7614,12 +7656,16 @@ async function loginPinSubmit(){
 
   // Reload employees AND users fresh from DB/localStorage before PIN lookup
   // This ensures pinHash fields are current even on first page load
-  // Always reload fresh from DB to get latest pinHash values
-  if(sbReady()){
-    try{ const fresh=await dbGetEmployees(); if(fresh.length) _cache.emps=fresh; } catch(e){}
-  } else if(!_cache.emps.length){
-    _cache.emps = S.get('employees',[]);
+  // Always reload fresh from DB — works in incognito (no localStorage cache)
+  if(!_sb){
+    const u=sbUrl||_SB_URL, k=sbKey||_SB_KEY;
+    if(u&&k) _sb=supabase.createClient(u,k,{global:{headers:{'x-app-secret':_APP_SECRET}}});
   }
+  if(sbReady()) await _sbSetSecret();
+  if(sbReady()){
+    try{ const fresh=await dbGetEmployees(); if(fresh&&fresh.length) _cache.emps=fresh; } catch(e){ console.warn('DB load error:',e); }
+  }
+  if(!_cache.emps.length) _cache.emps=S.get('employees',[]);
   // Ensure user cache is populated (needed for user↔employee linking)
   if(!_userCache.length){
     try{
@@ -10346,6 +10392,48 @@ async function notifyEmployeeLeaveResult(req, approved, note){
     );
   } else {
     toast(`Leave ${approved?'approved':'rejected'} for ${emp.name}.`, approved?'success':'info');
+  }
+}
+
+// ── AUTO-CREATE HR ACCOUNT FOR NEW EMPLOYEE ──────────────────────────────────
+async function autoCreateAccountForNewEmployee(emp){
+  if(!emp || !emp.id) return;
+
+  // Check if account already exists
+  const existing = getUsers().find(u=>u.empId&&String(u.empId)===String(emp.id));
+  if(existing){ console.log('Account already exists for', emp.name); return; }
+
+  // Generate employee ID string e.g. EMP007
+  const empIdStr = 'EMP' + String(emp.id).slice(-6).padStart(3,'0');
+
+  // Role based on HOD flags
+  const role = (emp.isHOD || emp.isSeniorHOD) ? 'manager' : 'viewer';
+
+  const newUser = {
+    id:           Date.now(),
+    name:         emp.name,
+    username:     empIdStr,
+    email:        emp.email || '',
+    phone:        emp.phone || '',
+    role:         role,
+    active:       true,
+    passwordHash: simpleHash(empIdStr), // default password = employee ID
+    setupDone:    false,
+    empId:        emp.id,
+    createdAt:    new Date().toISOString(),
+    seniorHOD:    emp.isSeniorHOD || false,
+    crossLeaveVisibility: false,
+  };
+
+  try {
+    const saved = await dbSaveUser(newUser);
+    const u = saved || newUser;
+    _userCache.unshift(u);
+    saveUsers(_userCache);
+    console.log('Auto-created HR account for', emp.name, '| username:', empIdStr, '| role:', role);
+    addNotif(`HR account created for ${emp.name} — username: ${empIdStr}`, 'success');
+  } catch(e) {
+    console.error('Failed to auto-create account for', emp.name, e);
   }
 }
 </script>
