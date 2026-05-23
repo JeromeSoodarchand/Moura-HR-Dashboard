@@ -579,8 +579,16 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
   <div class="app-body">
   <nav class="topnav">
     <div style="display:flex;align-items:center;gap:10px">
-      <div class="nav-logo"></div>
-      <div id="page-heading" style="font-size:15px;font-weight:600;color:var(--text)">Dashboard</div>
+      <div class="nav-logo" style="display:flex;align-items:center;gap:8px">
+        <!-- Company logo -->
+        <img id="nav-logo-img" src="" alt="" style="height:32px;width:auto;object-fit:contain;display:none;border-radius:4px">
+        <!-- Fallback icon when no logo -->
+        <div id="nav-logo-icon" style="width:32px;height:32px;border-radius:6px;background:var(--gold,#D69328);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        </div>
+        <span id="nav-org-name" style="font-size:14px;font-weight:600;color:var(--text)"></span>
+      </div>
+      <div id="page-heading" style="font-size:15px;font-weight:600;color:var(--text2);border-left:1px solid var(--border);padding-left:10px;margin-left:2px">Dashboard</div>
     </div>
     <div class="topnav-right">
       <div class="notif-wrap">
@@ -633,7 +641,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
         <button class="fb" onclick="setEF('onboarding',this)">Onboarding</button>
         <button class="fb" onclick="setEF('offboarded',this)">Offboarded</button>
       </div>
-      <div class="card"><table><thead><tr><th>Employee</th><th>Department</th><th>Role</th><th>Start</th><th>Salary</th><th>Status</th><th>HR Account</th><th>Events</th><th></th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
+      <div class="card"><table><thead><tr><th>Employee</th><th>Department</th><th>Role</th><th>Start</th><th>Salary</th><th>Status</th><th>Daily Rate</th><th>HR Account</th><th>Events</th><th></th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
     </div>
 
     <!-- ONBOARDING -->
@@ -650,6 +658,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
         <div class="ph-title">Attendance</div>
         <div class="ph-actions">
           <button class="btn" onclick="exportAttendanceCSV()">&#x2B07; Export CSV</button>
+          <button class="btn btn-primary" onclick="openAddAttRecordModal()" style="display:${hasPerm('edit_attendance')?'inline-flex':'none'}">&#43; Add Record</button>
           <button class="btn btn-blue" onclick="openAttendanceModal('scanQR')">&#128247; Clock In / Out</button>
           <button class="btn btn-primary ahr-btn" onclick="openAttendanceModal('manageLocations')">&#127970; Manage Locations</button>
         </div>
@@ -1076,6 +1085,22 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
           </div>
         </div>
       </div>
+      <!-- Leave Types Manager -->
+      <div class="card" style="margin-bottom:14px">
+        <div class="ch"><span class="ct">&#128197; Leave Types</span></div>
+        <div class="cb">
+          <div id="leave-types-list" style="margin-bottom:12px"></div>
+          <div style="border-top:1px solid var(--border);padding-top:12px">
+            <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text2)">Add new leave type</div>
+            <div class="fr3">
+              <div class="fg"><label class="fl">Name *</label><input class="fi" id="new-lt-label" placeholder="e.g. Study Leave"></div>
+              <div class="fg"><label class="fl">Max days/year (0=unlimited)</label><input class="fi" id="new-lt-days" type="number" min="0" placeholder="e.g. 5"></div>
+              <div class="fg"><label class="fl">Colour</label><input type="color" id="new-lt-color" value="#378ADD" style="width:100%;height:36px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;padding:2px"></div>
+            </div>
+            <button class="btn btn-primary" style="margin-top:6px" onclick="addLeaveType()">+ Add Leave Type</button>
+          </div>
+        </div>
+      </div>
       <!-- CUSTOM EVENT TYPES -->
       <div class="card" style="margin-top:14px">
         <div class="ch"><span class="ct">Event &amp; Warning Types</span><span style="font-size:12px;color:var(--text3)">Custom types for the Events log</span></div>
@@ -1261,23 +1286,19 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
               </div>
               <div class="fsec">Overtime Rates</div>
               <div class="fr3">
-                <div class="fg"><label class="fl">Weekday OT rate (&times;)</label>
-                  <input class="fi" id="settings-ot-weekday" type="number" min="1" max="5" step="0.25" value="1.5">
-                  <div style="font-size:11px;color:var(--text3);margin-top:3px">e.g. 1.5 = time &amp; a half</div>
+                <div class="fg"><label class="fl">Weekday rate (&times;) <span style="font-size:10px;color:var(--text3)">Mon–Sat</span></label>
+                  <input class="fi" id="settings-ot-weekday" type="number" min="1" max="10" step="0.25" value="1.5">
+                  <div style="font-size:11px;color:var(--text3);margin-top:3px">Weekdays including Saturdays</div>
                 </div>
-                <div class="fg"><label class="fl">Weekend OT rate (&times;)</label>
-                  <input class="fi" id="settings-ot-weekend" type="number" min="1" max="5" step="0.25" value="2.0">
+                <div class="fg"><label class="fl">Holiday rate (&times;) <span style="font-size:10px;color:var(--text3)">Sun &amp; PH</span></label>
+                  <input class="fi" id="settings-ot-weekend" type="number" min="1" max="10" step="0.25" value="2.0">
+                  <div style="font-size:11px;color:var(--text3);margin-top:3px">Sundays &amp; Public Holidays</div>
                 </div>
-                <div class="fg"><label class="fl">Holiday OT rate (&times;)</label>
-                  <input class="fi" id="settings-ot-holiday" type="number" min="1" max="5" step="0.25" value="2.5">
+                <div class="fg"><label class="fl">Disaster/Unforeseen (&times;)</label>
+                  <input class="fi" id="settings-ot-holiday" type="number" min="1" max="10" step="0.25" value="3.0">
+                  <div style="font-size:11px;color:var(--text3);margin-top:3px">Emergency/disaster rate</div>
                 </div>
               </div>
-              <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="saveWorkingHoursSettings()">Save working hours</button>
-            </div>
-          </div>
-
-          <div class="card" style="margin-bottom:14px">
-            <div class="ch"><span class="ct">✅ Onboarding Checklist Defaults</span></div>
             </div>
           </div>
         </div>
@@ -1285,7 +1306,6 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
     </div>
   </div>
 </div>
-
 
 <div class="modal-backdrop" id="mb" onclick="if(event.target===this)closeModal()">
   <div class="modal-box" id="mbox"></div>
@@ -1298,6 +1318,13 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
+// ── Single Supabase client factory — prevents multiple instances ─────────────
+function _sbCreate(url, key){
+  if(_sb) return _sb; // already exists — reuse
+  if(!url||!key) return null;
+  _sb = supabase.createClient(url, key, {global:{headers:{'x-app-secret':_APP_SECRET}}});
+  return _sb;
+}
 // Embedded Supabase credentials — works in incognito without localStorage setup
 const _SB_URL = 'https://zkrhhelxapixvuumyvug.supabase.co';
 const _SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InprcmhoZWx4YXBpeHZ1dW15dnVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc4OTM1NTEsImV4cCI6MjA2MzQ2OTU1MX0.Zy_yhJGPBMNnMPLkUCJuFYxEbGAq7aN3IFDrFPVpHmk';
@@ -1336,7 +1363,7 @@ function initSupabase(){
   const url = localStorage.getItem('sb_url') || '';
   const key = localStorage.getItem('sb_key') || '';
   if(url && key){
-    _sb = supabase.createClient(url, key, {global:{headers:{'x-app-secret':_APP_SECRET}}});
+    _sb = _sbCreate(url, key);
     _sbSetSecret(); // fire immediately, non-blocking at init
     // Immediately authenticate all requests with app session secret
     _sb.rpc && _sbSetSecret();
@@ -1349,7 +1376,7 @@ function initSupabase(){
   }
   // Use embedded credentials as fallback (works in incognito)
   if(_SB_URL && _SB_KEY){
-    _sb = supabase.createClient(_SB_URL, _SB_KEY, {global:{headers:{'x-app-secret':_APP_SECRET}}});
+    _sb = _sbCreate(_SB_URL, _SB_KEY);
     // Save to localStorage for future use
     localStorage.setItem('sb_url', _SB_URL);
     localStorage.setItem('sb_key', _SB_KEY);
@@ -1372,7 +1399,8 @@ async function saveSbCredentials(){
   if(!url||!key){ showSbStatus('Enter both URL and key.','error'); return; }
   showSbStatus('Testing connection…','info');
   try{
-    const testClient = supabase.createClient(url, key, {global:{headers:{'x-app-secret':_APP_SECRET}}});
+    // Use existing _sb if credentials match, else create temp client
+    const testClient = _sb || supabase.createClient(url, key, {global:{headers:{'x-app-secret':_APP_SECRET}}});
     const {error} = await testClient.from('hr_users').select('id').limit(1);
     if(error) throw error;
     // Connection works — persist credentials permanently
@@ -1744,7 +1772,7 @@ async function dbSetSetting(key,value){
 // ── ROW MAPPERS ──
 function rowToEmp(r){
   return{id:r.id,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
-    salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:r.salary_history||[]}:null,
+    salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:r.salary_history||[]}:null,dailyRate:r.daily_rate?{amount:parseFloat(r.daily_rate),currency:r.daily_rate_currency||'MUR',notes:r.daily_rate_notes||''}:null,
     checklist:r.checklist||{},offChecklist:r.off_checklist||{},lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
     photoUrl:r.photo_url||null,files:r.files||[],clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:r.att_editor||false,isHOD:r.is_hod||false,isSeniorHOD:r.is_senior_hod||false};
 }
@@ -1765,6 +1793,9 @@ function empToRow(e){
     salary_last_review:  e.salary?.lastReview  || null,
     salary_next_review:  e.salary?.nextReview   || null,
     salary_history:  Array.isArray(e.salary?.history) ? e.salary.history : [],
+    daily_rate:          e.dailyRate?.amount   ?? null,
+    daily_rate_currency: e.dailyRate?.currency || 'MUR',
+    daily_rate_notes:    e.dailyRate?.notes    || null,
     // JSON columns
     checklist:     e.checklist      || {},
     off_checklist: e.offChecklist   || {},
@@ -1867,9 +1898,9 @@ async function loadAndRenderUserMgmt(){
 
 // ─── ROLE PERMISSIONS ─────────────────────────────────────────────────────────
 const ROLE_PERMS={
-  admin:['view_employees','add_employees','edit_employees','view_salary','manage_onboarding','log_events','view_events','view_training','manage_training','manage_offboarding','view_analytics','view_attendance','admin'],
+  admin:['view_employees','add_employees','edit_employees','view_salary','manage_onboarding','log_events','view_events','view_training','manage_training','manage_offboarding','view_analytics','view_attendance','edit_attendance','admin'],
   hr:['view_employees','add_employees','edit_employees','view_salary','manage_onboarding','log_events','view_events','view_training','manage_training','manage_offboarding','view_analytics','view_attendance'],
-  manager:['view_employees','log_events','view_events','view_training','view_attendance'],
+  manager:['view_employees','log_events','view_events','view_training','view_attendance','edit_attendance'],
   viewer:['view_employees','view_events','view_training'],
 };
 
@@ -1944,7 +1975,7 @@ async function boot(){
       // Init Supabase if not already
       const sbUrl=localStorage.getItem('sb_url')||'';
       const sbKey=localStorage.getItem('sb_key')||'';
-      if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey,{global:{headers:{'x-app-secret':_APP_SECRET}}});
+      if(sbUrl&&sbKey&&!_sb){ _sb=_sbCreate(sbUrl,sbKey);
     await _sbSetSecret(); }
       // Load data in background
       showLoader('Loading…');
@@ -2071,7 +2102,7 @@ async function doSetup(){
     localStorage.setItem('sb_url',sbUrlSetup);
     localStorage.setItem('sb_key',sbKeySetup);
     localStorage.setItem('sb_connected','1');
-    _sb=supabase.createClient(sbUrlSetup,sbKeySetup,{global:{headers:{'x-app-secret':_APP_SECRET}}});
+    _sb=_sbCreate(sbUrlSetup,sbKeySetup);
     await _sbSetSecret();
   }
   // Save user to DB or local
@@ -2101,7 +2132,7 @@ async function doLogin(){
   const p=document.getElementById('lp').value;
   const sbUrl=localStorage.getItem('sb_url')||'';
   const sbKey=localStorage.getItem('sb_key')||'';
-  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey,{global:{headers:{'x-app-secret':_APP_SECRET}}}); }
+  if(sbUrl&&sbKey&&!_sb){ _sb=_sbCreate(sbUrl,sbKey); }
   if(sbReady()) await _sbSetSecret();
 
   // Try multiple formats in order:
@@ -2803,10 +2834,11 @@ function hasPerm(perm){
   return perms.includes(perm)||perms.includes('admin');
 }
 function canEdit(){return hasPerm('edit_employees')||hasPerm('add_employees');}
+function canEditAtt(){return hasPerm('edit_attendance');}
 
 function applyPermissions(){
-  const r=CU.role;
-  const _rd=document.getElementById('rd');if(_rd){_rd.textContent=r[0].toUpperCase()+r.slice(1);_rd.className='role-badge role-'+r;}
+  const r=CU._displayRole||CU.role;
+  const _rd=document.getElementById('rd');if(_rd){_rd.textContent=r[0].toUpperCase()+r.slice(1);_rd.className='role-badge role-'+(CU._displayRole?'manager':CU.role);}
   const _ud=document.getElementById('ud');if(_ud)_ud.textContent=CU.name;
   // Sidebar nav items
   document.querySelectorAll('.nav-tab[data-perm]').forEach(tab=>{
@@ -2880,21 +2912,26 @@ function renderAuditLog(){
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 function renderDashboard(){
-  const emps=getEmps(),evts=getEvts(),asgn=getTrAsgn();
+  // Scope to HOD's team if not admin/HR
+  const emps=getScopedEmps(),evts=getEvts(),asgn=getTrAsgn();
   const active=emps.filter(e=>e.status==='active').length,onb=emps.filter(e=>e.status==='onboarding').length;
-  const warns=evts.filter(e=>e.type==='warning').length,od=asgn.filter(a=>a.status==='overdue').length;
+  // Filter events/training to scoped employees only
+  const empIds=emps.map(e=>String(e.id));
+  const scopedEvts=evts.filter(e=>empIds.includes(String(e.empId)));
+  const scopedAsgn=asgn.filter(a=>empIds.includes(String(a.empId)));
+  const warns=scopedEvts.filter(e=>e.type==='warning').length,od=scopedAsgn.filter(a=>a.status==='overdue').length;
   document.getElementById('dash-metrics').innerHTML=`
     <div class="mc"><div class="mc-label">Total Employees</div><div class="mc-value">${active+onb}</div><div class="mc-delta delta-up">Active headcount</div></div>
     <div class="mc"><div class="mc-label">Onboarding</div><div class="mc-value">${onb}</div><div class="mc-delta">${onb} in progress</div></div>
     <div class="mc"><div class="mc-label">Pending Warnings</div><div class="mc-value">${warns}</div><div class="mc-delta delta-down">${warns} unresolved</div></div>
     <div class="mc"><div class="mc-label">Overdue Trainings</div><div class="mc-value">${od}</div><div class="mc-delta delta-down">${od} need action</div></div>`;
-  const sorted=[...evts].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,6);
+  const sorted=[...scopedEvts].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,6);
   document.getElementById('etl').textContent=evts.length+' total';
   document.getElementById('dash-events').innerHTML='<div class="tl" style="padding:0 16px">'+sorted.map(ev=>{
     const emp=gE(ev.empId),cfg=TCFG[ev.type]||{label:ev.type,bg:'#eee',color:'#333'};
     return`<div class="tl-item"><div class="tl-icon" style="background:${cfg.bg};color:${cfg.color}">${cfg.label[0]}</div><div class="tl-body"><div class="tl-desc">${ev.desc}</div><div class="tl-meta">${emp?emp.name:'—'} · ${fDate(ev.date)}</div></div></div>`;
   }).join('')+'</div>';
-  const onboarding=emps.filter(e=>e.status==='onboarding');
+  const onboarding=emps.filter(e=>e.status==='onboarding'); // already scoped
   document.getElementById('dash-onb').innerHTML=onboarding.length===0?'<div style="padding:20px;color:var(--text3);text-align:center;font-size:13px">No active onboarding</div>':
     '<div class="tl" style="padding:0 16px">'+onboarding.map(emp=>{
       const c=aColor(emp.name),cl=emp.checklist||{},done=Object.values(cl).filter(Boolean).length,tot=Object.keys(cl).length;
@@ -2926,6 +2963,9 @@ function renderEmployees(){
       <td><div class="emp-cell"><div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div><div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.email}</div></div></div></td>
       <td>${emp.dept}</td><td>${emp.role}</td><td>${fDate(emp.start)}</td>
       <td style="font-weight:500">${sal}</td><td>${sB(emp.status)}${emp.attendanceEditor?'<span class="badge" style="background:#1E144520;color:#1E1445;margin-left:4px" title="Attendance Editor">&#x1F4CA; Att. Editor</span>':''}${emp.isHOD?'<span class="badge" style="background:#BA751720;color:#BA7517;margin-left:4px">HOD</span>':''}${emp.isSeniorHOD?'<span class="badge" style="background:#7F77DD20;color:#7F77DD;margin-left:4px">Sr. HOD</span>':''}</td>
+      <td style="font-size:12px;font-weight:500">${emp.dailyRate
+        ? fCur(emp.dailyRate.amount,emp.dailyRate.currency)+'/day'
+        : '<span style="color:var(--text3)">—</span>'}</td>
       <td style="font-size:12px">${(()=>{
         const u=getUsers().find(u=>u.empId&&String(u.empId)===String(emp.id));
         if(u) return `<span class="badge" style="background:#1E144520;color:#1E1445">&#10003; ${u.role[0].toUpperCase()+u.role.slice(1)}</span>`;
@@ -3304,7 +3344,14 @@ function viewEmp(id){
           return`<tr><td>${fDate(h.date)}</td><td style="font-weight:500">${fCur(h.amount,sal.currency)}</td><td>${chg!==null?`<span style="color:${chg>0?'var(--green)':'var(--red)'}">${chg>0?'+':''}${chg}%</span>`:'—'}</td><td class="tm">${h.note}</td></tr>`;
         }).join('')}
       </tbody></table>
-      ${canEdit()?`<div style="margin-top:12px"><button class="btn btn-sm btn-primary" onclick="closeModal();openModal('updateSalary',${id})">Update Salary</button></div>`:''}
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px">Daily Rate</div>
+        ${emp.dailyRate
+          ? `<div class="sal-card"><div class="sal-label">Current Daily Rate</div><div class="sal-value">${fCur(emp.dailyRate.amount,emp.dailyRate.currency)}/day</div>${emp.dailyRate.notes?`<div class="sal-meta">${emp.dailyRate.notes}</div>`:''}</div>`
+          : '<div class="txs tm" style="margin-bottom:8px">No daily rate set.</div>'}
+        ${canEdit()?`<button class="btn btn-sm" onclick="closeModal();openUpdateDailyRateModal(${id})">&#9998; Update Daily Rate</button>`:''}
+      </div>
+      ${canEdit()?`<div style="margin-top:8px"><button class="btn btn-sm btn-primary" onclick="closeModal();openModal('updateSalary',${id})">Update Salary</button></div>`:''}
       `:'<div class="tm ts">No salary data.</div>'}
     </div>`:''}
 
@@ -4712,28 +4759,40 @@ function renderSettings(){
 function applyAttEditorPerm(){
   if(!CU) return;
   const empId = CU.empId;
+  // Always reload employee record fresh to avoid stale isHOD flags
   const emp = empId ? gE(empId) : null;
   const perms = new Set(CU.customPerms||[]);
-  // Admin/HR already have all perms via ROLE_PERMS
+  // Admin/HR already have all perms
   if(CU.role==='admin'||CU.role==='hr') return;
-  // HOD flag — grant leave approval and attendance access
-  if(emp?.isHOD || CU.role==='manager'){
-    ['view_employees','view_events','view_training','view_attendance',
+  // HOD — only from employee record flag, never from CU.role
+  // (CU.role can be stale from a previous session elevation)
+  if(emp?.isHOD){
+    ['view_employees','view_events','view_training','view_attendance','edit_attendance',
      'log_events','view_leave','approve_leave'].forEach(p=>perms.add(p));
+    CU.customPerms = [...perms];
+    // Temporarily elevate role for nav display — but don't persist
+    if(CU.role==='viewer') CU._displayRole = 'manager';
+    return;
   }
-  // Senior HOD — same as HOD plus cross-dept visibility
+  // Senior HOD
   if(emp?.isSeniorHOD){
     perms.add('senior_hod');
+    ['view_employees','view_events','view_training','view_attendance','edit_attendance',
+     'log_events','view_leave','approve_leave'].forEach(p=>perms.add(p));
+    CU.customPerms = [...perms];
+    if(CU.role==='viewer') CU._displayRole = 'manager';
+    return;
   }
-  // Attendance editor
+  // Attendance editor only
   if(emp?.attendanceEditor){
     perms.add('view_attendance'); perms.add('view_employees');
   }
-  CU.customPerms = [...perms];
-  // Also update CU.role so nav tabs show correctly for HOD
-  if((emp?.isHOD||emp?.isSeniorHOD) && CU.role==='viewer'){
-    CU.role = 'manager';
+  // hr_users role=manager (legacy) — only if NOT overriding employee flags
+  if(CU.role==='manager'){
+    ['view_employees','view_events','view_training','view_attendance',
+     'log_events','view_leave','approve_leave'].forEach(p=>perms.add(p));
   }
+  CU.customPerms = [...perms];
 }
 
 function updateColorPreview(primary,secondary){
@@ -4954,8 +5013,17 @@ function saveCompanySettings(){
 
 function applyBrandingToUI(cs){
   // Update nav logo
-  const navImg=document.getElementById('nav-logo-img');
-  if(navImg&&cs.logoB64){navImg.src='data:image/'+(cs.logoMime||'png')+';base64,'+cs.logoB64;}
+  const navImg  = document.getElementById('nav-logo-img');
+  const navIcon = document.getElementById('nav-logo-icon');
+  const navName = document.getElementById('nav-org-name');
+  if(navName) navName.textContent = cs.orgName || 'Moura HR';
+  if(cs.logoB64){
+    if(navImg){ navImg.src='data:image/'+(cs.logoMime||'png')+';base64,'+cs.logoB64; navImg.style.display='block'; }
+    if(navIcon) navIcon.style.display='none'; // hide fallback icon when logo present
+  } else {
+    if(navImg)  navImg.style.display='none';
+    if(navIcon) navIcon.style.display='flex';
+  }
   // Update login logo
   const loginImg=document.getElementById('login-logo-img');
   if(loginImg&&cs.logoB64){loginImg.src='data:image/'+(cs.logoMime||'png')+';base64,'+cs.logoB64;}
@@ -5958,8 +6026,10 @@ function renderAttReportFilters(){
   if(!to.value) to.value = todayStr();
   const sel = document.getElementById('att-dept-filter');
   if(!sel) return;
-  const depts = [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))];
+  const depts = getScopedDepts();
   sel.innerHTML = '<option value="">All departments</option>'+depts.map(d=>'<option>'+d+'</option>').join('');
+  // For HOD: auto-select their dept
+  if(isHODMode() && depts.length===1) sel.value = depts[0];
 }
 
 async function renderAttendanceReport(){
@@ -5969,7 +6039,9 @@ async function renderAttendanceReport(){
   if(!from||!to) return;
   const recs   = await dbGetAttendance(from.value, to.value);
   _attendance  = recs;
-  const allEmps= getEmps().filter(e=>e.status!=='offboarded'&&
+  // Scope to HOD's team if not admin/HR
+  const scopedEmps = getScopedEmps();
+  const allEmps = scopedEmps.filter(e=>
     (!deptF||!deptF.value||e.dept===deptF.value));
   const empIds = allEmps.map(e=>e.id);
   let list = recs.filter(r=>empIds.some(id=>String(id)===String(r.empId)));
@@ -6080,9 +6152,10 @@ async function renderAttendanceReport(){
         ${r.notes&&!anom.flag?`<span style="color:var(--text3)">${r.notes}</span>`:''}
       </td>
       <td style="padding:8px 12px">
-        ${canEdit()?`<div style="display:flex;gap:3px">
+        ${(hasPerm('edit_attendance')&&isInScope(r.empId))?`<div style="display:flex;gap:3px">
+          <button class="btn btn-xs" onclick="openSingleAttEditDirect(${JSON.stringify(r.id)})">&#9998; Edit</button>
           ${onSite?`<button class="btn btn-xs btn-primary" onclick="manualClockOut(${JSON.stringify(r.id)})">Clock out</button>`:''}
-          <button class="btn btn-xs btn-danger" onclick="deleteAttRecord(${JSON.stringify(r.id)})">✕</button>
+          <button class="btn btn-xs btn-danger" onclick="deleteAttRecord(${JSON.stringify(r.id)})">&#x2715;</button>
         </div>`:''}
       </td>
     </tr>`;
@@ -6334,11 +6407,7 @@ const _attModal=document.getElementById('att-modal');
 if(_attModal) _attModal.addEventListener('click',function(e){if(e.target===document.getElementById('att-modal'))closeAttModal();});
 
 // Hook showPage to render attendance
-const _showPageOrigAtt = showPage;
-window.showPage = function(id, el){
-  _showPageOrigAtt(id, el);
-  if(id==='attendance') renderAttendance();
-};
+// [showPage att override consolidated below]
 
 
 
@@ -6353,7 +6422,7 @@ async function checkSetupToken(){
   if(sbUrl && sbKey){
     localStorage.setItem('sb_url', sbUrl);
     localStorage.setItem('sb_key', sbKey);
-    if(!_sb) _sb = supabase.createClient(sbUrl, sbKey, {global:{headers:{'x-app-secret':_APP_SECRET}}});
+    if(!_sb) _sb = _sbCreate(sbUrl, sbKey);
     _sbSetSecret();
   }
 
@@ -7022,15 +7091,15 @@ function normalisePhone(val){
 
 // Default balances (days per year) — Mauritius Labour Act
 const LEAVE_DEFAULTS = {annual:20, sick:15, casual:10};
-const LEAVE_TYPES = {
-  annual:     {label:'Annual Leave',     color:'#378ADD', bg:'#E6F1FB'},
-  sick:       {label:'Sick Leave',       color:'#D85A30', bg:'#FAECE7'},
-  casual:     {label:'Casual Leave',     color:'#BA7517', bg:'#FAEEDA'},
-  maternity:  {label:'Maternity Leave',  color:'#7F77DD', bg:'#EEEDFE'},
-  paternity:  {label:'Paternity Leave',  color:'#1D9E75', bg:'#E1F5EE'},
-  bereavement:{label:'Bereavement',      color:'#444441', bg:'#F1EFE8'},
-  other:      {label:'Other',            color:'#888780', bg:'#F5F4F0'},
-};
+// LEAVE_TYPES is now dynamic — reads from settings so HR can add/remove types
+function getLEAVE_TYPES(){
+  const types = getSettings().leaveTypes || [];
+  const obj = {};
+  types.forEach(t=>{ obj[t.key] = {label:t.label, color:t.color, bg:t.bg, maxDays:t.maxDays||0}; });
+  return obj;
+}
+// Backwards-compatible alias used throughout the app
+const LEAVE_TYPES = new Proxy({}, { get(_,k){ return getLEAVE_TYPES()[k]; }, ownKeys(){ return Object.keys(getLEAVE_TYPES()); }, getOwnPropertyDescriptor(_,k){ return Object.getOwnPropertyDescriptor(getLEAVE_TYPES(),k)||{configurable:true,enumerable:true}; } });
 const MAURITIUS_HOLIDAYS_2025 = [
   '2025-01-01','2025-01-02','2025-02-01','2025-03-12','2025-05-01',
   '2025-11-01','2025-11-02','2025-12-25','2025-08-15','2025-09-03'
@@ -7591,11 +7660,7 @@ function exportLeaveCSV(){
 }
 
 // ── Hook into showPage ────────────────────────────────────────────────────────
-const _showPageLeave = window.showPage || showPage;
-window.showPage = function(id, el){
-  _showPageLeave(id, el);
-  if(id==='leave') renderLeave();
-};
+// [showPage leave override consolidated below]
 
 // ── Add Leave Request button to employee clock-in screen ─────────────────────
 // Patched in showEmployeeClockInScreen via the "Request Leave" button
@@ -7651,7 +7716,7 @@ async function loginPinSubmit(){
   // Connect Supabase if needed
   const sbUrl=localStorage.getItem('sb_url')||'';
   const sbKey=localStorage.getItem('sb_key')||'';
-  if(sbUrl&&sbKey&&!_sb){ _sb=supabase.createClient(sbUrl,sbKey,{global:{headers:{'x-app-secret':_APP_SECRET}}}); }
+  if(sbUrl&&sbKey&&!_sb){ _sb=_sbCreate(sbUrl,sbKey); }
   if(sbReady()) await _sbSetSecret();
 
   // Reload employees AND users fresh from DB/localStorage before PIN lookup
@@ -7659,7 +7724,7 @@ async function loginPinSubmit(){
   // Always reload fresh from DB — works in incognito (no localStorage cache)
   if(!_sb){
     const u=sbUrl||_SB_URL, k=sbKey||_SB_KEY;
-    if(u&&k) _sb=supabase.createClient(u,k,{global:{headers:{'x-app-secret':_APP_SECRET}}});
+    if(u&&k) _sb=_sbCreate(u,k);
   }
   if(sbReady()) await _sbSetSecret();
   if(sbReady()){
@@ -8343,123 +8408,240 @@ function anomalyEditRecord(recId, rowIdx){
   openAttendanceEditModal(recId, ()=>runAnomalyCheck());
 }
 
-function openAttendanceEditModal(recId, onSave){
-  const local = S.get('attendance',[]);
-  const rec = local.find(r=>String(r.id)===String(recId));
-  if(!rec){ toast('Record not found.','error'); return; }
-  const emp = gE(rec.empId);
+function openAttendanceEditModal(empId, dateFrom, dateTo, reviewIdx){
+  // Security: HOD can only edit their team's attendance
+  if(!isInScope(empId) && !canEdit()){
+    toast('You can only edit attendance for your team members.','error');
+    return;
+  }
+  const emp = gE(empId);
+  if(!emp){ toast('Employee not found.','error'); return; }
   const mb = document.getElementById('mbox');
-  mb.className = 'modal-box';
+  if(!mb) return;
+  mb.className = 'modal-box wide';
+
+  function renderRecords(){
+    const recs = (_attendance||[]).filter(r=>
+      String(r.empId)===String(empId) &&
+      r.date >= dateFrom && r.date <= dateTo
+    ).sort((a,b)=>new Date(a.clockIn)-new Date(b.clockIn));
+
+    const c = aColor(emp.name);
+    const rows = recs.length ? recs.map(r=>{
+      const dur = r.durationMinutes || calcDuration(r.clockIn, r.clockOut);
+      const isOpen = !r.clockOut;
+      const isAnomaly = !r.clockOut || (dur && dur < 240);
+      return `<tr style="border-bottom:1px solid var(--border);${isAnomaly?'background:#fffbf0':''}">
+        <td style="padding:7px 10px;font-size:12px;color:var(--text2)">${fDate(r.date)}</td>
+        <td style="padding:7px 10px;color:var(--green);font-weight:500;font-size:12.5px">${fmtTime(r.clockIn)}</td>
+        <td style="padding:7px 10px;font-size:12.5px">${isOpen
+          ? '<span class="badge b-in-progress" style="font-size:11px">Open</span>'
+          : `<span style="color:var(--red-deep)">${fmtTime(r.clockOut)}</span>`}</td>
+        <td style="padding:7px 10px;font-size:12px">${dur ? fmtDuration(dur) : '<span style="color:var(--text3)">—</span>'}</td>
+        <td style="padding:7px 10px;font-size:11.5px;color:var(--text3)">${r.location||'—'}</td>
+        <td style="padding:7px 10px">
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-xs" onclick="openSingleAttEdit('${r.id}','${reviewIdx}')">&#9998; Edit</button>
+            ${isOpen ? `<button class="btn btn-xs btn-primary" onclick="quickClockOut('${r.id}','${reviewIdx}')">Clock out</button>` : ''}
+            <button class="btn btn-xs btn-danger" onclick="deleteAttRecordFromReview('${r.id}','${empId}','${dateFrom}','${dateTo}','${reviewIdx}')">&#x2715;</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text3);font-size:13px">No attendance records for this period.</td></tr>`;
+
+    return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+      <thead><tr style="background:var(--bg2)">
+        <th style="text-align:left;padding:7px 10px;font-size:11.5px;font-weight:600;color:var(--text2)">Date</th>
+        <th style="text-align:left;padding:7px 10px;font-size:11.5px;font-weight:600;color:var(--text2)">Clock in</th>
+        <th style="text-align:left;padding:7px 10px;font-size:11.5px;font-weight:600;color:var(--text2)">Clock out</th>
+        <th style="text-align:left;padding:7px 10px;font-size:11.5px;font-weight:600;color:var(--text2)">Duration</th>
+        <th style="text-align:left;padding:7px 10px;font-size:11.5px;font-weight:600;color:var(--text2)">Location</th>
+        <th style="padding:7px 10px"></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+
+  function build(){
+    mb.innerHTML = `
+      <div class="modal-title">Attendance — ${emp.name} (${fDate(dateFrom)} – ${fDate(dateTo)})
+        <button class="modal-close" onclick="closeModal()">&#x2715;</button>
+      </div>
+      <div id="att-edit-records" style="margin-bottom:14px;max-height:320px;overflow-y:auto">${renderRecords()}</div>
+      <div style="border-top:1px solid var(--border);padding-top:12px">
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text2)">&#43; Add / Fix Record</div>
+        <div class="fr3">
+          <div class="fg"><label class="fl">Date *</label><input class="fi" id="new-att-date" type="date" min="${dateFrom}" max="${dateTo}" value="${dateFrom}"></div>
+          <div class="fg"><label class="fl">Clock in *</label><input class="fi" id="new-att-ci" type="time" value="08:00"></div>
+          <div class="fg"><label class="fl">Clock out</label><input class="fi" id="new-att-co" type="time" value="17:00"></div>
+        </div>
+        <div class="fr">
+          <div class="fg"><label class="fl">Location</label><input class="fi" id="new-att-loc" value="Main Entrance" placeholder="Location"></div>
+          <div class="fg"><label class="fl">Notes</label><input class="fi" id="new-att-notes" placeholder="e.g. Manual entry by HR"></div>
+        </div>
+      </div>
+      <div class="mf">
+        <button class="btn" onclick="closeModal()">Close</button>
+        <button class="btn btn-primary" onclick="addAttRecordFromReview('${empId}','${reviewIdx}')">&#43; Add Record</button>
+      </div>`;
+  }
+
+  build();
   document.getElementById('mb').classList.add('open');
-
-  // Parse existing times
-  const ciDate = new Date(rec.clockIn);
-  const ciStr  = ciDate.toTimeString().slice(0,5);
-  const coStr  = rec.clockOut ? new Date(rec.clockOut).toTimeString().slice(0,5) : '';
-
-  mb.innerHTML = `
-    <div class="modal-title">Edit Attendance — ${emp?emp.name:'Employee'} (${fDate(rec.date)})
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div class="fr">
-      <div class="fg"><label class="fl">Clock-in time</label>
-        <input class="fi" id="att-edit-ci" type="time" value="${ciStr}">
-      </div>
-      <div class="fg"><label class="fl">Clock-out time (blank = open)</label>
-        <input class="fi" id="att-edit-co" type="time" value="${coStr}">
-      </div>
-    </div>
-    <div class="fg"><label class="fl">Location</label>
-      <input class="fi" id="att-edit-loc" value="${rec.location||''}" placeholder="Location">
-    </div>
-    <div class="fg"><label class="fl">Notes</label>
-      <textarea class="ft" id="att-edit-notes" rows="2">${rec.notes||''}</textarea>
-    </div>
-    <div class="mf">
-      <button class="btn" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveAttendanceEdit('${recId}', ${JSON.stringify(rec.date)}, ${JSON.stringify(rec.empId)})">Save</button>
-    </div>`;
-
-  window._anomalyOnSave = onSave;
+  window._attEditEmpId   = empId;
+  window._attEditFrom    = dateFrom;
+  window._attEditTo      = dateTo;
+  window._attEditRevIdx  = reviewIdx;
 }
 
-async function saveAttendanceEdit(recId, date, empId){
-  const local = S.get('attendance',[]);
-  const rec = local.find(r=>String(r.id)===String(recId));
+async function openSingleAttEdit(recId, reviewIdx){
+  const rec = (_attendance||[]).find(r=>String(r.id)===String(recId));
   if(!rec){ toast('Record not found.','error'); return; }
+  const emp = gE(rec.empId);
+  const ci  = new Date(rec.clockIn).toTimeString().slice(0,5);
+  const co  = rec.clockOut ? new Date(rec.clockOut).toTimeString().slice(0,5) : '';
+  const mb  = document.getElementById('mbox');
+  mb.className = 'modal-box';
+  mb.innerHTML = `
+    <div class="modal-title">Edit Record — ${emp?.name||'Employee'} (${fDate(rec.date)})
+      <button class="modal-close" onclick="openAttendanceEditModal('${rec.empId}','${window._attEditFrom}','${window._attEditTo}','${reviewIdx}')">&#x2715;</button>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">Clock-in time *</label><input class="fi" id="att-edit-ci" type="time" value="${ci}"></div>
+      <div class="fg"><label class="fl">Clock-out (blank = open)</label><input class="fi" id="att-edit-co" type="time" value="${co}"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">Location</label><input class="fi" id="att-edit-loc" value="${rec.location||''}"></div>
+      <div class="fg"><label class="fl">Notes</label><textarea class="ft" id="att-edit-notes" rows="2">${rec.notes||''}</textarea></div>
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="openAttendanceEditModal('${rec.empId}','${window._attEditFrom}','${window._attEditTo}','${reviewIdx}')">&#8592; Back</button>
+      <button class="btn btn-primary" onclick="saveAttRecordEdit('${recId}','${rec.date}','${rec.empId}','${reviewIdx}')">Save</button>
+    </div>`;
+}
 
-  const ciTime = document.getElementById('att-edit-ci').value;
-  const coTime = document.getElementById('att-edit-co').value;
-  const loc    = document.getElementById('att-edit-loc').value;
-  const notes  = document.getElementById('att-edit-notes').value;
-
+async function saveAttRecordEdit(recId, date, empId, reviewIdx){
+  const ciTime = document.getElementById('att-edit-ci')?.value;
+  const coTime = document.getElementById('att-edit-co')?.value;
+  const loc    = document.getElementById('att-edit-loc')?.value;
+  const notes  = document.getElementById('att-edit-notes')?.value;
   if(!ciTime){ toast('Clock-in time required.','error'); return; }
+
+  // Find from _attendance (Supabase) not just localStorage
+  let rec = (_attendance||[]).find(r=>String(r.id)===String(recId));
+  if(!rec){ toast('Record not found.','error'); return; }
 
   rec.clockIn  = new Date(date+'T'+ciTime+':00').toISOString();
   rec.clockOut = coTime ? new Date(date+'T'+coTime+':00').toISOString() : null;
-  rec.durationMinutes = rec.clockOut ? calcDuration(rec.clockIn, rec.clockOut) : null;
+  rec.durationMinutes = rec.clockOut ? calcDuration(rec.clockIn,rec.clockOut) : null;
   rec.location = loc || rec.location;
   rec.notes    = notes;
 
   if(rec.clockOut && new Date(rec.clockOut)<=new Date(rec.clockIn)){
     toast('Clock-out must be after clock-in.','error'); return;
   }
-
-  const idx = local.findIndex(r=>String(r.id)===String(recId));
-  if(idx>=0) local[idx]=rec;
-  S.set('attendance', local);
   showLoader('Saving…');
-  await dbSaveAttendance(rec);
-  hideLoader();
-  closeModal();
-  toast('Attendance record updated.','success');
-  dbAddAudit(CU.name,'Edited attendance record for '+(gE(rec.empId)?.name||empId)+' on '+date);
-  if(window._anomalyOnSave) window._anomalyOnSave();
-  renderAttendanceReport();
+  try{
+    const saved = await dbSaveAttendance(rec);
+    // Update _attendance cache
+    const idx = _attendance.findIndex(r=>String(r.id)===String(recId));
+    if(idx>=0) _attendance[idx] = saved||rec;
+    hideLoader();
+    toast('Record updated.','success');
+    dbAddAudit(CU.name,'Edited attendance: '+(gE(empId)?.name||empId)+' on '+date);
+    // Refresh the review row
+    await refreshReviewRowDB(reviewIdx);
+    openAttendanceEditModal(empId, window._attEditFrom, window._attEditTo, reviewIdx);
+  } catch(e){
+    hideLoader();
+    toast('Save failed: '+(e.message||e),'error');
+  }
 }
 
-async function anomalySaveNote(recId, rowIdx, empId, anomType, date){
-  const noteEl = document.getElementById('anom-note-'+rowIdx);
-  const note   = noteEl?.value||'';
+async function addAttRecordFromReview(empId, reviewIdx){
+  const date  = document.getElementById('new-att-date')?.value;
+  const ci    = document.getElementById('new-att-ci')?.value;
+  const co    = document.getElementById('new-att-co')?.value;
+  const loc   = document.getElementById('new-att-loc')?.value;
+  const notes = document.getElementById('new-att-notes')?.value;
+  if(!date||!ci){ toast('Date and clock-in time required.','error'); return; }
 
-  if(recId && recId!==''){
-    // Update note on existing record
-    const local = S.get('attendance',[]);
-    const rec = local.find(r=>String(r.id)===String(recId));
-    if(rec){
-      rec.notes = note;
-      const idx = local.findIndex(r=>String(r.id)===String(recId));
-      if(idx>=0) local[idx]=rec;
-      S.set('attendance', local);
-      showLoader('Saving…');
-      await dbSaveAttendance(rec);
-      hideLoader();
-    }
+  const newRec = {
+    id:              Date.now(),
+    empId:           empId,
+    date:            date,
+    clockIn:         new Date(date+'T'+ci+':00').toISOString(),
+    clockOut:        co ? new Date(date+'T'+co+':00').toISOString() : null,
+    durationMinutes: co ? calcDuration(new Date(date+'T'+ci+':00').toISOString(), new Date(date+'T'+co+':00').toISOString()) : null,
+    location:        loc||'Manual entry',
+    notes:           notes||'Manual record added by '+CU.name,
+  };
+  showLoader('Saving…');
+  try{
+    const saved = await dbSaveAttendance(newRec);
+    _attendance = [...(_attendance||[]), saved||newRec];
+    hideLoader();
+    toast('Record added.','success');
+    dbAddAudit(CU.name,'Added attendance record for '+(gE(empId)?.name||empId)+' on '+date);
+    await refreshReviewRowDB(reviewIdx);
+    openAttendanceEditModal(empId, window._attEditFrom, window._attEditTo, reviewIdx);
+  } catch(e){
+    hideLoader();
+    toast('Save failed: '+(e.message||e),'error');
   }
-
-  // Also log as an HR event on the employee record
-  if(note.trim()){
-    const evt = {
-      id:Date.now(), empId:empId, type:'absence',
-      date:date,
-      desc:'Attendance anomaly ('+( ANOMALY_TYPES[anomType]?.label||anomType)+'): '+note,
-      loggedBy:CU.name, notified:false
-    };
-    dbSaveEvent(evt).then(saved=>{ _cache.evts.unshift(saved||evt); saveEvts(_cache.evts); }).catch(()=>{});
-  }
-
-  toast('Note saved.','success');
-  dbAddAudit(CU.name,'Anomaly note on '+(gE(empId)?.name||empId)+' ('+date+'): '+note);
 }
 
-// Set today as default anomaly date when attendance page opens
-const _origRenderAtt = window.showPage || function(){};
+async function deleteAttRecordFromReview(recId, empId, dateFrom, dateTo, reviewIdx){
+  if(!confirm('Delete this attendance record?')) return;
+  showLoader('Deleting…');
+  try{
+    if(sbReady()) await _sb.from('attendance').delete().eq('id', recId);
+    _attendance = (_attendance||[]).filter(r=>String(r.id)!==String(recId));
+    const local = S.get('attendance',[]).filter(r=>String(r.id)!==String(recId));
+    S.set('attendance', local);
+    hideLoader();
+    toast('Record deleted.','success');
+    await refreshReviewRowDB(reviewIdx);
+    openAttendanceEditModal(empId, dateFrom, dateTo, reviewIdx);
+  } catch(e){
+    hideLoader();
+    toast('Delete failed: '+(e.message||e),'error');
+  }
+}
 
+async function quickClockOut(recId, reviewIdx){
+  const rec = (_attendance||[]).find(r=>String(r.id)===String(recId));
+  if(!rec) return;
+  const settings = getOTSettings();
+  rec.clockOut = new Date(rec.date+'T'+settings.workEnd+':00').toISOString();
+  rec.durationMinutes = calcDuration(rec.clockIn, rec.clockOut);
+  rec.notes = (rec.notes?rec.notes+' | ':'')+'Auto clock-out by HR ('+CU.name+')';
+  showLoader('Saving…');
+  try{
+    const saved = await dbSaveAttendance(rec);
+    const idx = _attendance.findIndex(r=>String(r.id)===String(recId));
+    if(idx>=0) _attendance[idx] = saved||rec;
+    hideLoader();
+    toast('Clock-out set to '+settings.workEnd+'.','success');
+    await refreshReviewRowDB(reviewIdx);
+    openAttendanceEditModal(rec.empId, window._attEditFrom, window._attEditTo, reviewIdx);
+  } catch(e){
+    hideLoader();
+    toast('Save failed.','error');
+  }
+}
 
-// ════════════════════════════════════════════════════════════════════════════
-// WORKING HOURS & OVERTIME MODULE
-// ════════════════════════════════════════════════════════════════════════════
-
+async function refreshReviewRowDB(reviewIdx){
+  if(reviewIdx===undefined || !_attReviewData[reviewIdx]) return;
+  const row = _attReviewData[reviewIdx];
+  // Reload from Supabase
+  const fresh = await dbGetAttendance(_payrollPeriod?.from, _payrollPeriod?.to);
+  _attendance = fresh;
+  row.recs = fresh.filter(r=>String(r.empId)===String(row.emp.id));
+  row.anomalies = detectEmpAnomalies(row.emp, row.recs, _payrollPeriod?.from, _payrollPeriod?.to, getOTSettings());
+  if(row.anomalies.length===0) row.reviewed = true;
+  renderAttReview();
+}
 function getWorkingHoursSettings(){
   const cs = getSettings();
   return {
@@ -8467,9 +8649,9 @@ function getWorkingHoursSettings(){
     workEnd:      cs.workEnd      || '17:00',
     workHours:    cs.workHours    || 8,
     workDays:     cs.workDays     || [1,2,3,4,5], // 0=Sun..6=Sat
-    otWeekday:    cs.otWeekday    || 1.5,
-    otWeekend:    cs.otWeekend    || 2.0,
-    otHoliday:    cs.otHoliday    || 2.5,
+    otWeekday:    cs.otWeekday    || 1.5,   // Mon–Sat weekday
+    otWeekend:    cs.otWeekend    || 2.0,   // Sun & Public Holidays
+    otHoliday:    cs.otHoliday    || 3.0,   // Disaster/unforeseen
     jobTitles:       cs.jobTitles       || ['Funeral Director','Embalmer','Mortuary Technician','Hearse Driver','Administrative Assistant','Accounts Officer','HR Manager','Operations Manager','Funeral Arranger','Receptionist'],
     customEventTypes: cs.customEventTypes || [],
   };
@@ -8521,22 +8703,7 @@ function calcOTCost(d){
 }
 
 // Populate OT dept filter when attendance page loads
-const _origShowPageAtt2 = window.showPage;
-window.showPage = function(id, el){
-  _origShowPageAtt2(id, el);
-  if(id==='attendance'){
-    const df = document.getElementById('ot-dept-filter');
-    if(df){
-      const depts=[...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept||'').filter(Boolean))].sort();
-      df.innerHTML='<option value="">All departments</option>'+depts.map(d=>'<option>'+d+'</option>').join('');
-    }
-    // Set default OT date range (current month)
-    const from = document.getElementById('ot-date-from');
-    const to   = document.getElementById('ot-date-to');
-    if(from&&!from.value){ const d=new Date(); from.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-01'; }
-    if(to&&!to.value){ to.value=todayStr(); }
-  }
-};
+// [showPage att2 override consolidated below]
 
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -8551,15 +8718,16 @@ function getOTSettings(){
     workHours:  s.workHours  || 8,
     workStart:  s.workStart  || '08:00',
     workEnd:    s.workEnd    || '17:00',
-    otWeekday:  s.otWeekday  || 1.5,
-    otWeekend:  s.otWeekend  || 2.0,
-    otHoliday:  s.otHoliday  || 2.5,
+    otWeekday:  s.otWeekday  || 1.5,   // Weekday incl. Saturday
+    otWeekend:  s.otWeekend  || 2.0,   // Holiday incl. Sunday
+    otHoliday:  s.otHoliday  || 3.0,   // Disaster/unforeseen
   };
 }
 
 function isDayWeekend(dateStr){
   const d = new Date(dateStr+'T00:00:00').getDay();
-  return d===0||d===6;
+  // Saturday = weekday rate; Sunday = holiday/weekend rate
+  return d===0; // only Sunday triggers holiday rate
 }
 function isDayHoliday(dateStr){
   return (MAURITIUS_HOLIDAYS_2025||[]).includes(dateStr);
@@ -8840,8 +9008,10 @@ function initPayroll(){
 
   const sel = document.getElementById('pay-dept');
   if(sel && sel.options.length<=1){
-    [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort()
+    getScopedDepts().sort()
       .forEach(d=>{ const o=document.createElement('option');o.value=d;o.textContent=d;sel.appendChild(o); });
+    // Auto-select HOD's dept
+    if(isHODMode()){ const d=getScopedDepts(); if(d.length===1) sel.value=d[0]; }
   }
   renderPayrollStepper(0);
 }
@@ -8889,8 +9059,10 @@ async function startPayrollReview(){
   catch(e){ attRecs = S.get('attendance',[]).filter(r=>r.date>=from&&r.date<=to); }
 
   const settings = getOTSettings();
-  const emps = getEmps().filter(e=>
-    e.status!=='offboarded' && e.salary?.amount && (!dept||e.dept===dept)
+  // Scope to HOD's team if not admin/HR
+  const scopeEmps = getScopedEmps();
+  const emps = scopeEmps.filter(e=>
+    e.salary?.amount && (!dept||e.dept===dept)
   );
 
   _attReviewData = emps.map(emp=>{
@@ -9126,28 +9298,30 @@ async function addAttRecord(empId, periodFrom, reviewIdx){
 async function quickFixAnomalies(idx){
   const row = _attReviewData[idx];
   if(!row) return;
-  // Auto-set clock-out to end of normal working hours for open records
   const settings = getOTSettings();
-  const local = S.get('attendance',[]);
   let fixed = 0;
   for(const anom of row.anomalies){
-    if(anom.type==='no_clockout'&&anom.rec){
-      const endTime = new Date(anom.date+'T'+settings.workEnd+':00').toISOString();
-      const rec=local.find(r=>String(r.id)===String(anom.rec.id));
-      if(rec){
-        rec.clockOut=endTime;
-        rec.durationMinutes=calcDuration(rec.clockIn,endTime);
-        rec.notes=(rec.notes?rec.notes+' | ':'')+'Auto clock-out set by HR ('+CU.name+')';
-        const li=local.findIndex(r=>String(r.id)===String(rec.id));
-        if(li>=0) local[li]=rec;
-        try{ await dbSaveAttendance(rec); }catch(e){}
-        fixed++;
+    if((anom.type==='no_clockout'||anom.type==='missing_clockout') && anom.rec){
+      const rec = (_attendance||[]).find(r=>String(r.id)===String(anom.rec.id));
+      if(rec && !rec.clockOut){
+        rec.clockOut = new Date(rec.date+'T'+settings.workEnd+':00').toISOString();
+        rec.durationMinutes = calcDuration(rec.clockIn, rec.clockOut);
+        rec.notes = (rec.notes?rec.notes+' | ':'')+'Auto clock-out set by HR ('+CU.name+')';
+        try{
+          const saved = await dbSaveAttendance(rec);
+          const i = _attendance.findIndex(r=>String(r.id)===String(rec.id));
+          if(i>=0) _attendance[i] = saved||rec;
+          fixed++;
+        } catch(e){ console.error('quickFix error:',e); }
       }
     }
   }
-  S.set('attendance',local);
-  if(fixed) toast(`${fixed} clock-out(s) auto-set to ${settings.workEnd}.`,'success');
-  refreshReviewRow(idx);
+  if(fixed){
+    toast(`${fixed} clock-out(s) auto-set to ${settings.workEnd}.`,'success');
+  } else {
+    toast('No auto-fixable anomalies found (only missing clock-outs can be auto-fixed).','info');
+  }
+  await refreshReviewRowDB(idx);
 }
 
 function refreshReviewRow(idx){
@@ -9555,20 +9729,7 @@ async function runPayroll(){
 }
 
 // Hook into showPage
-const _showPagePayroll = window.showPage;
-window.showPage = function(id, el){
-  _showPagePayroll(id, el);
-  if(id==='payroll'){
-    initPayroll();
-    // Managers land on HOD validation step if a review is in progress
-    if(CU&&CU.role==='manager'&&_attReviewData.length){
-      document.getElementById('payroll-step-period').style.display='none';
-      document.getElementById('payroll-step-hod').style.display='block';
-      renderPayrollStepper(2);
-      renderHODValidation();
-    }
-  }
-};
+// [showPage payroll override consolidated below]
 
 
 // ── KIOSK CONFIRMATION STEP ───────────────────────────────────────────────────
@@ -9971,7 +10132,8 @@ function getLeaveApprovalContext(){
     (CU.empId&&String(u.empId)===String(CU.empId))||
     (CU.id&&String(u.id)===String(CU.id))
   );
-  const isHOD      = emp?.isHOD      || CU.role==='manager' || false;
+  // isHOD: from employee record only — CU.role can be stale
+  const isHOD      = emp?.isHOD || (CU.role==='manager' && !CU.empId) || false;
   const isSeniorHOD= emp?.isSeniorHOD|| u?.seniorHOD        || false;
   return {
     isHR,
@@ -10196,6 +10358,13 @@ function renderLeaveTable(){
           <button class="btn btn-xs btn-primary" onclick="hodApproveLeave('${req.id}',true)">✓ Approve HOD leave</button>
           <button class="btn btn-xs btn-danger" onclick="hodApproveLeave('${req.id}',false)">✗ Reject</button>`;
       }
+    }
+
+    // Employee can edit/cancel their own pending requests
+    if(!actionBtns && CU && CU.empId && String(req.empId)===String(CU.empId) && req.status==='pending'){
+      actionBtns = `
+        <button class="btn btn-xs" onclick="openEditLeaveModal('${req.id}')">&#9998; Edit</button>
+        <button class="btn btn-xs btn-danger" onclick="cancelLeaveRequest('${req.id}')">&#x2715; Cancel</button>`;
     }
 
     // Stage indicator
@@ -10435,6 +10604,460 @@ async function autoCreateAccountForNewEmployee(emp){
   } catch(e) {
     console.error('Failed to auto-create account for', emp.name, e);
   }
+}
+
+// ── CONSOLIDATED showPage hook (replaces 4 separate overrides) ───────────────
+const _origShowPage = showPage;
+window.showPage = function(id, el){
+  _origShowPage(id, el);
+  if(id==='attendance') renderAttendance();
+  if(id==='leave')      renderLeave();
+  if(id==='payroll')    initPayroll();
+};
+
+// ── EMPLOYEE LEAVE CANCEL / EDIT ─────────────────────────────────────────────
+async function cancelLeaveRequest(reqId){
+  const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
+  if(!req) return;
+  // Only allow cancel if still pending (not yet approved)
+  if(req.status !== 'pending'){
+    toast('Cannot cancel — leave has already been ' + req.status + '.', 'error');
+    return;
+  }
+  if(!confirm('Cancel this leave request? This cannot be undone.')) return;
+  req.status      = 'cancelled';
+  req.hodStatus   = 'cancelled';
+  req.reviewNote  = (req.reviewNote ? req.reviewNote + ' | ' : '') + 'Cancelled by employee';
+  showLoader('Cancelling…');
+  try{
+    await dbSaveLeaveRequest(req);
+    addNotif('Leave request cancelled.', 'info');
+    toast('Leave request cancelled.', 'success');
+  } catch(e){
+    toast('Failed to cancel: ' + (e.message||e), 'error');
+  }
+  hideLoader();
+  renderLeave();
+}
+
+function openEditLeaveModal(reqId){
+  const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
+  if(!req) return;
+  if(req.status !== 'pending'){
+    toast('Cannot edit — leave has already been ' + req.status + '.', 'error');
+    return;
+  }
+  const mb = document.getElementById('mbox');
+  if(!mb) return;
+  mb.className = 'modal-box';
+  mb.innerHTML = `
+    <div class="modal-title">Edit Leave Request <button class="modal-close" onclick="closeModal()">&#x2715;</button></div>
+    <div style="background:var(--bg2);border-radius:var(--radius);padding:10px 12px;margin-bottom:14px;font-size:13px">
+      <strong>Note:</strong> Editing will reset the approval status. The HOD will need to re-approve.
+    </div>
+    <div class="fg"><label class="fl">Leave type *</label>
+      <select class="fs" id="lv-type-edit">
+        ${Object.entries(LEAVE_TYPES).map(([k,v])=>`<option value="${k}" ${req.type===k?'selected':''}>${v.label}</option>`).join('')}
+      </select>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">From *</label><input class="fi" id="lv-from-edit" type="date" value="${req.fromDate}"></div>
+      <div class="fg"><label class="fl">To *</label><input class="fi" id="lv-to-edit" type="date" value="${req.toDate}"></div>
+    </div>
+    <div class="fg"><label class="fl">Reason</label>
+      <textarea class="ft" id="lv-reason-edit" placeholder="Optional…">${req.reason||''}</textarea>
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditLeave('${req.id}')">Save changes</button>
+    </div>`;
+  document.getElementById('mb').classList.add('open');
+}
+
+async function submitEditLeave(reqId){
+  const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
+  if(!req) return;
+  const from   = document.getElementById('lv-from-edit')?.value;
+  const to     = document.getElementById('lv-to-edit')?.value;
+  const type   = document.getElementById('lv-type-edit')?.value;
+  const reason = document.getElementById('lv-reason-edit')?.value||'';
+  if(!from||!to){ toast('Please fill all required fields.','error'); return; }
+  if(new Date(to) < new Date(from)){ toast('End date must be after start date.','error'); return; }
+  // Recalculate days
+  const days = calcWorkingDays(from, to);
+  if(days <= 0){ toast('No working days in selected range.','error'); return; }
+  // Reset approval — editing means it needs re-approval
+  req.type       = type;
+  req.fromDate   = from;
+  req.toDate     = to;
+  req.reason     = reason;
+  req.days       = days;
+  req.status     = 'pending';
+  req.hodStatus  = 'pending';
+  req.hrStatus   = 'pending';
+  req.hodApprovedBy  = null;
+  req.hodApprovedAt  = null;
+  req.hrApprovedBy   = null;
+  req.hrApprovedAt   = null;
+  req.reviewNote = (req.reviewNote ? req.reviewNote + ' | ' : '') + 'Edited by employee — re-approval needed';
+  showLoader('Saving…');
+  try{
+    await dbSaveLeaveRequest(req);
+    // Re-notify HOD
+    notifyHODofLeaveRequest(req);
+    closeModal();
+    renderLeave();
+    toast('Leave request updated. HOD has been notified.','success');
+  } catch(e){
+    toast('Failed to save: '+(e.message||e),'error');
+  }
+  hideLoader();
+}
+
+// ── DAILY RATE MANAGEMENT ────────────────────────────────────────────────────
+function openUpdateDailyRateModal(empId){
+  if(!canEdit()){ toast('HR and Admin only.','error'); return; }
+  const emp = gE(empId);
+  if(!emp) return;
+  const dr = emp.dailyRate;
+  const mb = document.getElementById('mbox');
+  if(!mb) return;
+  mb.className = 'modal-box';
+  mb.innerHTML = `
+    <div class="modal-title">Daily Rate — ${emp.name} <button class="modal-close" onclick="closeModal()">&#x2715;</button></div>
+    ${dr ? `<div style="background:var(--bg2);border-radius:var(--radius);padding:10px 12px;margin-bottom:14px;font-size:13px">
+      Current: <strong>${fCur(dr.amount, dr.currency)} / day</strong>${dr.notes?` <span style="color:var(--text3)">· ${dr.notes}</span>`:''}
+    </div>` : '<div style="background:var(--amber-light);border-radius:var(--radius);padding:10px 12px;margin-bottom:14px;font-size:12.5px;color:var(--amber-deep)">No daily rate set yet.</div>'}
+    <div class="fr3">
+      <div class="fg" style="grid-column:span 2"><label class="fl">Daily rate amount *</label>
+        <input class="fi" id="dr-amount" type="number" step="0.01" min="0" placeholder="e.g. 1500" value="${dr?.amount||''}">
+      </div>
+      <div class="fg"><label class="fl">Currency</label>
+        <select class="fs" id="dr-currency">
+          ${['MUR','USD','EUR','GBP','AUD','CAD'].map(c=>`<option ${(dr?.currency||'MUR')===c?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="fg"><label class="fl">Notes</label>
+      <input class="fi" id="dr-notes" placeholder="e.g. Includes allowances" value="${dr?.notes||''}">
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitUpdateDailyRate(${empId})">Save</button>
+    </div>`;
+  document.getElementById('mb').classList.add('open');
+}
+
+async function submitUpdateDailyRate(empId){
+  const emp = gE(empId);
+  if(!emp) return;
+  const amount = parseFloat(document.getElementById('dr-amount')?.value);
+  if(!amount || amount <= 0){ toast('Enter a valid daily rate.','error'); return; }
+  const currency = document.getElementById('dr-currency')?.value || 'MUR';
+  const notes    = document.getElementById('dr-notes')?.value || '';
+  emp.dailyRate  = { amount, currency, notes };
+  showLoader('Saving…');
+  try{
+    await dbSaveEmployee(emp);
+    closeModal();
+    toast('Daily rate updated — ' + fCur(amount, currency) + '/day', 'success');
+    addNotif('Daily rate updated for ' + emp.name, 'info');
+    if(document.getElementById('page-employees')?.classList.contains('active')) renderEmployees();
+  } catch(e){
+    toast('Failed to save: '+(e.message||e),'error');
+  }
+  hideLoader();
+}
+
+// ── HOD SCOPE HELPERS ─────────────────────────────────────────────────────────
+// Returns the set of employee IDs the current user can see/edit
+// Admin/HR: all employees
+// HOD/Manager: only their team (employees whose manager matches their name)
+function getScopedEmps(){
+  const all = getEmps().filter(e=>e.status!=='offboarded');
+  if(!CU) return all;
+  if(CU.role==='admin'||CU.role==='hr') return all;
+  const hodEmp = CU.empId ? gE(CU.empId) : null;
+  if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
+    const myName = hodEmp?.name || CU.name;
+    // Team = employees whose manager field matches my name
+    // Also include employees in same dept as HOD
+    const myDept = hodEmp?.dept;
+    return all.filter(e=>
+      e.manager === myName ||
+      (myDept && e.dept === myDept && e.id !== hodEmp?.id)
+    );
+  }
+  // Viewer — only self
+  if(CU.empId) return all.filter(e=>String(e.id)===String(CU.empId));
+  return [];
+}
+
+function getScopedDepts(){
+  const emps = getScopedEmps();
+  return [...new Set(emps.map(e=>e.dept).filter(Boolean))];
+}
+
+function isInScope(empId){
+  if(!CU) return false;
+  if(CU.role==='admin'||CU.role==='hr') return true;
+  return getScopedEmps().some(e=>String(e.id)===String(empId));
+}
+
+
+// ── SINGLE RECORD EDIT (from Attendance tab records table) ───────────────────
+function openSingleAttEditDirect(recId){
+  const rec = (_attendance||[]).find(r=>String(r.id)===String(recId));
+  if(!rec){ toast('Record not found. Try refreshing.','error'); return; }
+  if(!isInScope(rec.empId) && !canEdit()){
+    toast('You can only edit attendance for your team.','error'); return;
+  }
+  const emp = gE(rec.empId);
+  const ci  = rec.clockIn  ? new Date(rec.clockIn).toTimeString().slice(0,5)  : '';
+  const co  = rec.clockOut ? new Date(rec.clockOut).toTimeString().slice(0,5) : '';
+  const mb  = document.getElementById('mbox');
+  if(!mb) return;
+  mb.className = 'modal-box';
+  mb.innerHTML = `
+    <div class="modal-title">
+      Edit Attendance — ${emp?.name||'Employee'} (${fDate(rec.date)})
+      <button class="modal-close" onclick="closeModal()">&#x2715;</button>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">Clock-in time *</label>
+        <input class="fi" id="att-edit-ci" type="time" value="${ci}">
+      </div>
+      <div class="fg"><label class="fl">Clock-out (blank = still on site)</label>
+        <input class="fi" id="att-edit-co" type="time" value="${co}">
+      </div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">Location</label>
+        <input class="fi" id="att-edit-loc" value="${rec.location||''}">
+      </div>
+      <div class="fg"><label class="fl">Notes</label>
+        <input class="fi" id="att-edit-notes" value="${rec.notes||''}" placeholder="e.g. Manual correction">
+      </div>
+    </div>
+    <div style="background:var(--bg2);border-radius:var(--radius);padding:8px 12px;font-size:12px;color:var(--text2);margin-bottom:4px">
+      Date: <strong>${fDate(rec.date)}</strong> &nbsp;·&nbsp; Employee: <strong>${emp?.name||'—'}</strong>
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveAttDirectEdit('${recId}','${rec.date}','${rec.empId}')">Save changes</button>
+    </div>`;
+  document.getElementById('mb').classList.add('open');
+}
+
+async function saveAttDirectEdit(recId, date, empId){
+  const ciTime = document.getElementById('att-edit-ci')?.value;
+  const coTime = document.getElementById('att-edit-co')?.value;
+  const loc    = document.getElementById('att-edit-loc')?.value;
+  const notes  = document.getElementById('att-edit-notes')?.value;
+  if(!ciTime){ toast('Clock-in time is required.','error'); return; }
+
+  let rec = (_attendance||[]).find(r=>String(r.id)===String(recId));
+  if(!rec){ toast('Record not found.','error'); return; }
+
+  rec.clockIn  = new Date(date+'T'+ciTime+':00').toISOString();
+  rec.clockOut = coTime ? new Date(date+'T'+coTime+':00').toISOString() : null;
+  rec.durationMinutes = rec.clockOut ? calcDuration(rec.clockIn, rec.clockOut) : null;
+  if(loc)    rec.location = loc;
+  if(notes !== undefined) rec.notes = notes;
+
+  if(rec.clockOut && new Date(rec.clockOut) <= new Date(rec.clockIn)){
+    toast('Clock-out must be after clock-in.','error'); return;
+  }
+
+  showLoader('Saving…');
+  try{
+    const saved = await dbSaveAttendance(rec);
+    const idx = _attendance.findIndex(r=>String(r.id)===String(recId));
+    if(idx>=0) _attendance[idx] = saved||rec;
+    hideLoader();
+    closeModal();
+    toast('Attendance record updated.','success');
+    dbAddAudit(CU.name,'Edited attendance for '+(gE(empId)?.name||empId)+' on '+date);
+    renderAttendanceReport();
+  } catch(e){
+    hideLoader();
+    toast('Save failed: '+(e.message||e),'error');
+  }
+}
+
+// ── ADD ATTENDANCE RECORD (from Attendance tab) ───────────────────────────────
+function openAddAttRecordModal(){
+  if(!hasPerm('edit_attendance')){ toast('Permission denied.','error'); return; }
+  const scopeEmps = getScopedEmps();
+  const mb = document.getElementById('mbox');
+  if(!mb) return;
+  mb.className = 'modal-box';
+  mb.innerHTML = `
+    <div class="modal-title">Add Attendance Record
+      <button class="modal-close" onclick="closeModal()">&#x2715;</button>
+    </div>
+    <div class="fg"><label class="fl">Employee *</label>
+      <select class="fs" id="add-att-emp">
+        <option value="">— Select employee —</option>
+        ${scopeEmps.map(e=>`<option value="${e.id}">${e.name} — ${e.dept||''}</option>`).join('')}
+      </select>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">Date *</label>
+        <input class="fi" id="add-att-date" type="date" value="${new Date().toISOString().slice(0,10)}">
+      </div>
+      <div class="fg"><label class="fl">Clock-in *</label>
+        <input class="fi" id="add-att-ci" type="time" value="08:00">
+      </div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">Clock-out (blank = open)</label>
+        <input class="fi" id="add-att-co" type="time" value="17:00">
+      </div>
+      <div class="fg"><label class="fl">Location</label>
+        <input class="fi" id="add-att-loc" value="Main Entrance">
+      </div>
+    </div>
+    <div class="fg"><label class="fl">Notes</label>
+      <input class="fi" id="add-att-notes" placeholder="e.g. Manual entry by HR">
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAddAttRecord()">Add Record</button>
+    </div>`;
+  document.getElementById('mb').classList.add('open');
+}
+
+async function submitAddAttRecord(){
+  const empId = document.getElementById('add-att-emp')?.value;
+  const date  = document.getElementById('add-att-date')?.value;
+  const ci    = document.getElementById('add-att-ci')?.value;
+  const co    = document.getElementById('add-att-co')?.value;
+  const loc   = document.getElementById('add-att-loc')?.value;
+  const notes = document.getElementById('add-att-notes')?.value;
+  if(!empId){ toast('Select an employee.','error'); return; }
+  if(!date||!ci){ toast('Date and clock-in time are required.','error'); return; }
+  if(!isInScope(empId) && !canEdit()){
+    toast('You can only add records for your team.','error'); return;
+  }
+  const newRec = {
+    id:              Date.now(),
+    empId,
+    date,
+    clockIn:         new Date(date+'T'+ci+':00').toISOString(),
+    clockOut:        co ? new Date(date+'T'+co+':00').toISOString() : null,
+    durationMinutes: co ? calcDuration(new Date(date+'T'+ci+':00').toISOString(), new Date(date+'T'+co+':00').toISOString()) : null,
+    location:        loc||'Manual entry',
+    notes:           notes||('Manual record added by '+CU.name),
+  };
+  showLoader('Saving…');
+  try{
+    const saved = await dbSaveAttendance(newRec);
+    _attendance = [...(_attendance||[]), saved||newRec];
+    hideLoader();
+    closeModal();
+    toast('Record added successfully.','success');
+    dbAddAudit(CU.name,'Added attendance record for '+(gE(empId)?.name||empId)+' on '+date);
+    renderAttendanceReport();
+  } catch(e){
+    hideLoader();
+    toast('Save failed: '+(e.message||e),'error');
+  }
+}
+function isHODMode(){
+  if(!CU || CU.role==='admin'||CU.role==='hr') return false;
+  const hodEmp = CU.empId ? gE(CU.empId) : null;
+  return hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager';
+}
+
+// ── LEAVE TYPES MANAGEMENT ────────────────────────────────────────────────────
+function renderLeaveTypes(){
+  const el = document.getElementById('leave-types-list');
+  if(!el) return;
+  const types = getSettings().leaveTypes || [];
+  el.innerHTML = types.length ? types.map((t,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
+      <div style="width:14px;height:14px;border-radius:3px;background:${t.color};flex-shrink:0"></div>
+      <span style="flex:1;font-size:13px">${t.label}</span>
+      <span style="font-size:11.5px;color:var(--text3);min-width:60px">${t.maxDays?t.maxDays+'d max':'Unlimited'}</span>
+      <span style="font-size:11px;padding:2px 7px;border-radius:10px;background:${t.bg};color:${t.color}">${t.key}</span>
+      <button class="btn btn-xs" onclick="editLeaveType(${i})">&#9998;</button>
+      <button class="btn btn-xs btn-danger" onclick="deleteLeaveType(${i})" ${t.key==='annual'||t.key==='sick'?'disabled title="Cannot delete core leave type"':''}>&#x2715;</button>
+    </div>`).join('')
+  : '<div style="color:var(--text3);font-size:13px;padding:10px 0">No leave types defined.</div>';
+}
+
+function addLeaveType(){
+  const label  = document.getElementById('new-lt-label')?.value.trim();
+  const maxDay = parseInt(document.getElementById('new-lt-days')?.value)||0;
+  const color  = document.getElementById('new-lt-color')?.value||'#888780';
+  if(!label){ toast('Enter a leave type name.','error'); return; }
+  const key = label.toLowerCase().replace(/[^a-z0-9]/g,'_').replace(/__+/g,'_');
+  const cs = getSettings();
+  if(!cs.leaveTypes) cs.leaveTypes = [];
+  if(cs.leaveTypes.find(t=>t.key===key)){ toast('Leave type already exists.','error'); return; }
+  // Generate background as lighter version of color
+  cs.leaveTypes.push({key, label, color, bg:color+'22', maxDays:maxDay});
+  S.set('companySettings', cs);
+  document.getElementById('new-lt-label').value='';
+  document.getElementById('new-lt-days').value='';
+  renderLeaveTypes();
+  toast('Leave type "'+label+'" added.','success');
+}
+
+function deleteLeaveType(i){
+  const cs = getSettings();
+  const t = cs.leaveTypes[i];
+  if(!t) return;
+  if(t.key==='annual'||t.key==='sick'){ toast('Cannot delete core leave types.','error'); return; }
+  if(!confirm('Delete leave type "'+t.label+'"? Existing requests will still show this type.')){ return; }
+  cs.leaveTypes.splice(i,1);
+  S.set('companySettings', cs);
+  renderLeaveTypes();
+  toast('Leave type deleted.','success');
+}
+
+function editLeaveType(i){
+  const cs = getSettings();
+  const t  = cs.leaveTypes[i];
+  if(!t) return;
+  const mb = document.getElementById('mbox');
+  if(!mb) return;
+  mb.className = 'modal-box';
+  mb.innerHTML = `
+    <div class="modal-title">Edit Leave Type <button class="modal-close" onclick="closeModal()">&#x2715;</button></div>
+    <div class="fg"><label class="fl">Label *</label><input class="fi" id="elt-label" value="${t.label}"></div>
+    <div class="fr">
+      <div class="fg"><label class="fl">Max days per year (0 = unlimited)</label><input class="fi" id="elt-days" type="number" min="0" value="${t.maxDays||0}"></div>
+      <div class="fg"><label class="fl">Colour</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="color" id="elt-color" value="${t.color}" style="width:44px;height:36px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;padding:2px">
+          <input class="fi" id="elt-color-hex" value="${t.color}" style="flex:1" oninput="document.getElementById('elt-color').value=this.value">
+        </div>
+      </div>
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveLeaveType(${i})">Save</button>
+    </div>`;
+  document.getElementById('mb').classList.add('open');
+}
+
+
+function saveLeaveType(i){
+  const label = document.getElementById('elt-label')?.value.trim();
+  const days  = parseInt(document.getElementById('elt-days')?.value)||0;
+  const color = document.getElementById('elt-color')?.value||'#888780';
+  if(!label){ toast('Label required.','error'); return; }
+  const cs = getSettings();
+  cs.leaveTypes[i].label   = label;
+  cs.leaveTypes[i].maxDays = days;
+  cs.leaveTypes[i].color   = color;
+  cs.leaveTypes[i].bg      = color+'22';
+  S.set('companySettings', cs);
+  closeModal();
+  renderLeaveTypes();
+  toast('Leave type updated.','success');
 }
 </script>
 
