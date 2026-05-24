@@ -1936,67 +1936,8 @@ async function boot(){
   const isSetup = await checkSetupToken();
   if(isSetup) return; // setup flow handles everything
 
-  // Step 2c — check for saved session and auto-restore it
-  const savedSession = SS.get('session', null);
-  if(savedSession && savedSession.userId){
-    // Find the user from local cache or Supabase
-    const allUsers = localUsers.length ? localUsers : [];
-    let sessionUser = allUsers.find(u =>
-      String(u.id) === String(savedSession.userId) ||
-      u.username === savedSession.username
-    );
-    // If not found locally and Supabase is ready, try DB
-    if(!sessionUser && sbReady()){
-      try{
-        const {data} = await _sb.from('hr_users').select('*')
-          .eq('id', savedSession.userId).eq('active',true).single();
-        if(data) sessionUser = {
-          id:data.id, name:data.name, username:data.username,
-          email:data.email||'', phone:data.phone||'',
-          role:data.role, active:data.active,
-          passwordHash:data.password_hash,
-          setupToken:data.setup_token||null,
-          setupDone:data.setup_done||false,
-          empId:data.emp_id||null
-        };
-      } catch(e){ /* session lookup failed, fall through to login */ }
-    }
-    if(sessionUser && sessionUser.active !== false){
-      // Valid session — restore login state silently
-      CU = sessionUser;
-      document.getElementById('login-screen').style.display='none';
-      const app=document.getElementById('app');
-      app.style.display='flex';app.style.flexDirection='row';
-      applyPermissions();
-      applyStoredBranding();
-      initInactivityTracking();
-      // Init Supabase if not already
-      const sbUrl=localStorage.getItem('sb_url')||'';
-      const sbKey=localStorage.getItem('sb_key')||'';
-      if(sbUrl&&sbKey&&!_sb){ _sb=_sbCreate(sbUrl,sbKey);
-    await _sbSetSecret(); }
-      // Load data in background
-      showLoader('Loading…');
-      Promise.all([dbGetEmployees(),dbGetEvents(),dbGetPrograms(),dbGetAssignments(),dbGetUsers()])
-        .then(([emps,evts,progs,asgn,users])=>{
-          _cache={emps,evts,progs,asgn};
-          const merged=[...users];
-          localUsers.forEach(lu=>{if(!merged.find(u=>u.username===lu.username))merged.unshift(lu);});
-          _userCache=merged;
-          S.set('users',merged);
-          hideLoader();
-          renderDashboard();
-        }).catch(err=>{
-          hideLoader();
-          console.error('Session restore data load error:',err);
-          _userCache=localUsers;
-          renderDashboard();
-        });
-      return; // skip login screen entirely
-    }
-    // Session invalid — clear it and show login
-    SS.set('session',null);
-  }
+  // Step 2c — always clear any stale session on page load (shared device)
+  SS.set('session', null);
 
   // Step 3 — if local users exist (super admin seeded), always go to login
   if(localUsers.length > 0){
@@ -4686,35 +4627,31 @@ function toast(msg,type='info'){
 
 // ─── COMPANY SETTINGS ────────────────────────────────────────────────────────
 function getSettings(){
-  return S.get('companySettings',{
-    orgName:'Moura HR',
-    tagline:'Giving Comfort · Taking Care',
-    primaryColor:'#D69328',
-    secondaryColor:'#1E1445',
-    logoB64: null,
-    siteTitle:'Moura HR — Management Portal',
-    dateFormat:'en-GB',
-    currency:'MUR',
-    industry:'Hospitality',
-    regNumber:'',
-    address:'',
-    hrEmail:'',
-    hrPhone:'',
-    website:'',
+  const _ltDef=[
+    {key:'annual',   label:'Annual Leave',       color:'#1D9E75',bg:'#E1F5EE',maxDays:20,  paid:true, protected:true},
+    {key:'sick',     label:'Sick Leave',          color:'#378ADD',bg:'#E6F1FB',maxDays:15,  paid:true, protected:true},
+    {key:'casual',   label:'Casual Leave',        color:'#BA7517',bg:'#FAEEDA',maxDays:6,   paid:true, protected:false},
+    {key:'maternity',label:'Maternity Leave',     color:'#D4537E',bg:'#FDEEF4',maxDays:84,  paid:true, protected:false},
+    {key:'paternity',label:'Paternity Leave',     color:'#7F77DD',bg:'#EEEDFE',maxDays:5,   paid:true, protected:false},
+    {key:'unpaid',   label:'Unpaid Leave',        color:'#888780',bg:'#F1EFE8',maxDays:null,paid:false,protected:false},
+    {key:'compassionate',label:'Compassionate Leave',color:'#D85A30',bg:'#FAECE7',maxDays:3,paid:true, protected:false}
+  ];
+  const _def={
+    orgName:'Moura HR',tagline:'Giving Comfort · Taking Care',
+    primaryColor:'#D69328',secondaryColor:'#1E1445',logoB64:null,
+    siteTitle:'Moura HR — Management Portal',dateFormat:'en-GB',
+    currency:'MUR',industry:'Hospitality',regNumber:'',address:'',
+    hrEmail:'',hrPhone:'',website:'',
     checklistDefaults:['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done'],
     departments:['Engineering','Marketing','HR','Finance','Sales','Design','Operations'],
     jobTitles:['Funeral Director','Embalmer','Mortuary Technician','Hearse Driver','Administrative Assistant','Accounts Officer','HR Manager','Operations Manager','Funeral Arranger','Receptionist'],
     customEventTypes:[],
-    leaveTypes:[
-      {key:'annual',  label:'Annual Leave',    color:'#1D9E75', bg:'#E1F5EE', maxDays:20,  paid:true,  protected:true},
-      {key:'sick',    label:'Sick Leave',       color:'#378ADD', bg:'#E6F1FB', maxDays:15,  paid:true,  protected:true},
-      {key:'casual',  label:'Casual Leave',     color:'#BA7517', bg:'#FAEEDA', maxDays:6,   paid:true,  protected:false},
-      {key:'maternity',label:'Maternity Leave', color:'#D4537E', bg:'#FDEEF4', maxDays:84,  paid:true,  protected:false},
-      {key:'paternity',label:'Paternity Leave', color:'#7F77DD', bg:'#EEEDFE', maxDays:5,   paid:true,  protected:false},
-      {key:'unpaid',  label:'Unpaid Leave',     color:'#888780', bg:'#F1EFE8', maxDays:null,paid:false, protected:false},
-      {key:'compassionate',label:'Compassionate Leave',color:'#D85A30',bg:'#FAECE7',maxDays:3,paid:true,protected:false}
-    ]
-  });
+    leaveTypes:_ltDef
+  };
+  const _saved = S.get('companySettings',{});
+  const _merged = Object.assign({},_def,_saved);
+  if(!_merged.leaveTypes||!_merged.leaveTypes.length) _merged.leaveTypes=_ltDef;
+  return _merged;
 }
 
 function getDepts(){
