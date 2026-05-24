@@ -3821,8 +3821,10 @@ async function autoCreateUserForEmployee(emp){
     (emp.email && u.email && u.email.toLowerCase()===emp.email.toLowerCase())
   );
   if(existing){
-    // Already has an account — just show WhatsApp link to resend
-    showSetupLinkModal(existing);
+    // Already has an account — let HR set PIN directly
+    const linkEmp = getEmps().find(e=>String(e.id)===String(existing.empId||emp.id));
+    closeModal();
+    openSetPINModal(existing.id, linkEmp?.name||emp.name);
     return;
   }
   // Create new user account
@@ -3848,9 +3850,9 @@ async function autoCreateUserForEmployee(emp){
       dbSaveEmployee(empObj).catch(()=>{});
     }
     dbAddAudit(CU.name,'Auto-created user account for: '+emp.name);
-    // Refresh employees list so HR Account button disappears
     loadAndRenderEmployees().catch(()=>{});
-    showSetupLinkModal(u);
+    closeModal();
+    openSetPINModal(u.id, emp.name);
   } catch(err){
     console.error('Auto-create user error:',err);
     toast('Employee saved but user account creation failed. Create manually in Users.','error');
@@ -6733,7 +6735,7 @@ function openAccountAudit(){
       <div style="background:var(--navy);color:#fff;border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
         <span style="font-size:13px">Create accounts for all ${missing.length} employees without one</span>
         <button onclick="auditCreateAll()" style="padding:6px 14px;background:var(--gold);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12.5px;font-weight:600;font-family:inherit;flex-shrink:0">
-          Create all & send WhatsApp
+          Create all accounts
         </button>
       </div>` : ''}
 
@@ -6742,11 +6744,11 @@ function openAccountAudit(){
       )}
 
       ${section('Account created — PIN not yet set','#BA7517','🟡', pending, ({emp,user})=>
-        empRow(emp, user, `<button class="btn btn-xs" onclick="auditResend('${JSON.stringify(user).replace(/'/g,"&#39;")}')">Resend link</button>`)
+        empRow(emp, user, `<button class="btn btn-xs btn-primary" onclick="openSetPINModal('${user.id}','${emp.name}')">Set PIN</button>`)
       )}
 
-      ${section('No phone number — cannot create account automatically','#888','⚪', noPhone, ({emp})=>
-        empRow(emp, null, `<button class="btn btn-xs" onclick="closeModal();openModal('editEmployee',${emp.id})">Add phone</button>`)
+      ${section('No phone number','#888','⚪', noPhone, ({emp})=>
+        empRow(emp, null, `<button class="btn btn-xs btn-primary" onclick="auditCreateOne('${emp.id}')">Create &amp; set PIN</button> <button class="btn btn-xs" onclick="closeModal();openModal('editEmployee',${emp.id})">Add phone</button>`)
       )}
 
       ${!missing.length && !pending.length && !noPhone.length ? `
@@ -6787,17 +6789,14 @@ function findUserForEmployee(emp, users){
 
 async function auditCreateOne(empId){
   const emp = gE(empId);
-  if(!emp||!emp.phone){toast('Employee has no phone number.','error');return;}
+  if(!emp){toast('Employee not found.','error');return;}
   const btn = event.target;
   btn.textContent='Creating…';btn.disabled=true;
   await autoCreateUserForEmployee(emp);
-  // Refresh audit view
-  closeModal();
-  setTimeout(openAccountAudit, 300);
 }
 
 async function auditCreateAll(){
-  if(!confirm('Create accounts for all employees without one and open WhatsApp for each?')) return;
+  if(!confirm('Create accounts for all '+missing.length+' employees and set their PINs?')) return;
   closeModal();
   const emps   = getEmps().filter(e=>e.status!=='offboarded');
   const users  = getUsers();
@@ -6835,15 +6834,18 @@ async function auditCreateAll(){
   S.set('users', _userCache);
   hideLoader();
   dbAddAudit(CU.name,'Bulk account creation: '+created.length+' accounts created');
-  if(created.length) showCSVWhatsAppSummary(created);
-  else toast('No new accounts created.','info');
+  if(created.length){
+    toast(created.length+' accounts created. Set PINs for each employee.','success');
+    setTimeout(openAccountAudit, 300);
+  } else toast('No new accounts created.','info');
 }
 
 function auditResend(userJson){
   try{
     const user = typeof userJson === 'string' ? JSON.parse(userJson.replace(/&#39;/g,"'")) : userJson;
+    const linkEmp = getEmps().find(e=>String(e.id)===String(user.empId));
     closeModal();
-    showSetupLinkModal(user);
+    openSetPINModal(user.id, linkEmp?.name||user.name);
   } catch(e){ toast('Could not parse user data.','error'); }
 }
 
@@ -11042,6 +11044,78 @@ function populateLeaveTypeSelects(){
   const lve = document.getElementById('lv-type-edit');
   if(lve && !lve.options.length) lve.innerHTML = opts;
 }
+// ── HR sets employee PIN directly ────────────────────────────────────────────
+function openSetPINModal(userId, empName){
+  const mb = document.getElementById('mbox');
+  mb.className = 'modal-box';
+  mb.innerHTML = `
+    <div class="modal-title">Set PIN — ${empName}
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:14px">
+      Choose a 4-digit PIN for <strong>${empName}</strong>. They can change it later from the kiosk.
+    </div>
+    <div class="fg">
+      <label class="fl">4-digit PIN</label>
+      <input class="fi" id="hr-pin-input" type="password" inputmode="numeric"
+        maxlength="4" placeholder="e.g. 1234" style="font-size:22px;letter-spacing:8px;text-align:center">
+    </div>
+    <div id="hr-pin-err" style="color:var(--red);font-size:12px;display:none;margin-top:4px"></div>
+    <div class="mf">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveHRPin('${userId}','${empName}')">Save PIN</button>
+    </div>`;
+  document.getElementById('mb').classList.add('open');
+  setTimeout(()=>document.getElementById('hr-pin-input')?.focus(), 100);
+}
+
+async function saveHRPin(userId, empName){
+  const pinEl = document.getElementById('hr-pin-input');
+  const errEl = document.getElementById('hr-pin-err');
+  const pin = pinEl?.value.trim();
+  if(!/^[0-9]{4}$/.test(pin)){
+    errEl.textContent = 'PIN must be exactly 4 digits.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const pinHash = simpleHash(pin);
+  // Check for PIN conflicts
+  const conflict = getEmps().filter(e=>e.status!=='offboarded').find(e=>{
+    const u = findUserForEmployee(e, getUsers());
+    return e.pinHash===pinHash && String(u?.id||e.id)!==String(userId);
+  });
+  if(conflict){
+    errEl.textContent = 'PIN already used by another employee. Choose a different one.';
+    errEl.style.display = 'block';
+    return;
+  }
+  // Save PIN to the employee record
+  const allEmps = getEmps();
+  const emp = allEmps.find(e=>{
+    const u = findUserForEmployee(e, getUsers());
+    return String(u?.id)===String(userId) || String(e.userId)===String(userId) || String(e.id)===String(userId);
+  });
+  if(emp){
+    emp.pinHash = pinHash;
+    await dbSaveEmployee(emp).catch(()=>{});
+  }
+  // Mark user account as setup done
+  const user = getUsers().find(u=>String(u.id)===String(userId));
+  if(user){
+    user.setupDone = true;
+    user.setupToken = null;
+    user.passwordHash = pinHash;
+    await dbSaveUser(user).catch(()=>{});
+    const idx = _userCache.findIndex(u=>String(u.id)===String(userId));
+    if(idx>=0) _userCache[idx] = user;
+    S.set('users', _userCache);
+  }
+  dbAddAudit(CU.name, 'HR set PIN for: '+empName);
+  closeModal();
+  toast('PIN set for '+empName+'. They can log in immediately.', 'success');
+  setTimeout(openAccountAudit, 300);
+}
+
 </script>
 
 <!-- KIOSK / PIN SCREEN -->
