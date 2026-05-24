@@ -2503,17 +2503,40 @@ async function empClockOut(recId){
 
 function openFullHRPlatform(){
   clearInterval(_empClockTick);
-  // Restore sidebar
-  const sidebar = document.querySelector('.sidebar');
-  if(sidebar) sidebar.style.display='';
-  const appBody = document.querySelector('.app-body');
-  if(appBody) appBody.style.marginLeft='';
-  // Restore full dashboard
-  const mainContent = document.querySelector('.main-content');
-  if(mainContent) mainContent.innerHTML = '';
-  // Re-render all pages
-  document.querySelectorAll('.page').forEach(p=>p.innerHTML='');
-  location.reload(); // simplest — reload keeps session, goes to dashboard
+  // Stop camera streams
+  document.querySelectorAll('video').forEach(v=>{
+    try{ if(v.srcObject){ v.srcObject.getTracks().forEach(t=>t.stop()); v.srcObject=null; } }catch(e){}
+  });
+  // Restore sidebar and layout
+  const sidebar2 = document.querySelector('.sidebar');
+  if(sidebar2) sidebar2.style.display='';
+  const appBody2 = document.querySelector('.app-body');
+  if(appBody2) appBody2.style.marginLeft='';
+  // Rebuild the main-content area with all page divs
+  const mainContent2 = document.querySelector('.main-content');
+  if(mainContent2){
+    // Pages are empty — repopulate by calling the renderers
+    // renderDashboard will populate page-dashboard; other pages render on demand via showPage
+    mainContent2.innerHTML = '';
+    ['dashboard','employees','onboarding','events','training','offboarding','analytics',
+     'leave','payroll','attendance','settings','usermgmt'].forEach(id=>{
+      const existing = document.getElementById('page-'+id);
+      if(!existing){
+        const div = document.createElement('div');
+        div.className = 'page';
+        div.id = 'page-'+id;
+        mainContent2.appendChild(div);
+      }
+    });
+  }
+  applyPermissions();
+  renderDashboard();
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const dashPage = document.getElementById('page-dashboard');
+  if(dashPage) dashPage.classList.add('active');
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  const dashTab = document.querySelector('[onclick*="showPage(\'dashboard"]');
+  if(dashTab) dashTab.classList.add('active');
 }
 
 // Patch doLogin to not call this separately (it's now inside the routing above)
