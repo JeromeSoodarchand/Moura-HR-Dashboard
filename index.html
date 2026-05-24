@@ -1103,6 +1103,23 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
           </div>
         </div>
       </div>
+      <!-- Onboarding Checklist Defaults -->
+      <div class="card" style="margin-bottom:14px">
+        <div class="ch">
+          <span class="ct">Onboarding Checklist Items</span>
+        </div>
+        <div class="cb">
+          <div style="font-size:12.5px;color:var(--text2);margin-bottom:12px">
+            These items appear on every new employee's onboarding checklist.
+          </div>
+          <div id="checklist-defaults-list" style="margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px">
+            <input class="fi" id="checklist-new-item" placeholder="New checklist item…"
+              style="flex:1" onkeydown="if(event.key==='Enter')addChecklistDefault()">
+            <button class="btn btn-primary btn-sm" onclick="addChecklistDefault()">+ Add</button>
+          </div>
+        </div>
+      </div>
       <!-- Leave Types Manager -->
       <div class="card" style="margin-bottom:14px">
         <div class="ch"><span class="ct">&#128197; Leave Types</span></div>
@@ -2953,7 +2970,7 @@ function showPage(id,el){
   document.getElementById('page-'+id).classList.add('active');el.classList.add('active');
   const heading=document.getElementById('page-heading');
   if(heading)heading.textContent=PAGE_TITLES[id]||id;
-  const loaders={dashboard:loadAndRenderDashboard,employees:loadAndRenderEmployees,onboarding:loadAndRenderOnboarding,events:loadAndRenderEvents,training:loadAndRenderTraining,offboarding:loadAndRenderOffboarding,analytics:loadAndRenderAnalytics,usermgmt:loadAndRenderUserMgmt,settings:()=>{renderSettings();renderJobTitles();renderCustomEventTypes();populateKioskLeaveEmpSelect();renderLeaveTypes();}};
+  const loaders={dashboard:loadAndRenderDashboard,employees:loadAndRenderEmployees,onboarding:loadAndRenderOnboarding,events:loadAndRenderEvents,training:loadAndRenderTraining,offboarding:loadAndRenderOffboarding,analytics:loadAndRenderAnalytics,usermgmt:loadAndRenderUserMgmt,settings:()=>{renderSettings();renderJobTitles();renderCustomEventTypes();populateKioskLeaveEmpSelect();renderLeaveTypes();renderChecklistDefaults(getSettings().checklistDefaults||[]);}};
   const loader=loaders[id];
   if(loader) loader();
 }
@@ -5010,15 +5027,19 @@ function editDeptCancel(idx){
 }
 
 function renderChecklistDefaults(items){
-  document.getElementById('checklist-defaults-list').innerHTML=items.map((item,i)=>`
-    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
-      <span style="flex:1;font-size:13px">✦ ${item}</span>
+  const el = document.getElementById('checklist-defaults-list');
+  if(!el) return;
+  el.innerHTML = items.length
+    ? items.map((item,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
+      <span style="flex:1;font-size:13px">${item}</span>
       <button class="btn btn-xs btn-danger" onclick="removeChecklistDefault(${i})">✕</button>
-    </div>`).join('');
+    </div>`).join('')
+    : '<div style="font-size:13px;color:var(--text3);padding:8px 0">No checklist items. Add one below.</div>';
 }
 
 function addChecklistDefault(){
-  const input=document.getElementById('new-checklist-item');
+  const input=document.getElementById('checklist-new-item');
   const val=input.value.trim();
   if(!val)return;
   const cs=getSettings();
