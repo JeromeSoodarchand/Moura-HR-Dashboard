@@ -2517,12 +2517,14 @@ function openFullHRPlatform(){
   document.querySelectorAll('video').forEach(v=>{
     try{ if(v.srcObject){ v.srcObject.getTracks().forEach(t=>t.stop()); v.srcObject=null; } }catch(e){}
   });
-  // Hide the clock-in overlay — dashboard page divs are intact beneath
+  // Remove the clock-in overlay completely from DOM
   const ov = document.getElementById('emp-clock-overlay');
-  if(ov) ov.style.display = 'none';
-  // Restore sidebar
+  if(ov) ov.remove();
+  // Restore sidebar and app-body margin
   const sidebar = document.querySelector('.sidebar');
   if(sidebar) sidebar.style.display = '';
+  const appBody = document.querySelector('.app-body');
+  if(appBody) appBody.style.marginLeft = '';
   // Render and show dashboard
   applyPermissions();
   renderDashboard();
