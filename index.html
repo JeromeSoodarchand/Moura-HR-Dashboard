@@ -861,7 +861,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
                 <div class="cb">
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
                     <div class="fg"><label class="fl">Employee</label><select class="fs" id="kiosk-leave-emp"><option value="">— Select employee —</option></select></div>
-                    <div class="fg"><label class="fl">Leave type</label><select class="fs" id="kiosk-leave-type"><option value="annual">Annual Leave</option><option value="sick">Sick Leave</option><option value="casual">Casual Leave</option><option value="maternity">Maternity Leave</option><option value="paternity">Paternity Leave</option><option value="bereavement">Bereavement Leave</option><option value="other">Other</option></select></div>
+                    <div class="fg"><label class="fl">Leave type</label><select class="fs" id="kiosk-leave-type"></select></div>
                     <div class="fg"><label class="fl">From date</label><input class="fi" id="kiosk-leave-from" type="date"></div>
                     <div class="fg"><label class="fl">To date</label><input class="fi" id="kiosk-leave-to" type="date"></div>
                   </div>
@@ -1315,6 +1315,9 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
   <div class="modal-box" id="mbox"></div>
 </div>
 <div class="toast-container" id="tc"></div>
+
+
+
 
 <script>
 
@@ -7086,8 +7089,10 @@ function getLEAVE_TYPES(){
   types.forEach(t=>{ obj[t.key] = {label:t.label, color:t.color, bg:t.bg, maxDays:t.maxDays||0}; });
   return obj;
 }
-// Backwards-compatible alias used throughout the app
-const LEAVE_TYPES = new Proxy({}, { get(_,k){ return getLEAVE_TYPES()[k]; }, ownKeys(){ return Object.keys(getLEAVE_TYPES()); }, getOwnPropertyDescriptor(_,k){ return Object.getOwnPropertyDescriptor(getLEAVE_TYPES(),k)||{configurable:true,enumerable:true}; } });
+// LEAVE_TYPES is a function call — always fresh from settings
+const LEAVE_TYPES = getLEAVE_TYPES(); // snapshot at load time
+// For dynamic access use getLEAVE_TYPES() — refreshed each call
+
 const MAURITIUS_HOLIDAYS_2025 = [
   '2025-01-01','2025-01-02','2025-02-01','2025-03-12','2025-05-01',
   '2025-11-01','2025-11-02','2025-12-25','2025-08-15','2025-09-03'
@@ -7233,7 +7238,7 @@ function leaveBadge(status){
 }
 
 function leaveTypeBadge(type){
-  const cfg = LEAVE_TYPES[type]||LEAVE_TYPES.other;
+  const cfg = getLEAVE_TYPES()[type]||LEAVE_TYPES.other;
   return `<span class="badge" style="background:${cfg.bg};color:${cfg.color}">${cfg.label}</span>`;
 }
 
@@ -7242,6 +7247,7 @@ async function renderLeave(){
   // Show kiosk leave section only for admin/HR
   const _kls = document.getElementById('kiosk-leave-section');
   if(_kls) _kls.style.display = (CU&&(CU.role==='admin'||CU.role==='hr'))?'block':'none';
+  populateLeaveTypeSelects();
 
   [_leaveRequests, _leaveBalances] = await Promise.all([dbGetLeaveRequests(), dbGetLeaveBalances()]);
   renderLeaveMetrics();
@@ -7288,7 +7294,7 @@ function renderLeavePending(){
   el.innerHTML = pending.map(req=>{
     const emp = gE(req.empId);
     const c   = emp ? aColor(emp.name) : '#888';
-    const cfg = LEAVE_TYPES[req.type]||LEAVE_TYPES.other;
+    const cfg = getLEAVE_TYPES()[req.type]||LEAVE_TYPES.other;
     return `<div class="leave-card">
       <div class="leave-card-header">
         <div style="display:flex;align-items:center;gap:8px">
@@ -7424,7 +7430,7 @@ function openLeaveRequestModal(empId){
     </div>
     <div class="fg"><label class="fl">Leave type *</label>
       <select class="fs" id="lv-type" onchange="updateLeaveBalance()">
-        ${Object.entries(LEAVE_TYPES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}
+        ${Object.entries(getLEAVE_TYPES()).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}
       </select>
     </div>
     <div id="lv-balance-info" style="background:var(--bg2);border-radius:var(--radius);padding:8px 12px;font-size:12.5px;margin-bottom:10px;color:var(--text2)">Select leave type to see balance</div>
@@ -7455,7 +7461,7 @@ function updateLeaveBalance(){
     el.innerHTML = `Balance: <strong>${rem} days remaining</strong> of ${total} · ${pct}% used
       <div class="leave-balance-bar" style="margin-top:4px"><div class="leave-balance-fill" style="width:${pct}%;background:${pct>80?'var(--red)':pct>50?'var(--amber)':'var(--green)'}"></div></div>`;
   } else {
-    el.innerHTML = LEAVE_TYPES[type]?.label+' — no balance limit';
+    el.innerHTML = getLEAVE_TYPES()[type]?.label+' — no balance limit';
   }
 }
 
@@ -7541,8 +7547,8 @@ async function submitLeaveRequest(){
   notifyHODofLeaveRequest(saved||req);
 
   const emp = gE(empId);
-  addNotif((emp?emp.name:'Employee')+' submitted '+LEAVE_TYPES[type].label+' request ('+days+' days)','info');
-  dbAddAudit(CU.name,'Leave request submitted for '+(emp?emp.name:empId)+': '+LEAVE_TYPES[type].label+' '+from+' to '+to);
+  addNotif((emp?emp.name:'Employee')+' submitted '+getLEAVE_TYPES()[type].label+' request ('+days+' days)','info');
+  dbAddAudit(CU.name,'Leave request submitted for '+(emp?emp.name:empId)+': '+getLEAVE_TYPES()[type].label+' '+from+' to '+to);
   _submittingLeave = false;
   closeModal();
   renderLeave();
@@ -7576,13 +7582,13 @@ async function reviewLeave(reqId, newStatus){
 
   const emp = gE(req.empId);
   const action = {approved:'Approved',rejected:'Rejected',cancelled:'Cancelled'}[newStatus]||newStatus;
-  addNotif(`${action}: ${emp?emp.name:'Employee'} leave request (${LEAVE_TYPES[req.type].label})`,newStatus==='approved'?'success':'info');
+  addNotif(`${action}: ${emp?emp.name:'Employee'} leave request (${getLEAVE_TYPES()[req.type].label})`,newStatus==='approved'?'success':'info');
   dbAddAudit(CU.name,`${action} leave for ${emp?emp.name:req.empId}: ${req.fromDate} to ${req.toDate}`);
 
   if(newStatus==='approved'){
     toast(`Leave approved for ${emp?emp.name:'employee'}.`,'success');
     // Log as event
-    const evtDesc=`${LEAVE_TYPES[req.type].label} approved: ${fDate(req.fromDate)} – ${fDate(req.toDate)} (${req.days} days)`;
+    const evtDesc=`${getLEAVE_TYPES()[req.type].label} approved: ${fDate(req.fromDate)} – ${fDate(req.toDate)} (${req.days} days)`;
     const newEvt={id:Date.now(),empId:req.empId,type:'absence',date:req.fromDate,desc:evtDesc,loggedBy:CU.name,notified:true};
     dbSaveEvent(newEvt).then(ev=>{_cache.evts.unshift(ev||newEvt);saveEvts(_cache.evts);}).catch(()=>{});
   } else if(newStatus==='rejected'){
@@ -7642,7 +7648,7 @@ function exportLeaveCSV(){
   const rows=[['Employee','Department','Leave Type','From','To','Days','Status','Reason','Reviewed By','Notes']];
   _leaveRequests.forEach(r=>{
     const emp=gE(r.empId);
-    rows.push([emp?emp.name:'',emp?emp.dept:'',LEAVE_TYPES[r.type]?.label||r.type,
+    rows.push([emp?emp.name:'',emp?emp.dept:'',getLEAVE_TYPES()[r.type]?.label||r.type,
       r.fromDate,r.toDate,r.days,r.status,r.reason||'',r.reviewedBy||'',r.reviewNote||'']);
   });
   const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
@@ -10397,7 +10403,7 @@ function renderLeaveTable(){
           </div>
         </div>
       </td>
-      <td style="padding:10px 12px"><span class="badge b-${req.type}">${LEAVE_TYPES[req.type]?.label||req.type}</span></td>
+      <td style="padding:10px 12px"><span class="badge b-${req.type}">${getLEAVE_TYPES()[req.type]?.label||req.type}</span></td>
       <td style="padding:10px 12px;font-size:12.5px">${fDate(req.fromDate)}<br><span class="tm txs">to ${fDate(req.toDate)}</span></td>
       <td style="padding:10px 12px;text-align:center;font-size:13px;font-weight:500">${req.days}d</td>
       <td style="padding:10px 12px">
@@ -10466,7 +10472,7 @@ function populateKioskLeaveEmpSelect(){var sel=document.getElementById('kiosk-le
 function buildHODWhatsAppLink(emp, hodPhone, req){
   if(!hodPhone) return null;
   const clean = hodPhone.replace(/[^0-9+]/g,'');
-  const leaveLabel = LEAVE_TYPES[req.type]?.label || req.type;
+  const leaveLabel = getLEAVE_TYPES()[req.type]?.label || req.type;
   const from = fDate(req.fromDate), to = fDate(req.toDate);
   const msg = encodeURIComponent(
     `Hi, ${emp.name} has submitted a ${req.days}-day ${leaveLabel} request`
@@ -10501,7 +10507,7 @@ function showHODLeaveNotifModal(req){
     return;
   }
 
-  const leaveLabel = LEAVE_TYPES[req.type]?.label || req.type;
+  const leaveLabel = getLEAVE_TYPES()[req.type]?.label || req.type;
   const mb = document.getElementById('mbox');
   mb.className = 'modal-box';
   mb.innerHTML = `
@@ -10543,7 +10549,7 @@ function showHODLeaveNotifModal(req){
 async function notifyEmployeeLeaveResult(req, approved, note){
   const emp = gE(req.empId);
   if(!emp) return;
-  const leaveLabel = LEAVE_TYPES[req.type]?.label || req.type;
+  const leaveLabel = getLEAVE_TYPES()[req.type]?.label || req.type;
   const dateRange  = req.days > 1
     ? fDate(req.fromDate) + ' – ' + fDate(req.toDate)
     : fDate(req.fromDate);
@@ -10667,7 +10673,7 @@ function openEditLeaveModal(reqId){
     </div>
     <div class="fg"><label class="fl">Leave type *</label>
       <select class="fs" id="lv-type-edit">
-        ${Object.entries(LEAVE_TYPES).map(([k,v])=>`<option value="${k}" ${req.type===k?'selected':''}>${v.label}</option>`).join('')}
+        ${Object.entries(getLEAVE_TYPES()).map(([k,v])=>`<option value="${k}" ${req.type===k?'selected':''}>${v.label}</option>`).join('')}
       </select>
     </div>
     <div class="fr">
@@ -11069,17 +11075,30 @@ function saveLeaveType(i){
   renderLeaveTypes();
   toast('Leave type updated.','success');
 }
+
+function populateLeaveTypeSelects(){
+  const types = Object.entries(getLEAVE_TYPES());
+  const opts  = types.map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
+  // Kiosk leave type
+  const kls = document.getElementById('kiosk-leave-type');
+  if(kls) kls.innerHTML = opts;
+  // Leave request modal type (if open)
+  const lvm = document.getElementById('lv-type');
+  if(lvm && !lvm.options.length) lvm.innerHTML = opts;
+  // Edit leave modal
+  const lve = document.getElementById('lv-type-edit');
+  if(lve && !lve.options.length) lve.innerHTML = opts;
+}
 </script>
 
 <!-- KIOSK / PIN SCREEN -->
-<div id="kiosk-screen">
+<div id="kiosk-screen" style="display:none;position:fixed;inset:0;z-index:8000;background:linear-gradient(160deg,#0A0620 0%,#1E1445 60%,#2D1B6B 100%);display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;font-family:inherit">
   <div class="kiosk-header">
-    <div class="kiosk-logo">Moura</div>
-    <div class="kiosk-sub">HR Attendance Kiosk</div>
+    <div class="kiosk-clock" id="kiosk-clock"></div>
+    <div class="kiosk-date" id="kiosk-date"></div>
   </div>
-  <div class="kiosk-time" id="kiosk-clock">--:--</div>
-  <div class="kiosk-date" id="kiosk-date">---</div>
   <div class="kiosk-card">
+
 
     <!-- STEP 1: Select name -->
     <div id="kiosk-step-select" style="display:block">
@@ -11168,6 +11187,6 @@ function saveLeaveType(i){
   </div>
 </div>
 
+
 </body>
 </html>
-    notifyHODofLeaveRequest(saved||req);
