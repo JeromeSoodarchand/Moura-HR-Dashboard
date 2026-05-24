@@ -853,8 +853,8 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
           </tr></thead><tbody id="leave-balances-tbody"></tbody></table>
         </div>
       </div>
-    </div>
-      <!-- Kiosk Leave — Admin/HR only -->
+    
+<!-- Kiosk Leave — Admin/HR only -->
       <div id="kiosk-leave-section">
         <div class="card" style="margin-top:14px">
                 <div class="ch"><span class="ct">Leave for Kiosk-Only Employees</span><span style="font-size:12px;color:var(--text3)">Submit leave on behalf of kiosk-only staff</span></div>
@@ -870,6 +870,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
                 </div>
               </div>
       </div>
+    </div>
 
 
     <!-- TRAINING -->
@@ -1457,6 +1458,12 @@ const S={
   set:(k,v)=>{try{localStorage.setItem('pdhr_'+k,JSON.stringify(v));}catch{}}
 };
 
+// ── Per-tab session storage (sessionStorage — not shared across tabs) ─────────
+const SS={
+  get:(k,def=null)=>{try{const v=sessionStorage.getItem('pdhr_'+k);return v?JSON.parse(v):def;}catch{return def;}},
+  set:(k,v)=>{try{sessionStorage.setItem('pdhr_'+k,JSON.stringify(v));}catch{}}
+}
+
 // ── APP SESSION SECRET — must match app.app_secret in Supabase SQL ──────────
 const _APP_SECRET = 'MHR_9A_wRcm-HPdnuZCbJ4NXMZJxjuTYceubJUlXqyqefYA';
 async function _sbSetSecret(){
@@ -1930,7 +1937,7 @@ async function boot(){
   if(isSetup) return; // setup flow handles everything
 
   // Step 2c — check for saved session and auto-restore it
-  const savedSession = S.get('session', null);
+  const savedSession = SS.get('session', null);
   if(savedSession && savedSession.userId){
     // Find the user from local cache or Supabase
     const allUsers = localUsers.length ? localUsers : [];
@@ -1988,7 +1995,7 @@ async function boot(){
       return; // skip login screen entirely
     }
     // Session invalid — clear it and show login
-    S.set('session',null);
+    SS.set('session',null);
   }
 
   // Step 3 — if local users exist (super admin seeded), always go to login
@@ -2165,7 +2172,7 @@ async function doLogin(){
   }
   document.getElementById('lerr').style.display='none';
   CU=user;
-  S.set('session',{userId:user.id, username:user.username, loginAt:new Date().toISOString()});
+  SS.set('session',{userId:user.id, username:user.username, loginAt:new Date().toISOString()});
   addAudit(user.name,'Logged in');
   document.getElementById('login-screen').style.display='none';
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
@@ -2707,7 +2714,7 @@ function doLogout(){
   // and shown correctly when they log back in.
   // Auto clock-out only happens on session TIMEOUT (15 min inactivity).
   addAudit(CU?.name||'User','Logged out');
-  CU=null;S.set('session',null);
+  CU=null;SS.set('session',null);
   location.reload();
 }
 
@@ -2796,7 +2803,7 @@ function autoLogout(){
     _inactivityToast = null;
   }
   addAudit(CU?.name||'User','Auto-logged out after 15 minutes of inactivity');
-  CU=null;S.set('session',null);
+  CU=null;SS.set('session',null);
   // Show message before reload
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(30,20,69,0.92);z-index:9999;display:flex;align-items:center;justify-content:center';
@@ -2883,7 +2890,7 @@ function showPage(id,el){
   document.getElementById('page-'+id).classList.add('active');el.classList.add('active');
   const heading=document.getElementById('page-heading');
   if(heading)heading.textContent=PAGE_TITLES[id]||id;
-  const loaders={dashboard:loadAndRenderDashboard,employees:loadAndRenderEmployees,onboarding:loadAndRenderOnboarding,events:loadAndRenderEvents,training:loadAndRenderTraining,offboarding:loadAndRenderOffboarding,analytics:loadAndRenderAnalytics,usermgmt:loadAndRenderUserMgmt,settings:()=>{renderSettings();renderJobTitles();renderCustomEventTypes();populateKioskLeaveEmpSelect();}};
+  const loaders={dashboard:loadAndRenderDashboard,employees:loadAndRenderEmployees,onboarding:loadAndRenderOnboarding,events:loadAndRenderEvents,training:loadAndRenderTraining,offboarding:loadAndRenderOffboarding,analytics:loadAndRenderAnalytics,usermgmt:loadAndRenderUserMgmt,settings:()=>{renderSettings();renderJobTitles();renderCustomEventTypes();populateKioskLeaveEmpSelect();renderLeaveTypes();}};
   const loader=loaders[id];
   if(loader) loader();
 }
@@ -4697,7 +4704,16 @@ function getSettings(){
     checklistDefaults:['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done'],
     departments:['Engineering','Marketing','HR','Finance','Sales','Design','Operations'],
     jobTitles:['Funeral Director','Embalmer','Mortuary Technician','Hearse Driver','Administrative Assistant','Accounts Officer','HR Manager','Operations Manager','Funeral Arranger','Receptionist'],
-    customEventTypes:[]
+    customEventTypes:[],
+    leaveTypes:[
+      {key:'annual',  label:'Annual Leave',    color:'#1D9E75', bg:'#E1F5EE', maxDays:20,  paid:true,  protected:true},
+      {key:'sick',    label:'Sick Leave',       color:'#378ADD', bg:'#E6F1FB', maxDays:15,  paid:true,  protected:true},
+      {key:'casual',  label:'Casual Leave',     color:'#BA7517', bg:'#FAEEDA', maxDays:6,   paid:true,  protected:false},
+      {key:'maternity',label:'Maternity Leave', color:'#D4537E', bg:'#FDEEF4', maxDays:84,  paid:true,  protected:false},
+      {key:'paternity',label:'Paternity Leave', color:'#7F77DD', bg:'#EEEDFE', maxDays:5,   paid:true,  protected:false},
+      {key:'unpaid',  label:'Unpaid Leave',     color:'#888780', bg:'#F1EFE8', maxDays:null,paid:false, protected:false},
+      {key:'compassionate',label:'Compassionate Leave',color:'#D85A30',bg:'#FAECE7',maxDays:3,paid:true,protected:false}
+    ]
   });
 }
 
@@ -7791,7 +7807,7 @@ async function loginPinSubmit(){
 
   // Log in
   CU = user;
-  S.set('session',{userId:user.id, username:user.username||emp.phone, loginAt:new Date().toISOString()});
+  SS.set('session',{userId:user.id, username:user.username||emp.phone, loginAt:new Date().toISOString()});
   addAudit(user.name,'Logged in via PIN');
   document.getElementById('login-screen').style.display='none';
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
@@ -8156,7 +8172,7 @@ async function confirmPinLogin(empId, pin){
       phone:emp.phone||'',email:emp.email||'',role:'viewer',active:true,empId:emp.id};
 
   CU=user;
-  S.set('session',{userId:user.id,username:user.username,loginAt:new Date().toISOString()});
+  SS.set('session',{userId:user.id,username:user.username,loginAt:new Date().toISOString()});
   addAudit(user.name,'Logged in via PIN (disambiguated)');
   document.getElementById('login-screen').style.display='none';
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
@@ -9078,7 +9094,7 @@ async function startPayrollReview(){
   // Scope to HOD's team if not admin/HR
   const scopeEmps = getScopedEmps();
   const emps = scopeEmps.filter(e=>
-    e.salary?.amount && (!dept||e.dept===dept)
+    e.salary?.amount && (!dept||e.dept===dept) && e.clockMode!=='kiosk'
   );
 
   _attReviewData = emps.map(emp=>{
@@ -9488,7 +9504,7 @@ async function confirmAndRunPayroll(){
 
   const settings     = getOTSettings();
   const totalWDays   = countWorkingDaysInRange(from,to);
-  const emps = getEmps().filter(e=>e.status!=='offboarded'&&(!dept||e.dept===dept)&&e.salary?.amount);
+  const emps = getEmps().filter(e=>e.status!=='offboarded'&&(!dept||e.dept===dept)&&e.salary?.amount&&e.clockMode!=='kiosk');
 
   _payrollData = emps.map((emp,idx)=>{
     const sal=emp.salary, annual=sal.amount||0, currency=sal.currency||'USD';
@@ -9669,7 +9685,7 @@ async function runPayroll(){
 
   const settings      = getOTSettings();
   const totalWorkDays = countWorkingDaysInRange(from, to);
-  const emps = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF)&&e.salary?.amount);
+  const emps = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF)&&e.salary?.amount&&e.clockMode!=='kiosk');
 
   const rows = emps.map(emp=>{
     const sal      = emp.salary;
@@ -9912,7 +9928,7 @@ function exitKiosk(){
     document.body.style.overflow = '';
     stopKioskClock();
     CU = null;
-    S.set('session', null);
+    SS.set('session', null);
     location.reload();
   } else {
     // Original exit behaviour for admin-opened kiosk
