@@ -2232,10 +2232,14 @@ async function showEmployeeClockInScreen(user){
   // - Employee with clockMode 'qr'  → QR scan required
   // - Employee with clockMode 'kiosk' or unset → no clock-in on app
   const role         = user.role||'viewer';
-  const isHRRole     = role==='admin'||role==='hr'||role==='manager';
+  const isHRRole     = role==='admin'||role==='hr';
   const empClockMode = emp?.clockMode||'kiosk';
-  const canAppClock  = isHRRole || empClockMode==='app';
-  const canQRClock   = !isHRRole && empClockMode==='qr';
+  // kiosk → tablet only, no phone clock-in
+  // qr    → phone + must scan QR, clock-in screen only
+  // hod   → phone + must scan QR + access HR platform after clock-in
+  const isHODClockMode = empClockMode==='hod' || role==='manager';
+  const canQRClock   = empClockMode==='qr' || isHODClockMode;
+  const canAppClock  = isHRRole; // admin/HR only — no QR needed
 
   // Fetch leave balances
   let leaveBalances = {};
@@ -2295,18 +2299,18 @@ async function showEmployeeClockInScreen(user){
     }
 
     if(canQRClock){
-      // QR scan required
+      // QR scan required — no manual bypass
       return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px">
-        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Clock In</div>
-        <div style="display:grid;grid-template-columns:${_attLocations.length===1?'1fr':'1fr 1fr'};gap:8px">
-          ${_attLocations.map(loc=>`
-            <button onclick="mobileQRClockIn('${emp?.id||''}','${loc.id}','${loc.name}')"
-              class="mobile-clock-btn mobile-clock-in" style="flex-direction:column;gap:3px;padding:16px 10px;font-size:13px">
-              <span style="font-size:22px">📷</span>
-              <span style="font-weight:600">${loc.name}</span>
-            </button>`).join('')}
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Clock In — Scan QR Code</div>
+        <div style="background:#000;border-radius:10px;overflow:hidden;margin-bottom:10px;position:relative">
+          <video id="emp-qr-video" playsinline autoplay muted style="width:100%;display:block"></video>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
+            <div style="width:180px;height:180px;border:3px solid var(--gold);border-radius:12px;box-shadow:0 0 0 4000px rgba(0,0,0,.4)"></div>
+          </div>
         </div>
-        <div style="font-size:10.5px;color:var(--text3);margin-top:8px;text-align:center">QR scan required to clock in</div>
+        <div id="emp-qr-status" style="text-align:center;font-size:12.5px;color:var(--text3);padding:6px 0">
+          📷 Point camera at the location QR code
+        </div>
       </div>`;
     }
 
@@ -2325,7 +2329,7 @@ async function showEmployeeClockInScreen(user){
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
         <div style="font-size:13px;font-weight:600;color:var(--navy)">Moura HR</div>
         <div style="display:flex;gap:8px;align-items:center">
-          ${isHRRole ? `<button onclick="openFullHRPlatform()" style="font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer">HR Platform →</button>` : ''}
+          ${(isHRRole||isHODClockMode) ? `<button onclick="openFullHRPlatform()" style="font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;font-weight:500">📊 HR Platform →</button>` : ''}
           <button onclick="doLogout()" style="font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer">Sign out</button>
         </div>
       </div>
@@ -2416,6 +2420,42 @@ function startEmpClockTick(){
     if(tc) tc.textContent = now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     if(dc) dc.textContent = now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
   },1000);
+
+  // Start inline QR scanner for QR/HOD mode employees not yet clocked in
+  if(canQRClock && !openRec){
+    setTimeout(()=>{
+      const vid = document.getElementById('emp-qr-video');
+      if(!vid) return;
+      navigator.mediaDevices?.getUserMedia({video:{facingMode:'environment'}})
+        .then(stream=>{
+          vid.srcObject = stream;
+          vid._stream = stream;
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          const tick = ()=>{
+            if(!document.getElementById('emp-qr-video')){ stream.getTracks().forEach(t=>t.stop()); return; }
+            if(vid.readyState>=2){
+              canvas.width=vid.videoWidth; canvas.height=vid.videoHeight;
+              ctx.drawImage(vid,0,0);
+              try{
+                const codes = jsQR(ctx.getImageData(0,0,canvas.width,canvas.height).data, canvas.width, canvas.height);
+                if(codes && codes.data){
+                  stream.getTracks().forEach(t=>t.stop());
+                  handleEmployeeQRScan(codes.data, emp);
+                  return;
+                }
+              }catch(e){}
+            }
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        })
+        .catch(()=>{
+          const st=document.getElementById('emp-qr-status');
+          if(st) st.textContent='⚠ Camera access denied. Allow camera to clock in.';
+        });
+    }, 300);
+  }
 
   // Also update elapsed time every 30 seconds
   clearInterval(_empStatusTick);
@@ -3461,9 +3501,9 @@ function openModal(type,pid,pid2){
 </div>
       <div class="fg"><label class="fl">Mobile clock-in</label>
         <select class="fs" id="fclockmode">
-          <option value="kiosk">Kiosk only — must use the entrance tablet (default)</option>
-          <option value="app">App — can clock in directly from the HR app (no QR needed)</option>
-          <option value="qr">QR mobile — can clock in from phone by scanning a location QR code</option>
+          <option value="kiosk">Kiosk only — must use the entrance tablet</option>
+          <option value="qr">Mobile (QR required) — clock in from phone by scanning a QR code</option>
+          <option value="hod">HOD / Manager — QR clock-in on phone + access to HR platform</option>
         </select>
         <div style="font-size:11.5px;color:var(--text3);margin-top:4px">All employees can use the entrance kiosk. This setting also controls whether they can clock in from a phone (app) or QR scan.</div>
       </div></div>
@@ -7785,6 +7825,7 @@ async function loginPinSubmit(){
     renderDashboard();
     setTimeout(()=>showManagerLoginChoice(user), 400);
   } else {
+    // HOD clockMode gets employee screen first (QR clock-in), with HR Platform button
     showEmployeeClockInScreen(user);
   }
 }
@@ -11131,6 +11172,56 @@ async function saveHRPin(userId, empName){
   closeModal();
   toast('PIN set for '+empName+'. They can log in immediately.', 'success');
   setTimeout(openAccountAudit, 300);
+}
+
+// ── Handle QR code scanned from employee mobile screen ───────────────────────
+async function handleEmployeeQRScan(qrData, emp){
+  const statusEl = document.getElementById('emp-qr-status');
+  if(statusEl) statusEl.textContent = '⏳ Verifying...';
+
+  // QR code format expected: loc:{locationId}:{locationName}
+  // or just a locationId
+  let locationId = null, locationName = null;
+  try{
+    if(qrData.startsWith('loc:')){
+      const parts = qrData.split(':');
+      locationId = parts[1];
+      locationName = decodeURIComponent(parts.slice(2).join(':'));
+    } else {
+      // Try to match against known locations
+      const locs = _attLocations||[];
+      const match = locs.find(l=>String(l.id)===qrData||l.qrCode===qrData);
+      if(match){ locationId=String(match.id); locationName=match.name; }
+    }
+  }catch(e){}
+
+  if(!locationId){
+    if(statusEl) statusEl.textContent = '❌ Invalid QR code. Ask HR for the correct code.';
+    setTimeout(()=>{
+      if(statusEl) statusEl.textContent = '📷 Point camera at the location QR code';
+      // Restart scanner
+      if(emp) showEmployeeClockInScreen(CU);
+    }, 2500);
+    return;
+  }
+
+  // Clock in
+  try{
+    await empClockIn(emp?.id||'', locationId, locationName);
+    if(statusEl) statusEl.textContent = '✅ Clocked in at '+locationName+'!';
+    // HOD mode: after clock-in, offer to open HR platform
+    const empClockMode = emp?.clockMode||'kiosk';
+    const isHODClockMode = empClockMode==='hod' || CU?.role==='manager';
+    if(isHODClockMode){
+      setTimeout(()=>{
+        showEmployeeClockInScreen(CU); // refresh screen to show clocked-in state + HR button
+      }, 800);
+    } else {
+      setTimeout(()=>showEmployeeClockInScreen(CU), 800);
+    }
+  }catch(e){
+    if(statusEl) statusEl.textContent = '❌ Clock-in failed. Try again.';
+  }
 }
 
 </script>
