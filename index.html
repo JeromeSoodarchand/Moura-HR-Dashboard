@@ -2130,12 +2130,18 @@ async function doLogin(){
     openKioskForKioskUser(user);
     return;
   }
-  if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
-    // Admin/HR/Manager → ask: clock in or access HR platform?
-    renderDashboard(); // render in background
+  // Check clockMode — QR/HOD employees always see clock-in screen first
+  const _dLoginEmp = user.empId ? gE(user.empId) : getEmps().find(e=>
+    (user.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===user.phone.replace(/[^0-9]/g,''))||
+    (user.email&&e.email&&e.email.toLowerCase()===user.email.toLowerCase())
+  );
+  const _dLoginCM = _dLoginEmp?.clockMode||'kiosk';
+  if(_dLoginCM==='qr'||_dLoginCM==='hod'){
+    showEmployeeClockInScreen(user);
+  } else if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
+    renderDashboard();
     setTimeout(()=>showManagerLoginChoice(user), 400);
   } else {
-    // Viewer (regular employee) → show clock-in prompt only
     showEmployeeClockInScreen(user);
   }
 }
@@ -7820,12 +7826,21 @@ async function loginPinSubmit(){
     } catch(e){ console.warn('Initial load error:',e); }
   }
 
-  // Route by role
-  if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
+  // Route by role — but check clockMode first for HOD/QR employees
+  const _routeEmp = user.empId ? gE(user.empId) : getEmps().find(e=>
+    (user.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===user.phone.replace(/[^0-9]/g,''))||
+    (user.email&&e.email&&e.email.toLowerCase()===user.email.toLowerCase())
+  );
+  const _routeClockMode = _routeEmp?.clockMode||'kiosk';
+  const _needsClockScreen = _routeClockMode==='qr'||_routeClockMode==='hod';
+
+  if(_needsClockScreen){
+    // QR or HOD mode: always show clock-in screen first (HR Platform button appears for hod)
+    showEmployeeClockInScreen(user);
+  } else if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
     renderDashboard();
     setTimeout(()=>showManagerLoginChoice(user), 400);
   } else {
-    // HOD clockMode gets employee screen first (QR clock-in), with HR Platform button
     showEmployeeClockInScreen(user);
   }
 }
@@ -8185,7 +8200,10 @@ async function confirmPinLogin(empId, pin){
       _cache = {emps:freshEmps, evts:freshEvts, asgn:freshAsgn, progs:freshProgs};
     } catch(e){ console.warn('Initial load error:',e); }
   }
-  if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
+  const _disambigCM = user.empId ? (gE(user.empId)?.clockMode||'kiosk') : 'kiosk';
+  if(_disambigCM==='qr'||_disambigCM==='hod'){
+    showEmployeeClockInScreen(user);
+  } else if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
     renderDashboard();setTimeout(()=>showManagerLoginChoice(user),400);
   } else {
     showEmployeeClockInScreen(user);
