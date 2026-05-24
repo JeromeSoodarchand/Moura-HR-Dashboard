@@ -3513,7 +3513,7 @@ function viewEmp(id){
       ${canEdit()&&emp.status==='active'?`<button class="btn btn-danger btn-sm" onclick="closeModal();openModal('offboard',${id})">Offboard</button>`:''}
       ${canEdit()&&emp.status==='offboarded'?`<button class="btn btn-primary btn-sm" onclick="closeModal();openModal('reonboard',${id})">↩ Re-onboard</button>`:''}
       ${canEdit()?`<button class="btn btn-xs" style="border-color:var(--red);color:var(--red)" onclick="closeModal();deleteEmployee(${id})">🗑 Delete record</button>`:''}
-      ${canEdit()&&emp.status!=='offboarded'&&!getUsers().find(u=>u.empId&&String(u.empId)===String(emp.id))?`<button class="btn btn-sm" style="background:#1E1445;color:#fff;border-color:#1E1445" onclick="autoCreateUserForEmployee(gE(${id}))">&#128273; Create HR Account</button>`:''}
+      ${canEdit()&&emp.status!=='offboarded'&&(emp.clockMode==='qr'||emp.clockMode==='hod')&&!getUsers().find(u=>u.empId&&String(u.empId)===String(emp.id))?`<button class="btn btn-sm" style="background:#1E1445;color:#fff;border-color:#1E1445" onclick="autoCreateUserForEmployee(gE(${id}))">&#128273; Create HR Account</button>`:''}
       <button class="btn btn-primary btn-sm" onclick="closeModal()">Close</button>
     </div>`;
   document.getElementById('mb').classList.add('open');
@@ -7375,9 +7375,9 @@ async function renderLeave(){
 function renderLeaveMetrics(){
   const el = document.getElementById('leave-metrics');
   if(!el) return;
-  const pending  = _leaveRequests.filter(r=>r.status==='pending').length;
-  const approved = _leaveRequests.filter(r=>r.status==='approved'&&new Date(r.fromDate)>=new Date(new Date().getFullYear()+'-01-01')).length;
-  const onLeave  = _leaveRequests.filter(r=>r.status==='approved'&&r.fromDate<=todayStr()&&r.toDate>=todayStr()).length;
+  const pending  = getVisibleLeaveRequests().filter(r=>r.status==='pending').length;
+  const approved = getVisibleLeaveRequests().filter(r=>r.status==='approved'&&new Date(r.fromDate)>=new Date(new Date().getFullYear()+'-01-01')).length;
+  const onLeave  = getVisibleLeaveRequests().filter(r=>r.status==='approved'&&r.fromDate<=todayStr()&&r.toDate>=todayStr()).length;
   const emps     = getEmps().filter(e=>e.status!=='offboarded').length;
   el.innerHTML = `
     <div class="mc"><div class="mc-accent" style="background:var(--amber)"></div>
@@ -7395,11 +7395,27 @@ function renderLeaveMetrics(){
       <div class="mc-delta">employees available</div></div>`;
 }
 
+// Returns leave requests visible to current user based on their scope
+function getVisibleLeaveRequests(){
+  const all = _leaveRequests || [];
+  if(!CU) return all;
+  if(CU.role==='admin'||CU.role==='hr') return all;
+  // HOD/manager: see own team + other HODs
+  const hodEmp = CU.empId ? gE(CU.empId) : null;
+  if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
+    const scopedIds = new Set(getScopedLeaveEmps().map(e=>String(e.id)));
+    return all.filter(r=>scopedIds.has(String(r.empId)));
+  }
+  // Regular viewer: own requests only
+  if(CU.empId) return all.filter(r=>String(r.empId)===String(CU.empId));
+  return [];
+}
+
 function renderLeavePending(){
   const el = document.getElementById('leave-pending-list');
   const cnt = document.getElementById('leave-pending-count');
   if(!el) return;
-  const pending = _leaveRequests.filter(r=>r.status==='pending')
+  const pending = getVisibleLeaveRequests().filter(r=>r.status==='pending')
     .sort((a,b)=>new Date(a.fromDate)-new Date(b.fromDate));
   if(cnt) cnt.textContent = pending.length+' pending';
   if(!pending.length){
@@ -7494,7 +7510,7 @@ function leaveCalNext(){ _leaveCalMonth++; if(_leaveCalMonth>11){_leaveCalMonth=
 function renderLeaveBalances(){
   const tbody = document.getElementById('leave-balances-tbody');
   if(!tbody) return;
-  const emps = getEmps().filter(e=>e.status!=='offboarded');
+  const emps = getScopedLeaveEmps();
   if(!emps.length){ tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:16px">No employees</td></tr>'; return; }
   tbody.innerHTML = emps.map(emp=>{
     const b = getEmpBalance(emp.id);
@@ -10460,7 +10476,7 @@ function renderLeaveTable(){
   const ctx     = getLeaveApprovalContext();
 
   // Filter by what current user can see
-  let list = _leaveRequests.filter(r=>canViewRequest(r));
+  let list = getVisibleLeaveRequests().filter(r=>canViewRequest(r));
   if(typeF)   list=list.filter(r=>r.type===typeF);
   if(statusF) list=list.filter(r=>r.status===statusF);
   list.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
@@ -10924,15 +10940,38 @@ function getScopedEmps(){
   const hodEmp = CU.empId ? gE(CU.empId) : null;
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
     const myName = hodEmp?.name || CU.name;
-    // Team = employees whose manager field matches my name
-    // Also include employees in same dept as HOD
     const myDept = hodEmp?.dept;
+    // Team = direct reports + same dept employees
     return all.filter(e=>
       e.manager === myName ||
-      (myDept && e.dept === myDept && e.id !== hodEmp?.id)
+      (myDept && e.dept === myDept && String(e.id) !== String(hodEmp?.id))
     );
   }
   // Viewer — only self
+  if(CU.empId) return all.filter(e=>String(e.id)===String(CU.empId));
+  return [];
+}
+
+// For leave page: HOD sees their team + all other HODs (cross-HOD leave visibility)
+function getScopedLeaveEmps(){
+  const all = getEmps().filter(e=>e.status!=='offboarded');
+  if(!CU) return all;
+  if(CU.role==='admin'||CU.role==='hr') return all;
+  const hodEmp = CU.empId ? gE(CU.empId) : null;
+  if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
+    const myName = hodEmp?.name || CU.name;
+    const myDept = hodEmp?.dept;
+    // Own team
+    const teamIds = new Set(all
+      .filter(e=> e.manager===myName || (myDept && e.dept===myDept && String(e.id)!==String(hodEmp?.id)))
+      .map(e=>String(e.id))
+    );
+    // Other HODs (so Siva can see when other HODs are on leave)
+    all.filter(e=>e.isHOD||e.isSeniorHOD).forEach(e=>teamIds.add(String(e.id)));
+    // Include self
+    if(hodEmp) teamIds.add(String(hodEmp.id));
+    return all.filter(e=>teamIds.has(String(e.id)));
+  }
   if(CU.empId) return all.filter(e=>String(e.id)===String(CU.empId));
   return [];
 }
