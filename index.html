@@ -2929,7 +2929,7 @@ function renderOnboarding(){
         const c=aColor(emp.name),cl=emp.checklist||{};
         const done=Object.values(cl).filter(Boolean).length,tot=Object.keys(cl).length;
         const allDone=tot>0&&done===tot;
-        return`<div class="kcard">
+        return`<div class="kcard" id="onb-card-${emp.id}">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer" onclick="viewEmp(${emp.id})">
             <div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div>
             <div style="flex:1"><div style="font-size:13px;font-weight:500">${emp.name}</div><div class="txs tm">${emp.role}</div></div>
@@ -2943,7 +2943,7 @@ function renderOnboarding(){
             </div>
             <div class="pt" style="margin-bottom:8px"><div class="pf" style="width:${Math.round(done/tot*100)}%;background:${allDone?'var(--green)':'var(--green)'}"></div></div>
           `:''}
-          ${allDone&&canEdit()?`
+          <span id="onb-activate-${emp.id}">${allDone&&canEdit()?`
             <button class="btn btn-primary" style="width:100%;justify-content:center;font-size:12.5px" onclick="activateEmployee(${emp.id})">
               ✓ Mark as Active
             </button>
@@ -2951,7 +2951,7 @@ function renderOnboarding(){
             <div style="font-size:12px;color:var(--green);text-align:center;padding:4px 0;font-weight:500">✓ Checklist complete</div>
           `:`
             <div style="font-size:11.5px;color:var(--text3);text-align:center">${tot-done} item${tot-done!==1?'s':''} remaining</div>
-          `}
+          `}</span>
         </div>`;
       }).join('')}
       ${emps.length===0?'<div class="ts tm" style="text-align:center;padding:16px">No employees</div>':''}
@@ -3394,11 +3394,28 @@ function togCheck(id,item,val,isOff){
     if(!emp.checklist)emp.checklist={};
     emp.checklist[item]=val;
   }
-  // Update cache immediately so UI stays responsive
+  // Update cache immediately
   const idx=_cache.emps.findIndex(e=>String(e.id)===String(id));
   if(idx>=0)_cache.emps[idx]=emp;
   saveEmps(_cache.emps);
-  // Persist to Supabase in background (no loader — silent save)
+  // Live-update the onboarding kanban activate button
+  if(!isOff){
+    const cl=emp.checklist||{};
+    const keys=Object.keys(cl);
+    const allDone=keys.length>0&&keys.every(k=>cl[k]);
+    const rem=keys.filter(k=>!cl[k]).length;
+    const activateEl=document.getElementById('onb-activate-'+id);
+    if(activateEl){
+      if(allDone&&canEdit()){
+        activateEl.innerHTML='<button class="btn btn-primary" style="width:100%;justify-content:center;font-size:12.5px" onclick="activateEmployee('+id+')">✓ Mark as Active</button>';
+      } else if(allDone){
+        activateEl.innerHTML='<div style="font-size:12px;color:var(--green);text-align:center;padding:4px 0;font-weight:500">✓ Checklist complete</div>';
+      } else {
+        activateEl.innerHTML='<div style="font-size:11.5px;color:var(--text3);text-align:center">'+rem+' item'+(rem!==1?'s':'')+' remaining</div>';
+      }
+    }
+  }
+  // Persist to Supabase in background
   dbSaveEmployee(emp).then(saved=>{
     if(saved&&saved.id){
       const i=_cache.emps.findIndex(e=>String(e.id)===String(saved.id));
