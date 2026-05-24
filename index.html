@@ -1936,8 +1936,63 @@ async function boot(){
   const isSetup = await checkSetupToken();
   if(isSetup) return; // setup flow handles everything
 
-  // Step 2c — always clear any stale session on page load (shared device)
-  SS.set('session', null);
+  // Step 2c — restore session if available (sessionStorage is per-tab, safe)
+  const _savedSession = SS.get('session', null);
+  if(_savedSession && _savedSession.userId){
+    // Find user from cache or Supabase
+    let _sessionUser = localUsers.find(u=>
+      String(u.id)===String(_savedSession.userId)||
+      u.username===_savedSession.username
+    );
+    if(!_sessionUser && sbReady()){
+      try{
+        const {data} = await _sb.from('hr_users').select('*')
+          .eq('id',_savedSession.userId).eq('active',true).single();
+        if(data) _sessionUser = {
+          id:data.id,name:data.name,username:data.username,
+          email:data.email||'',phone:data.phone||'',
+          role:data.role,active:data.active,
+          passwordHash:data.password_hash,
+          empId:data.emp_id||null,
+          setupDone:data.setup_done||false
+        };
+      }catch(e){}
+    }
+    if(_sessionUser && _sessionUser.active!==false){
+      CU = _sessionUser;
+      // Load fresh data then restore the platform
+      initSupabase();
+      if(sbReady()){
+        try{
+          const [fe,fev,fa,fp] = await Promise.all([
+            dbGetEmployees(),dbGetEvents(),dbGetAssignments(),dbGetPrograms()
+          ]);
+          _cache={emps:fe,evts:fev,asgn:fa,progs:fp};
+        }catch(e){}
+      }
+      document.getElementById('login-screen').style.display='none';
+      const _app=document.getElementById('app');
+      _app.style.display='flex';_app.style.flexDirection='row';
+      applyPermissions();applyAttEditorPerm();applyStoredBranding();initInactivityTracking();
+      // Route same as login — but if HOD was on HR platform, go there directly
+      const _rEmp = CU.empId ? gE(CU.empId) : null;
+      const _rCM  = _rEmp?.clockMode||'kiosk';
+      const _wasHRPlatform = SS.get('hrPlatform', false);
+      if(_wasHRPlatform && (_rCM==='hod'||CU.role==='admin'||CU.role==='hr'||CU.role==='manager')){
+        renderDashboard();
+      } else if(_rCM==='qr'||_rCM==='hod'){
+        showEmployeeClockInScreen(CU);
+      } else if(CU.role==='admin'||CU.role==='hr'||CU.role==='manager'){
+        renderDashboard();
+        setTimeout(()=>showManagerLoginChoice(CU),400);
+      } else {
+        showEmployeeClockInScreen(CU);
+      }
+      return;
+    }
+    // Session invalid — clear it and show login
+    SS.set('session',null);
+  }
 
   // Step 3 — if local users exist (super admin seeded), always go to login
   if(localUsers.length > 0){
@@ -2513,6 +2568,7 @@ async function empClockOut(recId){
 
 function openFullHRPlatform(){
   clearInterval(_empClockTick);
+  SS.set('hrPlatform', true); // remember HOD chose HR platform — survives refresh
   // Stop camera streams
   document.querySelectorAll('video').forEach(v=>{
     try{ if(v.srcObject){ v.srcObject.getTracks().forEach(t=>t.stop()); v.srcObject=null; } }catch(e){}
@@ -2721,7 +2777,7 @@ function doLogout(){
   // and shown correctly when they log back in.
   // Auto clock-out only happens on session TIMEOUT (15 min inactivity).
   addAudit(CU?.name||'User','Logged out');
-  CU=null;SS.set('session',null);
+  CU=null;SS.set('session',null);SS.set('hrPlatform',null);
   location.reload();
 }
 
