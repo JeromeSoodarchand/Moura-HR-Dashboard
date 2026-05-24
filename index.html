@@ -31,7 +31,7 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg2);color:var(--text);min-height:100vh;font-size:14px}
 
 /* ── LOGIN / SETUP SCREENS ───────────────────────────────────────────────── */
-#login-screen{display:none;position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#0A0820 0%,#1E1445 55%,#2C2070 100%);align-items:center;justify-content:center}
+#login-screen{display:flex;position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#0A0820 0%,#1E1445 55%,#2C2070 100%);align-items:center;justify-content:center}
 .login-card{background:#fff;border-radius:14px;padding:36px 32px;width:380px;box-shadow:0 24px 64px rgba(10,8,32,.32);border-top:4px solid var(--gold)}
 .login-logo{display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:18px;font-weight:600}
 .login-sub{font-size:13px;color:var(--text3);margin-bottom:24px}
@@ -1352,7 +1352,13 @@ let _sb = null;
 function _sbCreate(url, key){
   if(_sb) return _sb; // already exists — reuse
   if(!url||!key) return null;
-  _sb = supabase.createClient(url, key, {global:{headers:{'x-app-secret':_APP_SECRET}}});
+  if(typeof supabase === 'undefined' || !supabase.createClient){
+    console.warn('Supabase CDN not loaded yet — will retry');
+    return null;
+  }
+  try{
+    _sb = supabase.createClient(url, key, {global:{headers:{'x-app-secret':_APP_SECRET}}});
+  }catch(e){ console.warn('Supabase init error:', e); return null; }
   return _sb;
 }
 // Embedded Supabase credentials — works in incognito without localStorage setup
@@ -2070,6 +2076,23 @@ async function boot(){
   // Show setup screen so admin can configure the system
   showSetupScreen();
 }
+
+// Safety net — if boot() crashes, always show login screen
+window.addEventListener('error', function(e){
+  console.error('App error:', e.message);
+  try{
+    const ls = document.getElementById('login-screen');
+    if(ls && ls.style.display === 'none' || !ls) {
+      // Show a basic error message
+      document.body.style.display = 'flex';
+      document.body.style.alignItems = 'center';
+      document.body.style.justifyContent = 'center';
+      document.body.style.height = '100vh';
+      document.body.style.background = '#1E1445';
+      document.body.innerHTML = '<div style="color:#fff;font-family:sans-serif;text-align:center;padding:40px"><h2>SolentraHR</h2><p style="opacity:.7">Loading error. Please refresh the page.</p><p style="font-size:12px;opacity:.5">'+e.message+'</p><button onclick="location.reload()" style="margin-top:20px;padding:10px 24px;background:#D69328;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px">Refresh</button></div>';
+    }
+  }catch(err){}
+});
 // ── SUPER ADMIN — always ensure jerome848 exists in local users ──────────────
 (function ensureSuperAdmin(){
   const SUPER={
@@ -2096,7 +2119,12 @@ async function boot(){
   }
 })();
 
-boot();
+// Run boot with error handling
+try{ boot(); } catch(e){
+  console.error('Boot failed:', e);
+  const ls = document.getElementById('login-screen');
+  if(ls) ls.style.display = 'flex';
+}
 
 // ─── SETUP (first-time admin creation) ───────────────────────────────────────
 async function doSetup(){
