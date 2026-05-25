@@ -401,6 +401,465 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 @media(max-width:500px){.metrics,.ig{grid-template-columns:1fr}}
 
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"function renderUserAuditSummary(){
+  const el = document.getElementById('account-audit-summary');
+  if(!el) return;
+  const emps = getEmps().filter(e=>e.status!=='offboarded');
+  const users = getUsers();
+  const missing = emps.filter(emp=>!findUserForEmployee(emp, users));
+  const noPIN = emps.filter(emp=>{
+    const u = findUserForEmployee(emp, users);
+    return u && !u.pinHash && !u.passwordHash;
+  });
+  if(missing.length===0 && noPIN.length===0){
+    el.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--green-light);border-radius:var(--radius);font-size:13px;color:var(--green-deep)">&#10003; All active employees have user accounts.</div>';
+    return;
+  }
+  let html = '';
+  if(missing.length > 0){
+    html += '<div style="background:var(--red-light);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px">'
+          + '<div style="font-size:13px;font-weight:600;color:var(--red-deep);margin-bottom:8px">&#9888; '
+          + missing.length + ' employee(s) have no login account:</div>'
+          + missing.map(function(emp){
+              return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06)">'
+                + '<div><span style="font-size:13px;font-weight:500">' + emp.name + '</span>'
+                + '<span style="font-size:11.5px;color:var(--text3);margin-left:8px">' + (emp.dept||'') + '</span></div>'
+                + '<button class="btn btn-xs btn-primary" data-empid="' + emp.id + '" onclick="auditCreateOne(this.dataset.empid)">+ Create</button>'
+                + '</div>';
+            }).join('')
+          + '<div style="margin-top:10px">'
+          + '<button class="btn btn-primary" onclick="auditCreateAll()">Create All Missing Accounts</button>'
+          + '</div></div>';
+  }
+  if(noPIN.length > 0){
+    html += '<div style="background:var(--amber-light);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px">'
+          + '<div style="font-size:13px;font-weight:600;color:var(--amber-deep);margin-bottom:8px">&#128273; '
+          + noPIN.length + ' employee(s) have an account but no PIN set:</div>'
+          + noPIN.map(function(emp){
+              var u = findUserForEmployee(emp, users);
+              return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06)">'
+                + '<div><span style="font-size:13px;font-weight:500">' + emp.name + '</span>'
+                + '<span style="font-size:11.5px;color:var(--text3);margin-left:8px">' + (emp.dept||'') + '</span></div>'
+                + (u ? '<button class="btn btn-xs" data-uid="' + u.id + '" data-name="' + emp.name + '" onclick="openSetPINModal(this.dataset.uid, this.dataset.name)">Set PIN</button>' : '')
+                + '</div>';
+            }).join('')
+          + '</div>';
+  }
+  el.innerHTML = html;
+}
+
+async function auditCreateAll(){
+  const emps = getEmps().filter(e=>e.status!=='offboarded');
+  const users = getUsers();
+  const missing = emps.filter(emp=>!findUserForEmployee(emp, users));
+  if(!missing.length){ toast('No missing accounts.','info'); return; }
+  showLoader('Creating ' + missing.length + ' accounts...');
+  let created = 0;
+  for(var i=0; i<missing.length; i++){
+    try{ await autoCreateAccountForNewEmployee(missing[i]); created++; }
+    catch(e){ console.error('Failed for '+missing[i].name, e); }
+  }
+  hideLoader();
+  toast(created + ' account(s) created. Set PINs via the list below.','success');
+  renderUserMgmt();
+}
+
+
+
+:root{
+  /* Brand colours */
+  --navy:#1E1445;--navy-dark:#120D2E;--navy-mid:#2C2070;--navy-light:#EBE9F5;--navy-deep:#0A0820;
+  --gold:#D69328;--gold-dark:#A87020;--gold-light:#FDF3E0;--gold-deep:#7A510E;
+  --muted:#9D915D;--muted-light:#F5F2E8;
+  /* Neutrals */
+  --bg:#ffffff;--bg2:#F8F7F4;--bg3:#F2F0EB;
+  --text:#1A1433;--text2:#4E4870;--text3:#9590B0;
+  --border:rgba(30,20,69,0.10);--border2:rgba(30,20,69,0.20);
+  /* Semantic */
+  --green:#1D9E75;--green-dark:#0F6E56;--green-light:#E1F5EE;--green-deep:#085041;
+  --blue:#378ADD;--blue-light:#E6F1FB;--blue-deep:#0C447C;
+  --amber:#BA7517;--amber-light:#FAEEDA;--amber-deep:#633806;
+  --red:#C0392B;--red-light:#FBEAE9;--red-deep:#7B241C;
+  --purple:#7F77DD;--purple-light:#EEEDFE;--purple-deep:#3C3489;
+  --gray-light:#EDEAE3;--gray-deep:#3A3560;
+  --radius:8px;--radius-lg:12px;
+  --sb-width:196px;
+}
+
+/* ── BASE ─────────────────────────────────────────────────────────────────── */
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg2);color:var(--text);min-height:100vh;font-size:14px}
+
+/* ── LOGIN / SETUP SCREENS ───────────────────────────────────────────────── */
+#login-screen{display:flex;position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#0A0820 0%,#1E1445 55%,#2C2070 100%);align-items:center;justify-content:center;overflow-y:auto;padding:20px}
+.login-card{background:#fff;border-radius:14px;padding:36px 32px;width:380px;max-width:100%;box-shadow:0 24px 64px rgba(10,8,32,.32);border-top:4px solid var(--gold);overflow-y:auto}
+.login-logo{display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:18px;font-weight:600}
+.login-sub{font-size:13px;color:var(--text3);margin-bottom:24px}
+.lf{margin-bottom:13px}
+.lf label{display:block;font-size:12px;font-weight:500;color:var(--text2);margin-bottom:4px}
+.lf input,.lf select{width:100%;padding:9px 12px;border:1px solid var(--border2);border-radius:var(--radius);font-size:13px;color:var(--text);outline:none;transition:border .15s;background:#fff}
+.lf input:focus,.lf select:focus{border-color:var(--gold);outline:2px solid rgba(214,147,40,0.18)}
+.login-btn{width:100%;padding:11px;background:var(--gold);color:#fff;border:none;border-radius:var(--radius);font-size:14px;font-weight:600;cursor:pointer;margin-top:8px;transition:background .15s;letter-spacing:.01em}
+.login-btn:hover{background:var(--gold-dark)}
+.login-err{font-size:12px;color:var(--red);margin-top:8px;display:none;padding:8px 10px;background:var(--red-light);border-radius:var(--radius)}
+
+/* ── APP LAYOUT ─────────────────────────────────────────────────────────── */
+#app{display:none;min-height:100vh;flex-direction:row}
+
+/* ── SIDEBAR ─────────────────────────────────────────────────────────────── */
+.sidebar{width:var(--sb-width);background:linear-gradient(180deg,#1A1040 0%,#1E1445 100%);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;flex-shrink:0;border-right:1px solid rgba(255,255,255,0.05);overflow-y:auto}
+.app-body{margin-left:var(--sb-width);flex:1;display:flex;flex-direction:column;min-height:100vh;min-width:0}
+.nav-logo{display:none}
+
+.sb-logo{display:flex;align-items:center;gap:10px;padding:16px 14px 14px;border-bottom:1px solid rgba(255,255,255,0.05)}
+.sb-logo-mark{width:30px;height:30px;border-radius:8px;background:var(--gold);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 8px rgba(214,147,40,0.4)}
+.sb-logo-mark svg{width:15px;height:15px;color:var(--navy);stroke-width:2.2}
+.sb-logo-text{font-size:13px;font-weight:600;color:#fff;line-height:1.2;letter-spacing:.01em}
+.sb-logo-sub{font-size:9px;color:rgba(255,255,255,0.28);margin-top:1px;letter-spacing:.03em}
+
+.sb-section{padding:14px 14px 4px;font-size:8.5px;font-weight:700;letter-spacing:.1em;color:rgba(255,255,255,0.22);text-transform:uppercase}
+
+.nav-tab{display:flex;align-items:center;gap:9px;padding:4px 8px 4px 6px;margin:1px 8px;border-radius:8px;cursor:pointer;color:rgba(255,255,255,0.48);font-size:12px;font-weight:400;border:none;background:transparent;font-family:inherit;text-align:left;transition:background .12s,color .12s;width:calc(100% - 16px);line-height:1;position:relative}
+.tab-icon{width:28px;height:28px;border-radius:7px;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .12s}
+.tab-icon svg{width:14px;height:14px}
+.tab-label{font-size:12px;letter-spacing:.01em}
+.nav-tab:hover{color:rgba(255,255,255,0.82)}
+.nav-tab:hover .tab-icon{background:rgba(255,255,255,0.09)}
+.nav-tab.active{color:#fff;font-weight:500;background:rgba(255,255,255,0.06)}
+.nav-tab.active .tab-icon{background:var(--gold);box-shadow:0 2px 8px rgba(214,147,40,0.4)}
+.nav-tab.active .tab-icon svg{color:var(--navy)}
+.nav-tab.active::before{content:'';position:absolute;left:-8px;top:50%;transform:translateY(-50%);width:3px;height:16px;background:var(--gold);border-radius:0 3px 3px 0}
+
+.sb-bottom{margin-top:auto;padding:8px;border-top:1px solid rgba(255,255,255,0.05)}
+.sb-user{display:flex;align-items:center;gap:9px;padding:8px;border-radius:8px;cursor:pointer;transition:background .12s}
+.sb-user:hover{background:rgba(255,255,255,0.05)}
+.sb-user-av{width:28px;height:28px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--navy);flex-shrink:0}
+.sb-user-info{flex:1;min-width:0}
+.sb-user-name{font-size:11.5px;font-weight:500;color:rgba(255,255,255,0.78);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-user-role{font-size:9.5px;color:rgba(255,255,255,0.28);margin-top:1px}
+.sb-logout{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;padding:6px;margin-top:4px;border-radius:7px;border:1px solid rgba(255,255,255,0.08);background:transparent;color:rgba(255,255,255,0.32);font-size:11px;font-family:inherit;cursor:pointer;transition:all .15s}
+.sb-logout:hover{background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.65);border-color:rgba(255,255,255,0.14)}
+.sb-logout svg{width:12px;height:12px}
+
+/* ── TOPNAV ─────────────────────────────────────────────────────────────── */
+.topnav{background:var(--bg);border-bottom:1px solid var(--border);padding:0 22px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+.topnav-right{display:flex;align-items:center;gap:8px}
+.role-badge{padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:500;display:none}
+.user-pill{font-size:13px;color:var(--text2);display:none}
+.logout-btn{display:none}
+
+/* ── MAIN CONTENT ────────────────────────────────────────────────────────── */
+.main-content{padding:18px 22px;width:100%;flex:1}
+.page{display:none}
+.page.active{display:block}
+
+/* ── PAGE HEADER ─────────────────────────────────────────────────────────── */
+.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:10px;flex-wrap:wrap}
+.ph-title{font-size:17px;font-weight:600;color:var(--text)}
+.ph-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ── BUTTONS ─────────────────────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg);font-size:12.5px;cursor:pointer;color:var(--text);font-family:inherit;transition:all .12s;white-space:nowrap;font-weight:400}
+.btn:hover{background:var(--bg2)}
+.btn svg{width:13px;height:13px}
+.btn-primary{background:var(--gold);color:#fff;border-color:var(--gold)}
+.btn-primary:hover{background:var(--gold-dark);border-color:var(--gold-dark)}
+.btn-blue{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn-blue:hover{background:var(--navy-dark)}
+.btn-danger{background:var(--red);color:#fff;border-color:var(--red)}
+.btn-danger:hover{background:var(--red-deep)}
+.btn-amber{background:var(--amber);color:#fff;border-color:var(--amber)}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-xs{padding:2px 8px;font-size:11px}
+.pdf-btn{background:var(--navy);color:#fff;border-color:var(--navy)}
+.pdf-btn:hover{background:var(--navy-dark)}
+
+/* ── FILTERS ─────────────────────────────────────────────────────────────── */
+.filters{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.fb{padding:4px 12px;border-radius:20px;border:1px solid var(--border2);background:var(--bg);font-size:12px;color:var(--text2);cursor:pointer;font-family:inherit;transition:all .12s}
+.fb:hover{background:var(--bg2)}
+.fb.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+.si{padding:7px 12px;border:1px solid var(--border2);border-radius:var(--radius);font-size:13px;color:var(--text);outline:none;width:200px;font-family:inherit;background:var(--bg)}
+.si:focus{border-color:var(--gold)}
+
+/* ── METRICS ─────────────────────────────────────────────────────────────── */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.mc{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;position:relative;overflow:hidden}
+.mc-accent{position:absolute;top:0;left:0;width:3px;height:100%}
+.mc-label{font-size:11.5px;color:var(--text2);margin-bottom:8px}
+.mc-value{font-size:24px;font-weight:600;line-height:1;color:var(--text)}
+.mc-delta{font-size:11px;margin-top:5px;color:var(--text3)}
+.delta-up{color:var(--green)}
+.delta-down{color:var(--red)}
+
+/* ── CARDS ───────────────────────────────────────────────────────────────── */
+.card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:12px;box-shadow:0 1px 3px rgba(30,20,69,0.04)}
+.ch{padding:11px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.ct{font-size:13px;font-weight:600;color:var(--text)}
+.cb{padding:14px 16px}
+
+/* ── GRIDS ───────────────────────────────────────────────────────────────── */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+
+/* ── TABLES ──────────────────────────────────────────────────────────────── */
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{text-align:left;padding:9px 12px;font-size:11px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);background:var(--bg2);letter-spacing:.03em;text-transform:uppercase}
+tbody td{padding:10px 12px;border-bottom:1px solid var(--border)}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--bg2);cursor:pointer}
+.tm{color:var(--text2)}
+.ts{font-size:12px}
+.txs{font-size:11.5px}
+
+/* ── AVATAR ──────────────────────────────────────────────────────────────── */
+.avatar{width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:600;flex-shrink:0}
+.avatar-lg{width:48px;height:48px;font-size:16px}
+.emp-cell{display:flex;align-items:center;gap:9px}
+
+/* ── BADGES ──────────────────────────────────────────────────────────────── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:500;white-space:nowrap}
+.b-active{background:var(--green-light);color:var(--green-deep)}
+.b-onboarding{background:#EBE9F5;color:#2C2070}
+.b-offboarded{background:var(--gray-light);color:var(--gray-deep)}
+.b-absence{background:var(--red-light);color:var(--red-deep)}
+.b-warning{background:var(--amber-light);color:var(--amber-deep)}
+.b-training{background:var(--blue-light);color:var(--blue-deep)}
+.b-milestone{background:var(--green-light);color:var(--green-deep)}
+.b-not-started{background:#f1efe8;color:#444}
+.b-in-progress{background:var(--blue-light);color:var(--blue-deep)}
+.b-completed{background:var(--green-light);color:var(--green-deep)}
+.b-failed{background:var(--red-light);color:var(--red-deep)}
+.b-overdue{background:var(--amber-light);color:var(--amber-deep)}
+.b-mandatory{background:var(--purple-light);color:var(--purple-deep)}
+
+/* ── FORMS ───────────────────────────────────────────────────────────────── */
+.fg{margin-bottom:13px}
+.fl{display:block;font-size:12px;font-weight:500;color:var(--text2);margin-bottom:4px}
+.fi,.fs{width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--radius);font-size:13px;color:var(--text);background:var(--bg);outline:none;font-family:inherit;transition:border .15s}
+.fi:focus,.fs:focus{border-color:var(--gold);outline:2px solid rgba(214,147,40,0.12)}
+.ft{width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--radius);font-size:13px;color:var(--text);background:var(--bg);outline:none;font-family:inherit;transition:border .15s;resize:vertical;min-height:68px}
+.ft:focus{border-color:var(--gold)}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fr3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.mf{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.fsec{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:16px 0 10px;padding-top:10px;border-top:1px solid var(--border)}
+
+/* ── MODAL ───────────────────────────────────────────────────────────────── */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:600;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-backdrop.open{display:flex}
+.modal-box{background:var(--bg);border-radius:var(--radius-lg);padding:22px 24px;width:460px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.18)}
+.modal-box.wide{width:560px}
+.modal-box.xl{width:680px}
+.modal-title{font-size:15px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between}
+.modal-close{background:none;border:none;cursor:pointer;color:var(--text3);font-size:20px;line-height:1;padding:0}
+
+/* ── NOTIFICATIONS ───────────────────────────────────────────────────────── */
+.notif-wrap{position:relative}
+.notif-bell{cursor:pointer;padding:6px;border-radius:var(--radius);display:flex;align-items:center}
+.notif-bell:hover{background:var(--bg2)}
+.notif-count{position:absolute;top:2px;right:2px;background:var(--red);color:#fff;border-radius:50%;width:14px;height:14px;font-size:9px;display:flex;align-items:center;justify-content:center;font-weight:700}
+.notif-count.hidden{display:none}
+.notif-panel{position:absolute;top:42px;right:0;width:300px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:0 8px 30px rgba(0,0,0,.12);z-index:200;display:none;max-height:360px;overflow-y:auto}
+.notif-panel.open{display:block}
+.notif-hdr{padding:11px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:500;display:flex;justify-content:space-between}
+.notif-clear{font-size:11.5px;color:var(--blue);cursor:pointer}
+.notif-item{padding:9px 14px;border-bottom:1px solid var(--border);font-size:12.5px;line-height:1.5}
+.notif-item .ni-t{font-size:11px;color:var(--text3);margin-top:2px}
+.notif-empty{padding:20px;text-align:center;color:var(--text3);font-size:13px}
+
+/* ── TIMELINE ────────────────────────────────────────────────────────────── */
+.tl{display:flex;flex-direction:column}
+.tl-item{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+.tl-item:last-child{border-bottom:none}
+.tl-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:600}
+.tl-body{flex:1}
+.tl-desc{font-size:13px}
+.tl-meta{font-size:11.5px;color:var(--text3);margin-top:2px}
+
+/* ── KANBAN ──────────────────────────────────────────────────────────────── */
+.kanban{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.kc{background:var(--bg2);border-radius:var(--radius-lg);padding:12px}
+.kch{font-size:12.5px;font-weight:600;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+.kcard{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px;cursor:pointer;transition:box-shadow .15s}
+.kcard:hover{box-shadow:0 2px 10px rgba(0,0,0,.08)}
+
+/* ── PROGRESS BARS ───────────────────────────────────────────────────────── */
+.pt{height:5px;background:var(--bg3);border-radius:3px}
+.pf{height:5px;border-radius:3px;background:var(--gold)}
+.brow{margin-bottom:12px}
+.brlabs{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px}
+.btrack{height:7px;background:var(--bg3);border-radius:4px}
+.bfill{height:7px;border-radius:4px}
+.tpb{height:6px;background:var(--bg3);border-radius:3px;margin-top:4px}
+.tpf{height:6px;border-radius:3px}
+
+/* ── CHECKLIST ───────────────────────────────────────────────────────────── */
+.cli{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid var(--border)}
+.cli:last-child{border-bottom:none}
+.cli input[type=checkbox]{width:15px;height:15px;accent-color:var(--gold);cursor:pointer;flex-shrink:0}
+
+/* ── SALARY CARDS ────────────────────────────────────────────────────────── */
+.sal-card{background:var(--bg2);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
+.sal-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.sal-value{font-size:18px;font-weight:600}
+.sal-meta{font-size:12px;color:var(--text2);margin-top:2px}
+
+/* ── TAB BAR ─────────────────────────────────────────────────────────────── */
+.tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.tbb{padding:8px 16px;font-size:13px;color:var(--text2);cursor:pointer;border:none;background:transparent;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .12s}
+.tbb:hover{color:var(--text)}
+.tbb.active{color:var(--navy);border-bottom-color:var(--gold);font-weight:600}
+.tab-pane{display:none}
+.tab-pane.active{display:block}
+
+/* ── INFO GRID ───────────────────────────────────────────────────────────── */
+.ig{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.ig-item{background:var(--bg2);border-radius:var(--radius);padding:10px 12px}
+.ig-label{font-size:11px;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
+.ig-value{font-size:13.5px;font-weight:500}
+
+/* ── LOADER ──────────────────────────────────────────────────────────────── */
+.loader-overlay{position:fixed;inset:0;background:rgba(30,20,69,.35);z-index:600;display:none;align-items:center;justify-content:center}
+.loader-overlay.active{display:flex}
+.loader-box{background:var(--bg);border-radius:var(--radius-lg);padding:20px 28px;display:flex;align-items:center;gap:12px;font-size:13px;box-shadow:0 8px 32px rgba(0,0,0,.2)}
+.loader-spinner{width:20px;height:20px;border:2px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+
+/* ── TOAST ───────────────────────────────────────────────────────────────── */
+.toast-container{position:fixed;bottom:20px;right:20px;z-index:500;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--navy);color:#fff;padding:10px 16px;border-radius:var(--radius);font-size:12.5px;box-shadow:0 4px 20px rgba(30,20,69,.3);display:flex;align-items:center;gap:8px;max-width:340px;animation:sIn .2s ease}
+.toast.success{border-left:3px solid var(--gold)}
+.toast.error{border-left:3px solid var(--red)}
+.toast.info{border-left:3px solid rgba(255,255,255,.4)}
+
+/* ── FILE UPLOAD ─────────────────────────────────────────────────────────── */
+.photo-ring{width:72px;height:72px;border-radius:50%;border:3px solid var(--gold);object-fit:cover;display:block}
+.photo-placeholder{width:72px;height:72px;border-radius:50%;background:var(--bg2);border:3px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;color:var(--text3)}
+.file-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--radius);background:var(--bg2);margin-bottom:6px;font-size:12.5px}
+.file-item-icon{font-size:18px;flex-shrink:0}
+.file-item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-item-actions{display:flex;gap:4px;flex-shrink:0}
+
+/* ── ANIMATIONS ──────────────────────────────────────────────────────────── */
+
+/* ── ATTENDANCE MODULE ── */
+.att-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.att-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;position:relative;overflow:hidden}
+.att-card-accent{position:absolute;top:0;left:0;width:3px;height:100%}
+.att-card-label{font-size:11.5px;color:var(--text2);margin-bottom:6px}
+.att-card-value{font-size:24px;font-weight:600;color:var(--text)}
+.att-card-sub{font-size:11px;color:var(--text3);margin-top:4px}
+.att-live{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:16px}
+.att-emp-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px 14px;display:flex;align-items:center;gap:10px;transition:all .15s}
+.att-emp-card.clocked-in{border-color:var(--green);background:var(--green-light)}
+.att-emp-card.clocked-out{border-color:var(--border);opacity:.7}
+.att-status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.att-status-dot.in{background:var(--green);box-shadow:0 0 0 3px rgba(29,158,117,.2)}
+.att-status-dot.out{background:var(--text3)}
+.att-emp-info{flex:1;min-width:0}
+.att-emp-name{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.att-emp-time{font-size:11px;color:var(--text3);margin-top:1px}
+.att-emp-hours{font-size:11px;font-weight:600;color:var(--green)}
+.qr-scanner-wrap{position:relative;width:100%;max-width:320px;margin:0 auto;border-radius:var(--radius-lg);overflow:hidden;background:#000}
+.qr-scanner-wrap video{width:100%;display:block}
+.qr-scanner-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.qr-scanner-frame{width:200px;height:200px;border:3px solid var(--gold);border-radius:12px;position:relative}
+.qr-scanner-frame::before,.qr-scanner-frame::after{content:'';position:absolute;width:24px;height:24px;border-color:var(--gold);border-style:solid}
+.qr-scanner-frame::before{top:-3px;left:-3px;border-width:4px 0 0 4px;border-radius:6px 0 0 0}
+.qr-scanner-frame::after{bottom:-3px;right:-3px;border-width:0 4px 4px 0;border-radius:0 0 6px 0}
+.qr-scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);animation:scanLine 2s linear infinite}
+@keyframes scanLine{0%{top:0}100%{top:100%}}
+.location-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:11.5px;font-weight:500;background:var(--navy-light);color:var(--navy)}
+.qr-location-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;text-align:center;cursor:pointer;transition:all .15s}
+.qr-location-card:hover{border-color:var(--gold);box-shadow:0 2px 12px rgba(214,147,40,.15)}
+.qr-location-card.selected{border-color:var(--gold);background:var(--gold-light)}
+.mobile-clock-btn{width:100%;padding:16px;font-size:15px;font-weight:600;border-radius:var(--radius-lg);border:none;cursor:pointer;font-family:inherit;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:10px}
+.mobile-clock-in{background:var(--green);color:#fff;box-shadow:0 4px 16px rgba(29,158,117,.35)}
+.mobile-clock-in:hover{background:var(--green-dark)}
+.mobile-clock-out{background:var(--red);color:#fff;box-shadow:0 4px 16px rgba(216,90,48,.35)}
+.mobile-clock-out:hover{background:var(--red-deep)}
+.att-report-table tbody td{padding:9px 12px}
+.hours-pill{display:inline-flex;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.hours-pill.good{background:var(--green-light);color:var(--green-deep)}
+.hours-pill.warn{background:var(--amber-light);color:var(--amber-deep)}
+.hours-pill.low{background:var(--red-light);color:var(--red-deep)}
+
+
+/* ── KIOSK / PIN MODE ────────────────────────────────────────────────────── */
+#kiosk-screen{display:none;position:fixed;inset:0;z-index:8000;background:linear-gradient(160deg,#0A0820 0%,#1E1445 60%,#2C1F60 100%);flex-direction:column;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+.kiosk-header{text-align:center;margin-bottom:32px}
+.kiosk-logo{font-size:28px;font-weight:700;color:#fff;letter-spacing:.02em}
+.kiosk-sub{font-size:14px;color:rgba(255,255,255,0.4);margin-top:4px;letter-spacing:.05em;text-transform:uppercase}
+.kiosk-time{font-size:48px;font-weight:200;color:#fff;text-align:center;letter-spacing:.05em;margin-bottom:4px;font-variant-numeric:tabular-nums}
+.kiosk-date{font-size:14px;color:rgba(255,255,255,0.4);text-align:center;margin-bottom:40px;text-transform:uppercase;letter-spacing:.08em}
+.kiosk-card{background:rgba(255,255,255,0.06);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:32px 36px;width:360px;max-width:90vw}
+.kiosk-prompt{font-size:16px;color:rgba(255,255,255,0.7);text-align:center;margin-bottom:20px;font-weight:400}
+.kiosk-pin-display{display:flex;justify-content:center;gap:12px;margin-bottom:28px;height:20px;align-items:center}
+.kiosk-dot{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,0.3);transition:all .15s}
+.kiosk-dot.filled{background:var(--gold);border-color:var(--gold);box-shadow:0 0 10px rgba(214,147,40,.5)}
+.kiosk-dot.error{background:var(--red);border-color:var(--red)}
+.kiosk-dot.success{background:#25D366;border-color:#25D366}
+.pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.pin-btn{aspect-ratio:1;border:none;border-radius:14px;background:rgba(255,255,255,0.08);color:#fff;font-size:22px;font-weight:500;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;-webkit-tap-highlight-color:transparent;user-select:none}
+.pin-btn:hover{background:rgba(255,255,255,0.14)}
+.pin-btn:active{transform:scale(.93);background:rgba(255,255,255,0.2)}
+.pin-btn.pin-zero{grid-column:2}
+.pin-btn.pin-del{background:rgba(255,255,255,0.04);font-size:16px}
+.pin-btn.pin-ok{background:var(--gold);grid-column:3;font-size:18px}
+.pin-btn.pin-ok:hover{background:var(--gold-dark)}
+.pin-sub{font-size:9px;letter-spacing:.08em;opacity:.5;text-transform:uppercase}
+.kiosk-live{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:32px;max-width:600px}
+.kiosk-emp-chip{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);border-radius:30px;padding:6px 12px 6px 6px;color:#fff}
+.kiosk-emp-chip.in{border-color:rgba(29,158,117,.5);background:rgba(29,158,117,.12)}
+.kiosk-chip-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,0.3);flex-shrink:0}
+.kiosk-emp-chip.in .kiosk-chip-dot{background:#1D9E75;box-shadow:0 0 6px rgba(29,158,117,.6)}
+.kiosk-chip-name{font-size:12px;font-weight:500}
+.kiosk-chip-time{font-size:11px;opacity:.5}
+.kiosk-result{text-align:center;padding:16px;border-radius:14px;margin-top:16px;font-size:15px;font-weight:500;display:none}
+.kiosk-result.in{background:rgba(29,158,117,.2);color:#4ade80;border:1px solid rgba(29,158,117,.3)}
+.kiosk-result.out{background:rgba(216,90,48,.2);color:#fca5a5;border:1px solid rgba(216,90,48,.3)}
+.kiosk-result.err{background:rgba(255,255,255,.06);color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.1)}
+.kiosk-exit-btn{position:fixed;bottom:16px;right:16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.3);padding:8px 16px;border-radius:20px;cursor:pointer;font-size:12px;font-family:inherit}
+.kiosk-exit-btn:hover{background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.6)}
+
+
+/* ── LEAVE MANAGEMENT ─────────────────────────────────────────────────────── */
+.leave-status-pending{background:#FEF3C7;color:#92400E;border:1px solid #FCD34D}
+.leave-status-approved{background:var(--green-light);color:var(--green-deep);border:1px solid #6EE7B7}
+.leave-status-rejected{background:var(--red-light);color:var(--red-deep);border:1px solid #FCA5A5}
+.leave-status-cancelled{background:var(--gray-light);color:var(--gray-deep);border:1px solid #D1D5DB}
+.leave-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:10px;transition:box-shadow .15s}
+.leave-card:hover{box-shadow:0 2px 12px rgba(30,20,69,.08)}
+.leave-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.leave-type-badge{display:inline-flex;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600}
+.leave-calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.leave-cal-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:12px;position:relative}
+.leave-cal-day.has-leave{background:var(--red-light);color:var(--red-deep);font-weight:600}
+.leave-cal-day.today{background:var(--gold);color:#fff;font-weight:700}
+.leave-cal-day.weekend{color:var(--text3)}
+.leave-cal-day.other-month{opacity:.3}
+.leave-balance-bar{height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-top:4px}
+.leave-balance-fill{height:100%;border-radius:4px;transition:width .4s}
+.leave-request-btn{display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--gold);color:#fff;border:none;border-radius:var(--radius-lg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;width:100%;justify-content:center;margin-top:12px;transition:background .15s}
+.leave-request-btn:hover{background:var(--gold-dark)}
+
+@keyframes sIn{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── RESPONSIVE ──────────────────────────────────────────────────────────── */
+@media(max-width:900px){
+  :root{--sb-width:52px}
+  .sb-logo-text,.sb-logo-sub,.sb-section,.sb-user-info,.tab-label{display:none!important}
+  .sb-logo{justify-content:center;padding:12px 0}
+  .nav-tab{justify-content:center;margin:2px 6px;width:calc(100% - 12px);padding:7px 0}
+  .tab-icon{width:32px;height:32px}
+  .nav-tab.active::before{display:none}
+  .sb-user{justify-content:center;padding:8px 0}
+  .sb-logout .sb-logout-text{display:none}
+}
+@media(max-width:768px){.metrics,.g2,.g3,.kanban,.ig{grid-template-columns:1fr 1fr}}
+@media(max-width:500px){.metrics,.ig{grid-template-columns:1fr}}
+
+</style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
@@ -1036,10 +1495,12 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
     <div class="page" id="page-usermgmt">
       <div class="ph"><div class="ph-title">User Management</div>
         <div class="ph-actions">
+          <button class="btn" onclick="openAccountAudit()">🔍 Account Audit</button>
           <button class="btn" onclick="generateInviteLink()">🔗 Generate Invite Link</button>
           <button class="btn btn-primary" onclick="openModal('addUser')">+ Create User</button>
         </div>
       </div>
+      <div id="account-audit-summary" style="margin-bottom:12px"></div>
       <div class="g2" style="align-items:start">
         <div>
           <div class="card">
@@ -1355,12 +1816,6 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
   </div>
 </div>
 
-<div class="modal-backdrop" id="mb" onclick="if(event.target===this)closeModal()">
-  <div class="modal-box" id="mbox"></div>
-
-</div>
-
-<div class="toast-container" id="tc"></div>
 
 <script>
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
@@ -1822,13 +2277,14 @@ async function dbSetSetting(key,value){
 
 // ── ROW MAPPERS ──
 function rowToEmp(r){
-  return{id:r.id,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
+  return{id:r.id,empNo:r.emp_no||null,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
     salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:r.salary_history||[]}:null,dailyRate:r.daily_rate?{amount:parseFloat(r.daily_rate),currency:r.daily_rate_currency||'MUR',notes:r.daily_rate_notes||''}:null,
     checklist:r.checklist||{},offChecklist:r.off_checklist||{},lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
     photoUrl:r.photo_url||null,files:r.files||[],clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:r.att_editor||false,isHOD:r.is_hod||false,isSeniorHOD:r.is_senior_hod||false};
 }
 function empToRow(e){
   const row={
+    emp_no:     e.empNo||null,
     name:       e.name||'',
     email:      (e.email||'').trim()||null,
     phone:      e.phone||null,
@@ -1950,7 +2406,7 @@ async function loadAndRenderUserMgmt(){
 // ─── ROLE PERMISSIONS ─────────────────────────────────────────────────────────
 const ROLE_PERMS={
   admin:['view_employees','add_employees','edit_employees','view_salary','manage_onboarding','log_events','view_events','view_training','manage_training','manage_offboarding','view_analytics','view_attendance','edit_attendance','admin'],
-  hr:['view_employees','add_employees','edit_employees','view_salary','manage_onboarding','log_events','view_events','view_training','manage_training','manage_offboarding','view_analytics','view_attendance'],
+  hr:['view_employees','add_employees','edit_employees','view_salary','manage_onboarding','log_events','view_events','view_training','manage_training','manage_offboarding','view_analytics','view_attendance','edit_attendance'],
   manager:['view_employees','log_events','view_events','view_training','view_attendance','edit_attendance'],
   viewer:['view_employees','view_events','view_training'],
 };
@@ -2830,7 +3286,7 @@ function renderEmployees(){
     const c=aColor(emp.name),cnt=gEE(emp.id).length;
     const sal=showSal&&emp.salary?fCur(emp.salary.amount,emp.salary.currency):'•••••';
     return`<tr onclick="${emp.id?'viewEmp('+emp.id+')':''}" style="cursor:pointer${emp.id?'':';opacity:.6;cursor:not-allowed'}">
-      <td><div class="emp-cell"><div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div><div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.email}</div></div></div></td>
+      <td><div class="emp-cell"><div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div><div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.empNo?'<span style="font-family:monospace;font-size:10.5px;color:var(--text3);margin-right:4px">'+ emp.empNo+'</span>':''}${emp.email||emp.phone||''}</div></div></div></td>
       <td>${emp.dept}</td><td>${emp.role}</td><td>${fDate(emp.start)}</td>
       <td style="font-weight:500">${sal}</td><td>${sB(emp.status)}${emp.attendanceEditor?'<span class="badge" style="background:#1E144520;color:#1E1445;margin-left:4px" title="Attendance Editor">&#x1F4CA; Att. Editor</span>':''}${emp.isHOD?'<span class="badge" style="background:#BA751720;color:#BA7517;margin-left:4px">HOD</span>':''}${emp.isSeniorHOD?'<span class="badge" style="background:#7F77DD20;color:#7F77DD;margin-left:4px">Sr. HOD</span>':''}</td>
       <td style="font-size:12px;font-weight:500">${emp.dailyRate
@@ -3132,6 +3588,7 @@ function renderUserMgmt(){
     </div>`;
   }).join('');
   renderAuditLog();
+  renderUserAuditSummary();
 }
 function toggleUser(userId){
   const u=_userCache.find(x=>x.id==userId)||_userCache.find(x=>String(x.id)===String(userId));
@@ -3182,6 +3639,7 @@ function viewEmp(id){
       </div>
     </div>
     <div class="ig">
+      <div class="ig-item"><div class="ig-label">Employee ID</div><div class="ig-value" style="font-family:monospace;font-weight:600">${emp.empNo||'—'}</div></div>
       <div class="ig-item"><div class="ig-label">Manager</div><div class="ig-value">${emp.manager}</div></div>
       <div class="ig-item"><div class="ig-label">Start Date</div><div class="ig-value">${fDate(emp.start)}</div></div>
       <div class="ig-item"><div class="ig-label">Phone</div><div class="ig-value">${emp.phone||'—'}</div></div>
@@ -3687,6 +4145,14 @@ function updateRoleDesc(role,elId='role-desc-box'){
 }
 
 // ─── SUBMIT HANDLERS ──────────────────────────────────────────────────────────
+function _genEmpNo(){
+  // Generate next employee number e.g. EMP-0042
+  const existing = getEmps().map(e=>e.empNo).filter(Boolean);
+  const nums = existing.map(n=>parseInt((n||'').replace(/[^0-9]/g,''))).filter(n=>!isNaN(n));
+  const next = nums.length ? Math.max(...nums) + 1 : 1;
+  return 'EMP-' + String(next).padStart(4, '0');
+}
+
 function submitAdd(){
   const name=(document.getElementById('fn')?.value||'').trim();
   const email=(document.getElementById('fe')?.value||'').trim();
@@ -3705,7 +4171,7 @@ function submitAdd(){
   }
   const sa=parseFloat(document.getElementById('fsal').value);
   const newEmp={
-    id:Date.now(),name,email,phone,
+    id:Date.now(),empNo:_genEmpNo(),name,email,phone,
     role:(()=>{const rv=(document.getElementById('fr2')?.value||'').trim();return rv&&rv!=='__custom'?rv:(document.getElementById('fr2c')?.value||'').trim()||'—';})(),
     dept:document.getElementById('fd').value,
     manager:(()=>{const v=(document.getElementById('fm')?.value||'').trim();return v&&v!=='__other'?v:(document.getElementById('fm-custom')?.value||'').trim()||'—';})(),
@@ -7923,19 +8389,22 @@ async function showEmployeeClockInScreen(user){
           </div>`:
           _attLocations.length===1?`
           <button onclick="mobileQRClockIn('${emp?.id||user.id}','${locId}','${locName}')"
-            style="padding:16px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit">
-            📷 Scan QR to Clock In
+            style="padding:18px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:17px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:10px;width:100%">
+            <span style="font-size:24px">📷</span> Scan QR Code to Clock In
           </button>
           <button onclick="mobileManualClockIn('${emp?.id||user.id}','${locId}','${locName}')"
-            style="padding:14px;background:#fff;color:var(--text);border:1px solid var(--border);border-radius:12px;font-size:14px;cursor:pointer;font-family:inherit">
-            Clock In at ${locName} (no scan)
+            style="padding:12px;background:#fff;color:var(--text2);border:1px solid var(--border);border-radius:12px;font-size:13px;cursor:pointer;font-family:inherit">
+            No QR? Clock in directly
           </button>`:
           `<div style="font-size:13px;font-weight:500;margin-bottom:8px;color:var(--text2)">Select location:</div>
           ${_attLocations.map(l=>`
             <button onclick="mobileQRClockIn('${emp?.id||user.id}','${l.id}','${l.name}')"
-              style="padding:14px;background:#fff;color:var(--text);border:1px solid var(--border);border-radius:12px;font-size:14px;cursor:pointer;font-family:inherit;text-align:left;display:flex;justify-content:space-between;align-items:center">
-              <span>${l.name}${l.address?'<br><span style=\'font-size:11px;color:var(--text3)\'>'+l.address+'</span>':''}</span>
-              <span style="font-size:18px">📷</span>
+              style="padding:16px;background:#fff;color:var(--text);border:1px solid var(--border);border-radius:12px;font-size:14px;cursor:pointer;font-family:inherit;text-align:left;display:flex;justify-content:space-between;align-items:center;width:100%">
+              <div>
+                <div style="font-weight:600">${l.name}</div>
+                ${l.address?'<div style=\'font-size:11px;color:var(--text3);margin-top:2px\'>'+l.address+'</div>':''}
+              </div>
+              <span style="font-size:22px;margin-left:12px">📷</span>
             </button>`).join('')}`
         }
       </div>
@@ -10275,70 +10744,188 @@ function getRoleDesc(role){
 
 // QR clock-in for mobile — opens camera to scan location QR code
 async function mobileQRClockIn(empId, locationId, locationName){
-  // Check if BarcodeDetector API is available (Android Chrome)
-  if(!('BarcodeDetector' in window) && !navigator.mediaDevices?.getUserMedia){
-    toast('Camera not available on this device.','error');
-    return;
-  }
-
-  // Show QR scanner modal
+  // Show a pre-scan screen — user taps the big button to start camera
   const mb = document.getElementById('mbox');
+  const backdrop = document.getElementById('mb');
   mb.className = 'modal-box';
-  document.getElementById('mb').classList.add('open');
+  mb.style.cssText = 'width:100%;max-width:420px;padding:20px;';
+  backdrop.classList.add('open');
+
   mb.innerHTML = `
-    <div class="modal-title">Scan Location QR Code
+    <div class="modal-title" style="margin-bottom:16px">
+      Clock In
       <button class="modal-close" onclick="stopQRScan()">✕</button>
     </div>
     <div style="text-align:center;padding:8px 0">
-      <video id="qr-video" style="width:100%;max-width:320px;border-radius:10px;background:#000" autoplay playsinline></video>
-      <canvas id="qr-canvas" style="display:none"></canvas>
-      <div id="qr-status" style="margin-top:10px;font-size:13px;color:var(--text3)">Point camera at the location QR code...</div>
+      <div style="font-size:56px;margin-bottom:16px">📷</div>
+      <div style="font-size:16px;font-weight:600;margin-bottom:8px">Scan QR Code</div>
+      <div style="font-size:13px;color:var(--text3);margin-bottom:24px">
+        Tap the button below to open your camera and scan the location QR code
+        ${locationName ? '<br><strong style="color:var(--text2)">' + locationName + '</strong>' : ''}
+      </div>
+      <button onclick="startQRCamera('${empId}','${locationId}','${locationName}')"
+        style="padding:16px 32px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;width:100%;margin-bottom:10px">
+        📷 Open Camera &amp; Scan
+      </button>
+      <button onclick="stopQRScan();mobileManualClockIn('${empId}','${locationId}','${locationName}')"
+        style="padding:12px;background:#fff;color:var(--text2);border:1px solid var(--border);border-radius:12px;font-size:13px;cursor:pointer;font-family:inherit;width:100%">
+        No QR? Clock in directly
+      </button>
+    </div>`;
+}
+
+async function startQRCamera(empId, locationId, locationName){
+  if(!navigator.mediaDevices?.getUserMedia){
+    toast('Camera not available on this device.','error');
+    stopQRScan();
+    await mobileManualClockIn(empId, locationId, locationName);
+    return;
+  }
+
+  const mb = document.getElementById('mbox');
+  if(!mb) return;
+  mb.innerHTML = `
+    <div class="modal-title" style="margin-bottom:12px">
+      📷 Scanning...
+      <button class="modal-close" onclick="stopQRScan()">✕</button>
     </div>
-    <div class="mf">
+    <div style="text-align:center">
+      <div style="position:relative;display:inline-block;width:100%;max-width:340px">
+        <video id="qr-video" style="width:100%;border-radius:10px;background:#000;display:block" autoplay playsinline muted></video>
+        <canvas id="qr-canvas" style="display:none"></canvas>
+        <div style="position:absolute;inset:0;pointer-events:none;border-radius:10px;overflow:hidden">
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:60%;padding-top:60%;border:2px solid #fff;border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.5)"></div>
+        </div>
+      </div>
+      <div id="qr-status" style="margin-top:12px;font-size:13px;color:var(--text2);min-height:36px;line-height:1.5">
+        ⏳ Starting camera...
+      </div>
+    </div>
+    <div class="mf" style="margin-top:12px">
       <button class="btn" onclick="stopQRScan()">Cancel</button>
-      <button class="btn btn-primary" onclick="mobileManualClockIn('${empId}','${locationId}','${locationName}')">
-        Skip QR — Clock in directly
+      <button class="btn btn-primary" onclick="stopQRScan();mobileManualClockIn('${empId}','${locationId}','${locationName}')">
+        Clock in directly
       </button>
     </div>`;
 
-  // Start camera
+  let stream = null;
   try{
-    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
+    });
     window._qrStream = stream;
     const video = document.getElementById('qr-video');
-    if(video) video.srcObject = stream;
+    if(!video){ stopQRScan(); return; }
+    video.srcObject = stream;
+    await video.play();
 
-    // Scan for QR code
-    window._qrScanInterval = setInterval(async ()=>{
+    const statusEl = document.getElementById('qr-status');
+    if(statusEl) statusEl.textContent = 'Point camera at the location QR code';
+
+    // Scan loop using jsQR (works on all browsers including Safari iOS)
+    window._qrScanInterval = setInterval(()=>{
       const video = document.getElementById('qr-video');
-      const canvas= document.getElementById('qr-canvas');
-      if(!video||!canvas) return;
-      canvas.width = video.videoWidth;
-      canvas.height= video.videoHeight;
+      const canvas = document.getElementById('qr-canvas');
+      if(!video || !canvas || video.readyState < 2) return;
+      if(video.videoWidth === 0) return;
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(video,0,0);
+      ctx.drawImage(video, 0, 0);
 
-      try{
-        const detector = new BarcodeDetector({formats:['qr_code']});
-        const codes = await detector.detect(canvas);
-        if(codes.length>0){
-          const scanned = codes[0].rawValue;
-          // Match against location QR codes
-          const loc = _attLocations.find(l=>l.qrCode===scanned||l.id==locationId);
-          if(loc){
-            stopQRScan();
-            await mobileConfirmClockIn(empId, loc.id, loc.name);
-          } else {
-            document.getElementById('qr-status').textContent = 'Wrong QR code — try again.';
-          }
-        }
-      }catch(e){/* BarcodeDetector not supported — fall through */}
-    }, 500);
+      let scannedData = null;
 
-  } catch(e){
-    document.getElementById('qr-status').textContent = 'Camera access denied. Use "Skip QR" button below.';
+      // Try jsQR first (universal)
+      if(typeof jsQR === 'function'){
+        try{
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'dontInvert'
+          });
+          if(code) scannedData = code.data;
+        }catch(e){}
+      }
+
+      // Fallback: BarcodeDetector (Chrome/Android)
+      if(!scannedData && typeof BarcodeDetector !== 'undefined'){
+        BarcodeDetector.isSupported?.(['qr_code']).then(()=>{
+          const det = new BarcodeDetector({formats:['qr_code']});
+          det.detect(canvas).then(codes=>{
+            if(codes.length > 0) _handleQRData(codes[0].rawValue, empId);
+          }).catch(()=>{});
+        }).catch(()=>{});
+      }
+
+      if(scannedData) _handleQRData(scannedData, empId);
+    }, 250);
+
+  }catch(e){
+    const statusEl = document.getElementById('qr-status');
+    if(statusEl) statusEl.innerHTML =
+      '❌ Camera access denied.<br><span style="font-size:12px;color:var(--text3)">Please allow camera access in your browser settings, or use "Clock in directly".</span>';
+    console.error('Camera error:', e);
   }
 }
+
+async function _handleQRData(scannedData, empId){
+  // Prevent double-processing
+  if(window._qrProcessing) return;
+  window._qrProcessing = true;
+
+  clearInterval(window._qrScanInterval);
+
+  const statusEl = document.getElementById('qr-status');
+
+  // Match against any location QR code
+  if(!_attLocations || !_attLocations.length){
+    try{ _attLocations = await dbGetLocations(); }catch(e){}
+  }
+
+  // Check format: loc:{id}:{name}
+  let matchedLoc = null;
+  if(scannedData.startsWith('loc:')){
+    const parts = scannedData.split(':');
+    const locId = parts[1];
+    const locName = decodeURIComponent(parts.slice(2).join(':'));
+    // Match by QR code string or by id
+    matchedLoc = _attLocations.find(l=>
+      l.qrCode === scannedData ||
+      String(l.id) === String(locId)
+    ) || {id:locId, name:locName, qrCode:scannedData};
+  } else {
+    // Try exact match against any location QR
+    matchedLoc = _attLocations.find(l=>l.qrCode === scannedData);
+  }
+
+  if(matchedLoc){
+    if(statusEl) statusEl.innerHTML = '✅ QR code recognised — <strong>' + matchedLoc.name + '</strong>';
+    stopQRScan();
+    window._qrProcessing = false;
+    await mobileConfirmClockIn(empId, matchedLoc.id, matchedLoc.name);
+  } else {
+    if(statusEl) statusEl.textContent = '⚠ Unrecognised QR code. Try again.';
+    // Resume scanning after a moment
+    setTimeout(()=>{
+      window._qrProcessing = false;
+      window._qrScanInterval = setInterval(()=>{
+        const v=document.getElementById('qr-video');
+        const cv=document.getElementById('qr-canvas');
+        if(!v||!cv||v.readyState<2||v.videoWidth===0)return;
+        cv.width=v.videoWidth;cv.height=v.videoHeight;
+        const ctx2=cv.getContext('2d');ctx2.drawImage(v,0,0);
+        if(typeof jsQR==='function'){
+          try{
+            const id2=ctx2.getImageData(0,0,cv.width,cv.height);
+            const c2=jsQR(id2.data,id2.width,id2.height,{inversionAttempts:'dontInvert'});
+            if(c2)_handleQRData(c2.data,empId);
+          }catch(e){}
+        }
+      },250);
+    }, 2000);
+  }
+}
+
 
 function stopQRScan(){
   clearInterval(window._qrScanInterval);
@@ -11573,6 +12160,69 @@ printLocationQR('${id}','${name}','${qrCode}')">🖨 Print</button>
         correctLevel: QRCode.CorrectLevel.H});
     }
   }, 100);
+}
+
+function renderUserAuditSummary(){
+  var el = document.getElementById('account-audit-summary');
+  if(!el) return;
+  var emps = getEmps().filter(function(e){ return e.status!=='offboarded'; });
+  var users = getUsers();
+  var missing = emps.filter(function(emp){ return !findUserForEmployee(emp, users); });
+  var noPIN = emps.filter(function(emp){
+    var u = findUserForEmployee(emp, users);
+    return u && !u.pinHash && !u.passwordHash;
+  });
+  if(missing.length===0 && noPIN.length===0){
+    el.innerHTML = '<div style="padding:10px 12px;background:var(--green-light);border-radius:var(--radius);font-size:13px;color:var(--green-deep)">&#10003; All active employees have login accounts.</div>';
+    return;
+  }
+  var html = '';
+  if(missing.length > 0){
+    html += '<div style="background:var(--red-light);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px">'
+          + '<div style="font-size:13px;font-weight:600;color:var(--red-deep);margin-bottom:8px">&#9888; '
+          + missing.length + ' employee(s) have no login account:</div>';
+    for(var i=0;i<missing.length;i++){
+      var emp=missing[i];
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06)">'
+            + '<div><span style="font-size:13px;font-weight:500">' + emp.name + '</span>'
+            + ' <span style="font-size:11.5px;color:var(--text3)">' + (emp.dept||'') + '</span></div>'
+            + '<button class="btn btn-xs btn-primary" data-empid="' + emp.id + '" onclick="auditCreateOne(this.dataset.empid)">+ Create</button>'
+            + '</div>';
+    }
+    html += '<div style="margin-top:10px"><button class="btn btn-primary" onclick="auditCreateAll()">Create All Missing</button></div></div>';
+  }
+  if(noPIN.length > 0){
+    html += '<div style="background:var(--amber-light);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px">'
+          + '<div style="font-size:13px;font-weight:600;color:var(--amber-deep);margin-bottom:8px">&#128273; '
+          + noPIN.length + ' account(s) have no PIN set:</div>';
+    for(var j=0;j<noPIN.length;j++){
+      var emp2=noPIN[j];
+      var u2=findUserForEmployee(emp2, users);
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06)">'
+            + '<div><span style="font-size:13px;font-weight:500">' + emp2.name + '</span>'
+            + ' <span style="font-size:11.5px;color:var(--text3)">' + (emp2.dept||'') + '</span></div>'
+            + (u2 ? '<button class="btn btn-xs" data-uid="' + u2.id + '" data-name="' + emp2.name + '" onclick="openSetPINModal(this.dataset.uid,this.dataset.name)">Set PIN</button>' : '')
+            + '</div>';
+    }
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+async function auditCreateAll(){
+  var emps = getEmps().filter(function(e){ return e.status!=='offboarded'; });
+  var users = getUsers();
+  var missing = emps.filter(function(emp){ return !findUserForEmployee(emp, users); });
+  if(!missing.length){ toast('No missing accounts.','info'); return; }
+  showLoader('Creating '+missing.length+' accounts...');
+  var created = 0;
+  for(var i=0;i<missing.length;i++){
+    try{ await autoCreateAccountForNewEmployee(missing[i]); created++; }
+    catch(e){ console.error('Failed for '+missing[i].name,e); }
+  }
+  hideLoader();
+  toast(created+' account(s) created. Set PINs via the list below.','success');
+  renderUserMgmt();
 }
 
 </script>
