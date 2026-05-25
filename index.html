@@ -8396,10 +8396,7 @@ async function showEmployeeClockInScreen(user){
             style="padding:18px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:17px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:10px;width:100%">
             <span style="font-size:24px">📷</span> Scan QR Code to Clock In
           </button>
-          <button onclick="mobileManualClockIn('${emp?.id||user.id}','${locId}','${locName}')"
-            style="padding:12px;background:#fff;color:var(--text2);border:1px solid var(--border);border-radius:12px;font-size:13px;cursor:pointer;font-family:inherit">
-            No QR? Clock in directly
-          </button>`:
+`:
           `<div style="font-size:13px;font-weight:500;margin-bottom:8px;color:var(--text2)">Select location:</div>
           ${_attLocations.map(l=>`
             <button onclick="mobileQRClockIn('${emp?.id||user.id}','${l.id}','${l.name}')"
@@ -8493,12 +8490,15 @@ function empRequestLeave(){
       (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===CU.phone.replace(/[^0-9]/g,''))
     );
   // Load leave data if needed
-  if(!_leaveRequests.length){
-    dbGetLeaveRequests().then(reqs=>{_leaveRequests=reqs;openLeaveRequestModal(me?me.id:null);});
-    dbGetLeaveBalances().then(bal=>{_leaveBalances=bal;});
-  } else {
-    openLeaveRequestModal(me?me.id:null);
-  }
+  // Always reload fresh then open modal
+  Promise.all([dbGetLeaveRequests(), dbGetLeaveBalances()]).then(([reqs, bal])=>{
+    _leaveRequests = reqs || [];
+    _leaveBalances = bal || {};
+    openLeaveRequestModal(me ? me.id : null);
+  }).catch(e=>{
+    console.error('Leave load error:',e);
+    openLeaveRequestModal(me ? me.id : null);
+  });
 }
 
 
@@ -10771,10 +10771,7 @@ async function mobileQRClockIn(empId, locationId, locationName){
         style="padding:16px 32px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;width:100%;margin-bottom:10px">
         📷 Open Camera &amp; Scan
       </button>
-      <button onclick="stopQRScan();mobileManualClockIn('${empId}','${locationId}','${locationName}')"
-        style="padding:12px;background:#fff;color:var(--text2);border:1px solid var(--border);border-radius:12px;font-size:13px;cursor:pointer;font-family:inherit;width:100%">
-        No QR? Clock in directly
-      </button>
+
     </div>`;
 }
 
@@ -10807,9 +10804,7 @@ async function startQRCamera(empId, locationId, locationName){
     </div>
     <div class="mf" style="margin-top:12px">
       <button class="btn" onclick="stopQRScan()">Cancel</button>
-      <button class="btn btn-primary" onclick="stopQRScan();mobileManualClockIn('${empId}','${locationId}','${locationName}')">
-        Clock in directly
-      </button>
+
     </div>`;
 
   let stream = null;
@@ -10989,49 +10984,48 @@ async function confirmMobileClockAction(empId, locationId, locationName, isOut){
 }
 
 function empViewAttHistory(){
-  // Show recent attendance in a modal
-  const emp = (CU.empId ? getEmps().find(e=>String(e.id)===String(CU.empId)) : null) ||
-    getEmps().find(e=>
-      (CU.email&&e.email&&e.email.toLowerCase()===CU.email?.toLowerCase())||
-      (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===user?.phone?.replace(/[^0-9]/g,''))
-    );
+  const emp = (CU.empId ? getEmps().find(function(e){ return String(e.id)===String(CU.empId); }) : null) ||
+    getEmps().find(function(e){
+      return (CU.email&&e.email&&e.email.toLowerCase()===CU.email.toLowerCase()) ||
+             (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===CU.phone.replace(/[^0-9]/g,''));
+    });
   if(!emp){ toast('Employee record not found. Contact HR.','error'); return; }
 
-  // Use memory cache first, then localStorage fallback
-  const _attCache = _attendance && _attendance.length ? _attendance : S.get('attendance',[]);
-  const allAtt = _attCache
-    .filter(r=>String(r.empId)===String(emp.id)&&r.clockOut)
-    .sort((a,b)=>new Date(b.clockIn)-new Date(a.clockIn))
-    .slice(0,20);
-
-  const mb = document.getElementById('mbox');
+  var mb = document.getElementById('mbox');
   mb.className = 'modal-box';
   document.getElementById('mb').classList.add('open');
-  mb.innerHTML = `
-    <div class="modal-title">My Attendance History
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    ${allAtt.length===0
-      ? '<div style="padding:24px;text-align:center;color:var(--text3)">No attendance records found.</div>'
-      : '<div style="max-height:400px;overflow-y:auto">'+
-        allAtt.map(r=>`
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
-            <div>
-              <div style="font-size:13px;font-weight:500">${fDate(r.date)}</div>
-              <div style="font-size:11px;color:var(--text3)">${r.location||'On site'}</div>
-            </div>
-            <div style="text-align:right">
-              <div style="font-size:12px;color:var(--green);font-weight:500">${fmtTime(r.clockIn)} – ${fmtTime(r.clockOut)}</div>
-              <div style="font-size:11px;color:var(--text3)">${fmtDuration(r.durationMinutes)}</div>
-            </div>
-          </div>`).join('')+
-        '</div>'
-    }
-    <div class="mf"><button class="btn btn-primary" onclick="closeModal()">Close</button></div>`;
-}
+  mb.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text3)">Loading attendance...</div>';
 
-// ── HR toggle — enable/disable QR mobile clock-in per employee ─────────────────
-// Added to Edit Employee modal (clockMode field)
+  function renderAtt(records){
+    var allAtt = records.filter(function(r){ return String(r.empId)===String(emp.id)&&r.clockOut; })
+      .sort(function(a,b){ return new Date(b.clockIn)-new Date(a.clockIn); }).slice(0,30);
+    var html = '<div class="modal-title">My Attendance History'
+      +'<button class="modal-close" onclick="closeModal()">&#10005;</button></div>';
+    if(!allAtt.length){
+      html += '<div style="padding:24px;text-align:center;color:var(--text3)">No attendance records found.</div>';
+    } else {
+      html += '<div style="max-height:420px;overflow-y:auto">';
+      for(var i=0;i<allAtt.length;i++){
+        var r=allAtt[i];
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">'
+          +'<div><div style="font-size:13px;font-weight:500">'+fDate(r.date)+'</div>'
+          +'<div style="font-size:11px;color:var(--text3)">'+(r.location||'On site')+'</div></div>'
+          +'<div style="text-align:right">'
+          +'<div style="font-size:12px;color:var(--green);font-weight:500">'+fmtTime(r.clockIn)+' – '+fmtTime(r.clockOut)+'</div>'
+          +'<div style="font-size:11px;color:var(--text3)">'+fmtDuration(r.durationMinutes)+'</div>'
+          +'</div></div>';
+      }
+      html += '</div>';
+    }
+    html += '<div class="mf"><button class="btn btn-primary" onclick="closeModal()">Close</button></div>';
+    mb.innerHTML = html;
+  }
+
+  dbGetAttendance(null, null).then(function(fresh){
+    if(fresh&&fresh.length) _attendance=fresh;
+    renderAtt(_attendance||[]);
+  }).catch(function(){ renderAtt(_attendance||[]); });
+}
 function toggleEmpClockMode(empId, newMode){
   const emp = getEmps().find(e=>String(e.id)===String(empId));
   if(!emp) return;
