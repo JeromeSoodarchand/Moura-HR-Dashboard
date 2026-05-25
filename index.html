@@ -445,7 +445,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
       <div style="font-size:12px;color:var(--muted-gold);letter-spacing:.06em;font-style:italic" id="login-tagline">Giving Comfort · Taking Care</div>
     </div>
     <!-- PIN LOGIN (default for employees) -->
-    <div id="pin-login-section">
+    <div id="pin-login-section" style="display:none">
       <div style="font-size:13px;color:var(--text3);text-align:center;margin-bottom:10px">Enter your PIN to sign in</div>
       <div style="display:flex;justify-content:center;gap:14px;margin-bottom:14px">
         <div id="ld0" style="width:16px;height:16px;border-radius:50%;border:2px solid var(--border2);transition:background .15s"></div>
@@ -471,7 +471,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
     </div>
 
     <!-- PASSWORD LOGIN (admin / fallback) -->
-    <div id="pass-login-section" style="display:none">
+    <div id="pass-login-section">
       <div class="lf"><label>Username</label><input id="lu" placeholder="Username" autocomplete="off" oninput="document.getElementById('lerr').style.display='none'"></div>
       <div class="lf"><label>Password</label><input type="password" id="lp" placeholder="Password" oninput="document.getElementById('lerr').style.display='none'"></div>
       <div class="login-err" id="lerr">Incorrect username or password.</div>
@@ -482,19 +482,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
       <button id="toggle-login-mode" onclick="toggleLoginMode()" style="background:none;border:none;color:var(--text3);font-size:11.5px;cursor:pointer;font-family:inherit;text-decoration:underline">
         Admin / Password login
       </button>
-    </div>
-    <div style="text-align:center;margin-top:12px">
-      <span id="sb-connected-badge" style="display:none;font-size:11.5px;color:var(--muted-gold)">📡 Connected to database</span>
-      <a href="#" id="sb-reconfigure-link" style="display:none;font-size:11px;color:var(--text3);text-decoration:none" onclick="resetSbConnection();return false;">Change database connection</a>
-    </div>
-    <div id="sb-config-section" style="display:none;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
-      <div style="font-size:11.5px;color:var(--text3);margin-bottom:8px;text-align:center">📡 Supabase database connection</div>
-      <div class="lf" style="margin-bottom:8px"><label>Project URL</label><input id="login-sb-url" placeholder="https://xxxx.supabase.co" style="font-size:12px"></div>
-      <div class="lf" style="margin-bottom:4px"><label>Anon Key</label><input id="login-sb-key" placeholder="eyJ..." style="font-size:11px"></div>
-      <button class="btn btn-sm" style="width:100%;justify-content:center;margin-top:6px" onclick="saveSbCredentials()">💾 Save &amp; connect</button>
-      <div id="sb-status" style="font-size:11.5px;margin-top:6px;text-align:center;color:var(--text3)"></div>
-    </div>
-  
+    </div>  
   <div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
     <span style="font-size:11px;color:var(--text3)">Powered by </span><span style="font-size:11.5px;font-weight:700;color:var(--navy)">SolentraHR</span>
   </div>
@@ -1330,6 +1318,31 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
           </div>
         </div>
       </div>
+
+      <!-- DATABASE CONNECTION (super admin only) -->
+      <div id="settings-db-card" style="display:none;margin-top:14px">
+        <div class="card">
+          <div class="ch">
+            <span class="ct">🗄 Database Connection</span>
+            <span style="font-size:12px;color:var(--text3)">Super admin only</span>
+          </div>
+          <div class="cb">
+            <div id="sb-connected-badge" style="display:none;margin-bottom:12px">
+              <span style="font-size:13px;color:var(--green)">📡 Connected to Supabase</span>
+              <div style="font-size:12px;color:var(--text3);margin-top:4px" id="sb-url-display"></div>
+            </div>
+            <div id="sb-config-section">
+              <div class="fg"><label class="fl">Supabase Project URL</label><input class="fi" id="login-sb-url" placeholder="https://xxxx.supabase.co"></div>
+              <div class="fg"><label class="fl">Anon Key</label><input class="fi" id="login-sb-key" placeholder="eyJ..." style="font-size:11px"></div>
+              <button class="btn btn-primary" onclick="saveSbCredentials()">💾 Save &amp; connect</button>
+              <div id="sb-status" style="font-size:12px;margin-top:8px;color:var(--text3)"></div>
+            </div>
+            <div id="sb-reconfigure-wrap" style="display:none;margin-top:10px">
+              <a href="#" onclick="resetSbConnection();return false;" style="font-size:12.5px;color:var(--red)">⚠ Change database connection</a>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   
   </div><!-- /main-content -->
@@ -1344,8 +1357,6 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 <div class="toast-container" id="tc"></div>
 
 <script>
-
-
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
 // ── Single Supabase client factory — prevents multiple instances ─────────────
@@ -1939,8 +1950,9 @@ function showLoginScreen(){
   const org = getSettings().orgName || S.get('org','My Company');
   const _oel=document.getElementById('org-name-login');
   if(_oel)_oel.textContent=org;
+  const _isConnected = !!localStorage.getItem('sb_connected');
   const sbSec=document.getElementById('sb-config-section');
-  if(sbSec) sbSec.style.display='none';
+  if(sbSec) sbSec.style.display = _isConnected ? 'none' : 'block';
   const setupSec=document.getElementById('setup-sb-section');
   if(setupSec) setupSec.style.display='none';
   updateSbBadge();
@@ -4883,6 +4895,10 @@ function renderSettings(){
   renderChecklistDefaults(cs.checklistDefaults||[]);
   // Summary
   renderSettingsSummary(cs);
+  // Show DB connection card for super admin only
+  const dbCard = document.getElementById('settings-db-card');
+  if(dbCard) dbCard.style.display = isSuperAdmin() ? 'block' : 'none';
+  if(isSuperAdmin()) updateSbBadge();
   // Sync pickers
   const pc=document.getElementById('settings-primary-color');
   const sc2=document.getElementById('settings-secondary-color');
@@ -5290,10 +5306,18 @@ function resetSbConnection(){
 
 function updateSbBadge(){
   const connected=!!localStorage.getItem('sb_connected');
+  const sbUrl=localStorage.getItem('sb_url')||_SB_URL||'';
+  // Settings page badge
   const badge=document.getElementById('sb-connected-badge');
-  const link=document.getElementById('sb-reconfigure-link');
-  if(badge) badge.style.display=connected?'inline':'none';
-  if(link) link.style.display=connected?'inline':'none';
+  if(badge) badge.style.display=connected?'block':'none';
+  const urlDisplay=document.getElementById('sb-url-display');
+  if(urlDisplay) urlDisplay.textContent=sbUrl?'URL: '+sbUrl.replace('https://','').split('.')[0]+'.supabase.co':'';
+  // Config form
+  const sbSec=document.getElementById('sb-config-section');
+  if(sbSec) sbSec.style.display=connected?'none':'block';
+  // Reconfigure link
+  const reconfWrap=document.getElementById('sb-reconfigure-wrap');
+  if(reconfWrap) reconfWrap.style.display=connected?'block':'none';
 }
 
 function showLoader(msg='Loading…'){const o=document.getElementById('loader-overlay');const m=document.getElementById('loader-msg');if(o)o.classList.add('active');if(m)m.textContent=msg;}
@@ -11371,6 +11395,52 @@ async function handleEmployeeQRScan(qrData, emp){
 
   // QR code format expected: loc:{locationId}:{locationName}
   // or just a locationId
+  let locationId = null, locationName = null;
+  try{
+    if(qrData.startsWith('loc:')){
+      const parts = qrData.split(':');
+      locationId = parts[1];
+      locationName = decodeURIComponent(parts.slice(2).join(':'));
+    } else {
+      // Try to match against known locations
+      const locs = _attLocations||[];
+      const match = locs.find(l=>String(l.id)===qrData||l.qrCode===qrData);
+      if(match){ locationId=String(match.id); locationName=match.name; }
+    }
+  }catch(e){}
+
+  if(!locationId){
+    if(statusEl) statusEl.textContent = '❌ Invalid QR code. Ask HR for the correct code.';
+    setTimeout(()=>{
+      if(statusEl) statusEl.textContent = '📷 Point camera at the location QR code';
+      // Restart scanner
+      if(emp) showEmployeeClockInScreen(CU);
+    }, 2500);
+    return;
+  }
+
+  // Clock in
+  try{
+    await empClockIn(emp?.id||'', locationId, locationName);
+    if(statusEl) statusEl.textContent = '✅ Clocked in at '+locationName+'!';
+    // HOD mode: after clock-in, offer to open HR platform
+    const empClockMode = emp?.clockMode||'kiosk';
+    const isHODClockMode = empClockMode==='hod' || CU?.role==='manager';
+    if(isHODClockMode){
+      setTimeout(()=>{
+        showEmployeeClockInScreen(CU); // refresh screen to show clocked-in state + HR button
+      }, 800);
+    } else {
+      setTimeout(()=>showEmployeeClockInScreen(CU), 800);
+    }
+  }catch(e){
+    if(statusEl) statusEl.textContent = '❌ Clock-in failed. Try again.';
+  }
+}
+
+
+async function handleEmployeeQRScan(qrData, emp, statusElId){
+  const statusEl = statusElId ? document.getElementById(statusElId) : null;
   let locationId = null, locationName = null;
   try{
     if(qrData.startsWith('loc:')){
