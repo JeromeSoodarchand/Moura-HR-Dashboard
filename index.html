@@ -3827,16 +3827,16 @@ function togCheck(id,item,val,isOff){
       }
     }
   }
-  // Persist to Supabase in background
-  dbSaveEmployee(emp).then(saved=>{
-    if(saved&&saved.id){
-      const i=_cache.emps.findIndex(e=>String(e.id)===String(saved.id));
-      if(i>=0)_cache.emps[i]=saved;
-      saveEmps(_cache.emps);
-    }
-  }).catch(err=>{
-    console.warn('Checklist save error (will retry on next save):',err);
-  });
+  // Persist checklist to Supabase in background (only checklist columns)
+  if(sbReady() && String(id).length < 13){ // only for DB records (not local timestamp IDs)
+    const cl_col = isOff ? 'off_checklist' : 'checklist';
+    const cl_val = isOff ? (emp.offChecklist||{}) : (emp.checklist||{});
+    _sb.from('employees').update({[cl_col]: cl_val, updated_at: new Date().toISOString()})
+      .eq('id', id)
+      .then(({error}) => {
+        if(error) console.warn('Checklist DB sync error (saved locally):', error.message);
+      });
+  }
 }
 
 // ─── MODALS ───────────────────────────────────────────────────────────────────
