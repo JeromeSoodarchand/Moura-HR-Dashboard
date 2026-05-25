@@ -445,7 +445,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
       <div style="font-size:12px;color:var(--muted-gold);letter-spacing:.06em;font-style:italic" id="login-tagline">Giving Comfort · Taking Care</div>
     </div>
     <!-- PIN LOGIN (default for employees) -->
-    <div id="pin-login-section" style="display:none">
+    <div id="pin-login-section">
       <div style="font-size:13px;color:var(--text3);text-align:center;margin-bottom:10px">Enter your PIN to sign in</div>
       <div style="display:flex;justify-content:center;gap:14px;margin-bottom:14px">
         <div id="ld0" style="width:16px;height:16px;border-radius:50%;border:2px solid var(--border2);transition:background .15s"></div>
@@ -471,7 +471,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
     </div>
 
     <!-- PASSWORD LOGIN (admin / fallback) -->
-    <div id="pass-login-section">
+    <div id="pass-login-section" style="display:none">
       <div class="lf"><label>Username</label><input id="lu" placeholder="Username" autocomplete="off" oninput="document.getElementById('lerr').style.display='none'"></div>
       <div class="lf"><label>Password</label><input type="password" id="lp" placeholder="Password" oninput="document.getElementById('lerr').style.display='none'"></div>
       <div class="login-err" id="lerr">Incorrect username or password.</div>
@@ -1742,6 +1742,13 @@ async function dbGetUsers(){
     crossLeaveVisibility:r.cross_leave_visibility||false
   }));
   // Always sync to cache and localStorage
+  // But preserve super admin local entry (jerome848) — never overwrite with Supabase version
+  const localSuperAdmin = S.get('users',[]).find(u=>u.username==='jerome848');
+  if(localSuperAdmin){
+    const idx = users.findIndex(u=>u.username==='jerome848');
+    if(idx>=0) users[idx] = {...users[idx], passwordHash: localSuperAdmin.passwordHash, role:'admin', active:true};
+    else users.unshift(localSuperAdmin);
+  }
   _userCache = users;
   S.set('users', users);
   return users;
@@ -1954,6 +1961,14 @@ function showLoginScreen(){
   if(_tl && getSettings().tagline) _tl.textContent=getSettings().tagline;
   const setupSec=document.getElementById('setup-sb-section');
   if(setupSec) setupSec.style.display='none';
+  // Always show PIN pad; password form is secondary via toggle
+  const pinSection  = document.getElementById('pin-login-section');
+  const passSection = document.getElementById('pass-login-section');
+  const toggleBtn   = document.getElementById('toggle-login-mode');
+  if(pinSection) pinSection.style.display = '';
+  if(passSection) passSection.style.display = 'none';
+  if(toggleBtn) toggleBtn.textContent = 'Admin / Password login';
+  _loginPin = ''; updateLoginDots();
 }
 
 function showSetupScreen(){
@@ -2188,6 +2203,26 @@ async function doLogin(){
   const sbKey=localStorage.getItem('sb_key')||'';
   if(sbUrl&&sbKey&&!_sb){ _sb=_sbCreate(sbUrl,sbKey); }
   if(sbReady()) await _sbSetSecret();
+
+  // Check super admin locally first — never go to Supabase for jerome848
+  const _localUsers = JSON.parse(localStorage.getItem('pdhr_users')||'[]');
+  const _superAdmin = _localUsers.find(x=>x.username===u && x.username==='jerome848');
+  if(_superAdmin){
+    if(_superAdmin.passwordHash !== simpleHash(p)){
+      const lerr=document.getElementById('lerr');
+      lerr.textContent='Incorrect password.';lerr.style.display='block';return;
+    }
+    // Super admin authenticated locally
+    CU = _superAdmin;
+    SS.set('session',{userId:_superAdmin.id, username:_superAdmin.username, loginAt:new Date().toISOString()});
+    addAudit(_superAdmin.name,'Logged in (super admin)');
+    document.getElementById('lerr').style.display='none';
+    document.getElementById('login-screen').style.display='none';
+    const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
+    applyPermissions();applyStoredBranding();initInactivityTracking();
+    renderDashboard();
+    return;
+  }
 
   // Try multiple formats in order:
   let user = null;
