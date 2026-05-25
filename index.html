@@ -186,7 +186,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 .fsec{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:16px 0 10px;padding-top:10px;border-top:1px solid var(--border)}
 
 /* ── MODAL ───────────────────────────────────────────────────────────────── */
-.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:300;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:600;display:none;align-items:center;justify-content:center;padding:20px}
 .modal-backdrop.open{display:flex}
 .modal-box{background:var(--bg);border-radius:var(--radius-lg);padding:22px 24px;width:460px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.18)}
 .modal-box.wide{width:560px}
@@ -7891,11 +7891,12 @@ function exportLeaveCSV(){
 
 function empRequestLeave(){
   // Find this employee's record and open leave request pre-filled
-  const emps = getScopedEmps().filter(e=>e.status!=='offboarded');
-  const me = emps.find(e=>
-    (CU.email&&e.email&&e.email.toLowerCase()===CU.email.toLowerCase())||
-    (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===CU.phone.replace(/[^0-9]/g,''))
-  );
+  const allEmpsForLeave = getEmps().filter(e=>e.status!=='offboarded');
+  const me = (CU.empId ? allEmpsForLeave.find(e=>String(e.id)===String(CU.empId)) : null) ||
+    allEmpsForLeave.find(e=>
+      (CU.email&&e.email&&e.email.toLowerCase()===CU.email.toLowerCase())||
+      (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===CU.phone.replace(/[^0-9]/g,''))
+    );
   // Load leave data if needed
   if(!_leaveRequests.length){
     dbGetLeaveRequests().then(reqs=>{_leaveRequests=reqs;openLeaveRequestModal(me?me.id:null);});
@@ -10315,13 +10316,16 @@ async function confirmMobileClockAction(empId, locationId, locationName, isOut){
 
 function empViewAttHistory(){
   // Show recent attendance in a modal
-  const emp = getEmps().find(e=>
-    (CU.email&&e.email&&e.email.toLowerCase()===CU.email?.toLowerCase())||
-    (CU.empId&&String(e.id)===String(CU.empId))
-  );
-  if(!emp){ toast('Employee record not found.','error'); return; }
+  const emp = (CU.empId ? getEmps().find(e=>String(e.id)===String(CU.empId)) : null) ||
+    getEmps().find(e=>
+      (CU.email&&e.email&&e.email.toLowerCase()===CU.email?.toLowerCase())||
+      (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===user?.phone?.replace(/[^0-9]/g,''))
+    );
+  if(!emp){ toast('Employee record not found. Contact HR.','error'); return; }
 
-  const allAtt = S.get('attendance',[])
+  // Use memory cache first, then localStorage fallback
+  const _attCache = _attendance && _attendance.length ? _attendance : S.get('attendance',[]);
+  const allAtt = _attCache
     .filter(r=>String(r.empId)===String(emp.id)&&r.clockOut)
     .sort((a,b)=>new Date(b.clockIn)-new Date(a.clockIn))
     .slice(0,20);
