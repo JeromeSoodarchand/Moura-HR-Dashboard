@@ -11772,10 +11772,20 @@ function getScopedEmps(){
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
     const myName = hodEmp?.name || CU.name;
     const myDept = hodEmp?.dept;
-    // Team = direct reports + same dept employees
+    const users = getUsers();
+    // Exclude employees whose user account is admin or hr
+    const isAdminOrHR = (e) => {
+      const u = users.find(u=>
+        (u.empId && String(u.empId)===String(e.id)) ||
+        (e.userId && String(u.id)===String(e.userId))
+      );
+      return u && (u.role==='admin'||u.role==='hr');
+    };
+    // Team = direct reports + same dept employees (excluding admin/hr accounts)
     return all.filter(e=>
-      e.manager === myName ||
-      (myDept && e.dept === myDept && String(e.id) !== String(hodEmp?.id))
+      !isAdminOrHR(e) &&
+      (e.manager === myName ||
+      (myDept && e.dept === myDept && String(e.id) !== String(hodEmp?.id)))
     );
   }
   // Viewer — only self
