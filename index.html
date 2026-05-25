@@ -2102,21 +2102,9 @@ async function boot(){
   showSetupScreen();
 }
 
-// Safety net — if boot() crashes, always show login screen
+// Safety net — only show error if nothing else is visible
 window.addEventListener('error', function(e){
   console.error('App error:', e.message);
-  try{
-    const ls = document.getElementById('login-screen');
-    if(ls && ls.style.display === 'none' || !ls) {
-      // Show a basic error message
-      document.body.style.display = 'flex';
-      document.body.style.alignItems = 'center';
-      document.body.style.justifyContent = 'center';
-      document.body.style.height = '100vh';
-      document.body.style.background = '#1E1445';
-      document.body.innerHTML = '<div style="color:#fff;font-family:sans-serif;text-align:center;padding:40px"><h2>SolentraHR</h2><p style="opacity:.7">Loading error. Please refresh the page.</p><p style="font-size:12px;opacity:.5">'+e.message+'</p><button onclick="location.reload()" style="margin-top:20px;padding:10px 24px;background:#D69328;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px">Refresh</button></div>';
-    }
-  }catch(err){}
 });
 // ── SUPER ADMIN — always ensure jerome848 exists in local users ──────────────
 (function ensureSuperAdmin(){
