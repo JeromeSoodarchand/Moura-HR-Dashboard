@@ -8130,7 +8130,7 @@ function renderLeaveCalendar(){
 
   // Get all approved leave dates for this month
   const leaveDates={};
-  _leaveRequests.filter(r=>r.status==='approved').forEach(req=>{
+  getVisibleLeaveRequests().filter(r=>r.status==='approved').forEach(req=>{
     let cur=new Date(req.fromDate+'T00:00:00');
     const end=new Date(req.toDate+'T00:00:00');
     while(cur<=end){
@@ -11294,7 +11294,12 @@ function canApproveRequest(req){
 function canViewRequest(req){
   const ctx = getLeaveApprovalContext();
   if(ctx.isHR) return true;
-  if(ctx.isSeniorHOD) return true; // senior HOD sees all HOD requests
+  if(ctx.isSeniorHOD){
+    // Senior HOD sees HOD requests but not admin/hr
+    const reqEmp2 = gE(req.empId);
+    if(reqEmp2 && isEmpAdminOrHR(reqEmp2)) return false;
+    return true;
+  }
   if(ctx.isHOD){
     const reqEmp = gE(req.empId);
     // See own team's requests
@@ -11886,6 +11891,26 @@ async function submitUpdateDailyRate(empId){
 // Returns the set of employee IDs the current user can see/edit
 // Admin/HR: all employees
 // HOD/Manager: only their team (employees whose manager matches their name)
+// ── Admin/HR employee exclusion helper ─────────────────────────────────────
+// Returns true if an employee record belongs to an admin or hr user account.
+// Uses multiple signals since empId linking may not always be set.
+function isEmpAdminOrHR(emp){
+  if(!emp) return false;
+  const users = getUsers();
+  // Build set of admin/hr user signatures (name, email, username — lowercased)
+  for(const u of users){
+    if(u.role!=='admin' && u.role!=='hr') continue;
+    // Direct link
+    if(u.empId && String(u.empId)===String(emp.id)) return true;
+    if(emp.userId && String(u.id)===String(emp.userId)) return true;
+    // Email match
+    if(u.email && emp.email && u.email.toLowerCase()===emp.email.toLowerCase()) return true;
+    // Name match (for super admin whose employee record has same name)
+    if(u.name && emp.name && u.name.toLowerCase()===emp.name.toLowerCase()) return true;
+  }
+  return false;
+}
+
 function getScopedEmps(){
   const all = getEmps().filter(e=>e.status!=='offboarded');
   if(!CU) return all;
@@ -11894,19 +11919,10 @@ function getScopedEmps(){
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
     const myName = hodEmp?.name || CU.name;
     const myDept = hodEmp?.dept;
-    const users = getUsers();
-    // Exclude employees whose user account is admin or hr
-    const isAdminOrHR = (e) => {
-      const u = users.find(u=>
-        (u.empId && String(u.empId)===String(e.id)) ||
-        (e.userId && String(u.id)===String(e.userId)) ||
-        (u.email && e.email && u.email.toLowerCase()===e.email.toLowerCase() && (u.role==='admin'||u.role==='hr'))
-      );
-      return u && (u.role==='admin'||u.role==='hr');
-    };
+  // Helper: is this employee record linked to an admin/hr user account?
     // Team = direct reports + same dept employees (excluding admin/hr accounts)
     return all.filter(e=>
-      !isAdminOrHR(e) &&
+      !isEmpAdminOrHR(e) &&
       (e.manager === myName ||
       (myDept && e.dept === myDept && String(e.id) !== String(hodEmp?.id)))
     );
@@ -11925,26 +11941,27 @@ function getScopedLeaveEmps(){
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
     const myName = hodEmp?.name || CU.name;
     const myDept = hodEmp?.dept;
+  // Helper: is this employee record linked to an admin/hr user account?
+  const getAdminHRUserNames = () => {
     const users = getUsers();
-    // Exclude admin/hr accounts from all scoped views
-    const isAdminOrHR = (e) => {
-      const u = users.find(u=>
-        (u.empId && String(u.empId)===String(e.id)) ||
-        (e.userId && String(u.id)===String(e.userId)) ||
-        // Match by email as fallback (catches super admin before empId is linked)
-        (u.email && e.email && u.email.toLowerCase()===e.email.toLowerCase() && (u.role==='admin'||u.role==='hr'))
-      );
-      return u && (u.role==='admin'||u.role==='hr');
-    };
+    return new Set(
+      users.filter(u=>u.role==='admin'||u.role==='hr')
+           .flatMap(u=>[
+             u.name?.toLowerCase(),
+             u.email?.toLowerCase(),
+             u.username?.toLowerCase()
+           ].filter(Boolean))
+    );
+  };
     // Own team (excluding admin/hr)
     const teamIds = new Set(all
-      .filter(e=> !isAdminOrHR(e) &&
+      .filter(e=> !isEmpAdminOrHR(e) &&
         (e.manager===myName || (myDept && e.dept===myDept && String(e.id)!==String(hodEmp?.id))))
       .map(e=>String(e.id))
     );
     // Other HODs — so Siva can see when fellow HODs are on leave
     // but still exclude admin/hr accounts
-    all.filter(e=>(e.isHOD||e.isSeniorHOD) && !isAdminOrHR(e))
+    all.filter(e=>(e.isHOD||e.isSeniorHOD) && !isEmpAdminOrHR(e))
        .forEach(e=>teamIds.add(String(e.id)));
     // Include self
     if(hodEmp) teamIds.add(String(hodEmp.id));
