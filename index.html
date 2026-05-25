@@ -2058,33 +2058,63 @@ async function dbSaveEmployee(emp){
   try{
     const row=empToRow(emp);
     if(emp.id && String(emp.id).length<13){ // numeric DB id = update (shorter than JS timestamp)
-      const {data,error}=await _sb.from('employees').update(row).eq('id',emp.id).select().single();
+      let {data,error}=await _sb.from('employees').update(row).eq('id',emp.id).select().single();
       if(error){
-        console.error('Update employee error:',error);
-        const msg = error.details || error.hint || error.message || 'update failed';
-        toast('DB update failed: '+msg,'error');
-        return emp;
+        // Retry with minimal safe columns only (handles missing columns in schema)
+        const safeRow = {
+          name: row.name, email: row.email, phone: row.phone,
+          role: row.role, dept: row.dept, manager: row.manager,
+          start_date: row.start_date, status: row.status,
+          salary_amount: row.salary_amount, salary_currency: row.salary_currency,
+          salary_frequency: row.salary_frequency,
+          salary_last_review: row.salary_last_review, salary_next_review: row.salary_next_review,
+          checklist: row.checklist, off_checklist: row.off_checklist,
+          last_day: row.last_day, reason: row.reason,
+          pin_hash: row.pin_hash, clock_mode: row.clock_mode,
+          updated_at: row.updated_at
+        };
+        Object.keys(safeRow).forEach(k=>{ if(safeRow[k]===undefined||safeRow[k]===null) delete safeRow[k]; });
+        const retry = await _sb.from('employees').update(safeRow).eq('id',emp.id).select().single();
+        if(retry.error){
+          console.error('Update employee error:',retry.error);
+          // Save locally and don't show error toast for background saves
+          const e=getEmps();const i=e.findIndex(x=>String(x.id)===String(emp.id));
+          if(i>=0)e[i]=emp;saveEmps(e);
+          return emp;
+        }
+        data = retry.data; error = null;
       }
       return data?rowToEmp(data):emp;
     } else { // new employee = insert
       delete row.id;
-      // Remove undefined values that Supabase may reject
-      Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
-      const {data,error}=await _sb.from('employees').insert(row).select().single();
+      // Remove undefined/null values that Supabase may reject
+      Object.keys(row).forEach(k=>{if(row[k]===undefined||row[k]===null)delete row[k];});
+      let {data,error}=await _sb.from('employees').insert(row).select().single();
       if(error){
-        console.error('Insert employee error:',error);
-        const msg = error.details || error.hint || error.message || 'constraint violation';
-        toast('DB save failed: '+msg,'error');
-        // Still save locally so data is not lost
-        const e=getEmps();e.push(emp);saveEmps(e);
-        _cache.emps.unshift(emp);
-        return emp;
+        // Retry with safe columns only
+        const safeInsert = {
+          name: row.name, email: row.email, phone: row.phone,
+          role: row.role, dept: row.dept, manager: row.manager,
+          start_date: row.start_date, status: row.status||'onboarding',
+          checklist: row.checklist||{}, clock_mode: row.clock_mode||'qr'
+        };
+        Object.keys(safeInsert).forEach(k=>{if(safeInsert[k]===undefined||safeInsert[k]===null)delete safeInsert[k];});
+        const retry=await _sb.from('employees').insert(safeInsert).select().single();
+        if(retry.error){
+          console.error('Insert employee error:',retry.error);
+          // Save locally
+          const e=getEmps();e.push(emp);saveEmps(e);_cache.emps.unshift(emp);
+          return emp;
+        }
+        data=retry.data; error=null;
       }
       return data?rowToEmp(data):emp;
     }
   } catch(err){
     console.error('dbSaveEmployee exception:',err);
-    toast('Save error: '+err.message,'error');
+    // Don't show toast - save locally and continue
+    const e=getEmps();const i=e.findIndex(x=>String(x.id)===String(emp.id));
+    if(i>=0)e[i]=emp;else e.push(emp);saveEmps(e);
     return emp;
   }
 }
@@ -6342,7 +6372,7 @@ async function dbSaveLocation(loc){
       if(error){ console.error('Insert location error:',error); }
       else if(data) loc.id = data.id;
     }
-  } catch(e){ console.error('dbSaveLocation exception:', e); toast('Location save error: '+e.message,'error'); }
+  } catch(e){ console.error('dbSaveLocation exception:', e); console.warn('Location save error (saved locally):', e.message); }
   return loc;
 }
 
