@@ -1950,12 +1950,10 @@ function showLoginScreen(){
   const org = getSettings().orgName || S.get('org','My Company');
   const _oel=document.getElementById('org-name-login');
   if(_oel)_oel.textContent=org;
-  const _isConnected = !!localStorage.getItem('sb_connected');
-  const sbSec=document.getElementById('sb-config-section');
-  if(sbSec) sbSec.style.display = _isConnected ? 'none' : 'block';
+  const _tl=document.getElementById('login-tagline');
+  if(_tl && getSettings().tagline) _tl.textContent=getSettings().tagline;
   const setupSec=document.getElementById('setup-sb-section');
   if(setupSec) setupSec.style.display='none';
-  updateSbBadge();
 }
 
 function showSetupScreen(){
@@ -5296,12 +5294,8 @@ function resetSbConnection(){
   localStorage.removeItem('sb_key');
   localStorage.removeItem('sb_connected');
   _sb = null;
-  const s=document.getElementById('sb-config-section');
-  if(s) s.style.display='block';
-  const badge=document.getElementById('sb-connected-badge');
-  if(badge) badge.style.display='none';
-  const link=document.getElementById('sb-reconfigure-link');
-  if(link) link.style.display='none';
+  updateSbBadge();
+  toast('Database connection removed. Enter new credentials in Settings.','info');
 }
 
 function updateSbBadge(){
