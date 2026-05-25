@@ -2560,6 +2560,7 @@ async function showEmployeeClockInScreen(user){
   startEmpClockTick();
   toast('Welcome back, '+(emp?.name||user.name)+'!','success');
 
+}
 
 let _empClockTick = null;
 let _empStatusTick = null; // separate ticker for elapsed time display
@@ -11406,56 +11407,6 @@ async function saveHRPin(userId, empName){
 }
 
 // ── Handle QR code scanned from employee mobile screen ───────────────────────
-async function handleEmployeeQRScan(qrData, emp){
-  const statusEl = document.getElementById('emp-qr-status');
-  if(statusEl) statusEl.textContent = '⏳ Verifying...';
-
-  // QR code format expected: loc:{locationId}:{locationName}
-  // or just a locationId
-  let locationId = null, locationName = null;
-  try{
-    if(qrData.startsWith('loc:')){
-      const parts = qrData.split(':');
-      locationId = parts[1];
-      locationName = decodeURIComponent(parts.slice(2).join(':'));
-    } else {
-      // Try to match against known locations
-      const locs = _attLocations||[];
-      const match = locs.find(l=>String(l.id)===qrData||l.qrCode===qrData);
-      if(match){ locationId=String(match.id); locationName=match.name; }
-    }
-  }catch(e){}
-
-  if(!locationId){
-    if(statusEl) statusEl.textContent = '❌ Invalid QR code. Ask HR for the correct code.';
-    setTimeout(()=>{
-      if(statusEl) statusEl.textContent = '📷 Point camera at the location QR code';
-      // Restart scanner
-      if(emp) showEmployeeClockInScreen(CU);
-    }, 2500);
-    return;
-  }
-
-  // Clock in
-  try{
-    await empClockIn(emp?.id||'', locationId, locationName);
-    if(statusEl) statusEl.textContent = '✅ Clocked in at '+locationName+'!';
-    // HOD mode: after clock-in, offer to open HR platform
-    const empClockMode = emp?.clockMode||'kiosk';
-    const isHODClockMode = empClockMode==='hod' || CU?.role==='manager';
-    if(isHODClockMode){
-      setTimeout(()=>{
-        showEmployeeClockInScreen(CU); // refresh screen to show clocked-in state + HR button
-      }, 800);
-    } else {
-      setTimeout(()=>showEmployeeClockInScreen(CU), 800);
-    }
-  }catch(e){
-    if(statusEl) statusEl.textContent = '❌ Clock-in failed. Try again.';
-  }
-}
-
-
 async function handleEmployeeQRScan(qrData, emp, statusElId){
   const statusEl = statusElId ? document.getElementById(statusElId) : null;
   let locationId = null, locationName = null;
@@ -11501,7 +11452,6 @@ async function handleEmployeeQRScan(qrData, emp, statusElId){
   }
 }
 
-}
 
 </script>
 
