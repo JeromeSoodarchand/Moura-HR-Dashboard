@@ -1820,6 +1820,11 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 </div>
 
 
+<div class="modal-backdrop" id="mb" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box" id="mbox"></div>
+</div>
+<div class="toast-container" id="tc"></div>
+
 <script>
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
@@ -2510,7 +2515,9 @@ async function boot(){
         renderDashboard();
       } else if(_rCM==='qr'||_rCM==='hod'){
         showEmployeeClockInScreen(CU);
-      } else if(CU.role==='admin'||CU.role==='hr'||CU.role==='manager'){
+      } else if(CU.role==='admin'||CU.role==='hr'){
+        renderDashboard(); // admin/hr go straight to dashboard on refresh
+      } else if(CU.role==='manager'){
         renderDashboard();
         setTimeout(()=>showManagerLoginChoice(CU),400);
       } else {
@@ -2751,7 +2758,9 @@ async function doLogin(){
   const _dLoginCM = _dLoginEmp?.clockMode||'kiosk';
   if(_dLoginCM==='qr'||_dLoginCM==='hod'){
     showEmployeeClockInScreen(user);
-  } else if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
+  } else if(user.role==='admin'||user.role==='hr'){
+    renderDashboard();
+  } else if(user.role==='manager'){
     renderDashboard();
     setTimeout(()=>showManagerLoginChoice(user), 400);
   } else {
@@ -2781,7 +2790,7 @@ function showManagerLoginChoice(user){
             <div style="font-size:12px;color:var(--green-dark);margin-top:2px">Record your attendance for today</div>
           </div>
         </button>
-        <button onclick="closeAttModal()" style="display:flex;align-items:center;gap:14px;padding:16px;background:var(--navy-light);border:2px solid var(--navy);border-radius:var(--radius-lg);cursor:pointer;font-family:inherit;text-align:left;width:100%">
+        <button onclick="closeAttModal();renderDashboard();" style="display:flex;align-items:center;gap:14px;padding:16px;background:var(--navy-light);border:2px solid var(--navy);border-radius:var(--radius-lg);cursor:pointer;font-family:inherit;text-align:left;width:100%">
           <span style="font-size:32px">📊</span>
           <div>
             <div style="font-size:14px;font-weight:600;color:var(--navy)">Open HR Platform</div>
@@ -3621,7 +3630,10 @@ function viewEmp(id){
   const assigns=gEA(id);const c=aColor(emp.name);
   const cl=emp.checklist||emp.offChecklist||{},hasCL=Object.keys(cl).length>0;
   const sal=emp.salary;const showSal=hasPerm('view_salary');
-  const mb=document.getElementById('mbox');mb.className='modal-box xl';
+  const mb=document.getElementById('mbox');
+  if(!mb){ toast('Modal not found. Please refresh.','error'); return; }
+  mb.className='modal-box xl';
+  try{
   mb.innerHTML=`
     <div class="modal-title">Employee Profile <button class="modal-close" onclick="closeModal()">✕</button></div>
     <div style="background:var(--bg2);border-radius:var(--radius);padding:14px;margin-bottom:14px;display:flex;align-items:center;gap:14px">
@@ -3669,13 +3681,13 @@ function viewEmp(id){
     ${showSal?`<div class="tab-pane active" id="et-salary">
       ${sal?`
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
-        <div class="sal-card"><div class="sal-label">Current Salary</div><div class="sal-value">${fCur(sal.amount,sal.currency)}</div><div class="sal-meta">${sal.frequency}</div></div>
-        <div class="sal-card"><div class="sal-label">Last Review</div><div class="sal-value" style="font-size:15px">${sal.lastReview?fDate(sal.lastReview):'—'}</div></div>
-        <div class="sal-card"><div class="sal-label">Next Review</div><div class="sal-value" style="font-size:15px">${sal.nextReview?fDate(sal.nextReview):'—'}</div></div>
+        <div class="sal-card"><div class="sal-label">Current Salary</div><div class="sal-value">${fCur(sal.amount,sal.currency)}</div><div class="sal-meta">${sal.frequency||""}</div></div>
+        <div class="sal-card"><div class="sal-label">Last Review</div><div class="sal-value" style="font-size:15px">${sal&&sal.lastReview?fDate(sal.lastReview):'—'}</div></div>
+        <div class="sal-card"><div class="sal-label">Next Review</div><div class="sal-value" style="font-size:15px">${sal&&sal.nextReview?fDate(sal.nextReview):'—'}</div></div>
       </div>
       <div style="font-size:13px;font-weight:600;margin-bottom:8px">Salary History</div>
       <table><thead><tr><th>Date</th><th>Amount</th><th>Change</th><th>Notes</th></tr></thead><tbody>
-        ${[...sal.history].reverse().map((h,i,arr)=>{const prev=arr[i+1];const chg=prev?Math.round((h.amount-prev.amount)/prev.amount*100):null;
+        ${[...(sal.history||[])].reverse().map((h,i,arr)=>{const prev=arr[i+1];const chg=prev?Math.round((h.amount-prev.amount)/prev.amount*100):null;
           return`<tr><td>${fDate(h.date)}</td><td style="font-weight:500">${fCur(h.amount,sal.currency)}</td><td>${chg!==null?`<span style="color:${chg>0?'var(--green)':'var(--red)'}">${chg>0?'+':''}${chg}%</span>`:'—'}</td><td class="tm">${h.note}</td></tr>`;
         }).join('')}
       </tbody></table>
@@ -3774,6 +3786,10 @@ function viewEmp(id){
       <button class="btn btn-primary btn-sm" onclick="closeModal()">Close</button>
     </div>`;
   document.getElementById('mb').classList.add('open');
+  }catch(err){
+    console.error('viewEmp error:',err);
+    toast('Error loading employee profile: '+err.message,'error');
+  }
 }
 function swETab(tab,el){
   document.querySelectorAll('.modal-box .tbb').forEach(b=>b.classList.remove('active'));
@@ -8482,23 +8498,31 @@ function stopQRScanner(){
 }
 
 function empRequestLeave(){
-  // Find this employee's record and open leave request pre-filled
-  const allEmpsForLeave = getEmps().filter(e=>e.status!=='offboarded');
-  const me = (CU.empId ? allEmpsForLeave.find(e=>String(e.id)===String(CU.empId)) : null) ||
-    allEmpsForLeave.find(e=>
-      (CU.email&&e.email&&e.email.toLowerCase()===CU.email.toLowerCase())||
-      (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===CU.phone.replace(/[^0-9]/g,''))
-    );
-  // Load leave data if needed
-  // Always reload fresh then open modal
-  Promise.all([dbGetLeaveRequests(), dbGetLeaveBalances()]).then(([reqs, bal])=>{
-    _leaveRequests = reqs || [];
-    _leaveBalances = bal || {};
-    openLeaveRequestModal(me ? me.id : null);
-  }).catch(e=>{
-    console.error('Leave load error:',e);
-    openLeaveRequestModal(me ? me.id : null);
-  });
+  // Ensure employees are loaded, then open leave modal
+  const doOpen = function(){
+    const allEmps = getEmps().filter(function(e){ return e.status!=='offboarded'; });
+    const me = (CU.empId ? allEmps.find(function(e){ return String(e.id)===String(CU.empId); }) : null) ||
+      allEmps.find(function(e){
+        return (CU.email&&e.email&&e.email.toLowerCase()===CU.email.toLowerCase()) ||
+               (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===CU.phone.replace(/[^0-9]/g,''));
+      });
+    Promise.all([dbGetLeaveRequests(), dbGetLeaveBalances()]).then(function(res){
+      _leaveRequests = res[0] || [];
+      _leaveBalances = res[1] || {};
+      openLeaveRequestModal(me ? me.id : null);
+    }).catch(function(e){
+      console.error('Leave load error:',e);
+      openLeaveRequestModal(me ? me.id : null);
+    });
+  };
+  if(!getEmps().length){
+    dbGetEmployees().then(function(emps){
+      if(emps&&emps.length) _cache.emps = emps;
+      doOpen();
+    }).catch(doOpen);
+  } else {
+    doOpen();
+  }
 }
 
 
@@ -8990,7 +9014,9 @@ async function confirmPinLogin(empId, pin){
   const _disambigCM = user.empId ? (gE(user.empId)?.clockMode||'kiosk') : 'kiosk';
   if(_disambigCM==='qr'||_disambigCM==='hod'){
     showEmployeeClockInScreen(user);
-  } else if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
+  } else if(user.role==='admin'||user.role==='hr'){
+    renderDashboard();
+  } else if(user.role==='manager'){
     renderDashboard();setTimeout(()=>showManagerLoginChoice(user),400);
   } else {
     showEmployeeClockInScreen(user);
@@ -10984,12 +11010,27 @@ async function confirmMobileClockAction(empId, locationId, locationName, isOut){
 }
 
 function empViewAttHistory(){
-  const emp = (CU.empId ? getEmps().find(function(e){ return String(e.id)===String(CU.empId); }) : null) ||
-    getEmps().find(function(e){
-      return (CU.email&&e.email&&e.email.toLowerCase()===CU.email.toLowerCase()) ||
-             (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===CU.phone.replace(/[^0-9]/g,''));
-    });
-  if(!emp){ toast('Employee record not found. Contact HR.','error'); return; }
+  const findEmp = function(){
+    const all = getEmps();
+    return (CU.empId ? all.find(function(e){ return String(e.id)===String(CU.empId); }) : null) ||
+      all.find(function(e){
+        return (CU.email&&e.email&&e.email.toLowerCase()===CU.email.toLowerCase()) ||
+               (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===CU.phone.replace(/[^0-9]/g,''));
+      });
+  };
+  const run = function(){
+    const emp = findEmp();
+    if(!emp){ toast('Employee record not found. Contact HR.','error'); return; }
+    doEmpAttHistory(emp);
+  };
+  if(!getEmps().length){
+    dbGetEmployees().then(function(emps){
+      if(emps&&emps.length) _cache.emps = emps;
+      run();
+    }).catch(run);
+  } else { run(); }
+}
+function doEmpAttHistory(emp){
 
   var mb = document.getElementById('mbox');
   mb.className = 'modal-box';
@@ -11026,6 +11067,7 @@ function empViewAttHistory(){
     renderAtt(_attendance||[]);
   }).catch(function(){ renderAtt(_attendance||[]); });
 }
+
 function toggleEmpClockMode(empId, newMode){
   const emp = getEmps().find(e=>String(e.id)===String(empId));
   if(!emp) return;
