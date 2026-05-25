@@ -1363,7 +1363,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 <div class="toast-container" id="tc"></div>
 
 <script>
-// ─── SUP// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
+// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
 // ── Single Supabase client factory — prevents multiple instances ─────────────
 function _sbCreate(url, key){
@@ -1961,15 +1961,17 @@ const ROLE_PERMS={
 function showLoginScreen(){
   document.getElementById('login-screen').style.display='flex';
   const _cs = getSettings();
-  const org = _cs.orgName || S.get('org','My Company');
+  const org = _cs.orgName || S.get('org','') || '';
   const _oel=document.getElementById('org-name-login');
   if(_oel)_oel.textContent=org;
   const _tl=document.getElementById('login-tagline');
   if(_tl) _tl.textContent=_cs.tagline||'';
   // Update login logo if custom logo is set
   const _loginImg=document.getElementById('login-logo-img');
-  if(_loginImg && (_cs.logoDataUrl||_cs.logoB64)){
-    _loginImg.src=_cs.logoDataUrl||('data:'+(_cs.logoMime||'image/png')+';base64,'+_cs.logoB64);
+  if(_loginImg){
+    const _ls=_cs.logoDataUrl||(_cs.logoB64?'data:'+(_cs.logoMime||'image/png')+';base64,'+_cs.logoB64:'');
+    if(_ls){ _loginImg.src=_ls; _loginImg.style.display='block'; }
+    else { _loginImg.src=''; _loginImg.style.display='none'; }
   }
   const setupSec=document.getElementById('setup-sb-section');
   if(setupSec) setupSec.style.display='none';
@@ -5213,13 +5215,17 @@ function applyBrandingToUI(cs){
   const navImg  = document.getElementById('nav-logo-img');
   const navIcon = document.getElementById('nav-logo-icon');
   const navName = document.getElementById('nav-org-name');
-  if(navName) navName.textContent = cs.orgName || 'My Company';
+  if(navName) navName.textContent = cs.orgName || '';
   const _loginOrgEl = document.getElementById('org-name-login');
-  if(_loginOrgEl) _loginOrgEl.textContent = cs.orgName || 'My Company';
+  if(_loginOrgEl) _loginOrgEl.textContent = cs.orgName || '';
   const _loginTagEl = document.getElementById('login-tagline');
   if(_loginTagEl && cs.tagline) _loginTagEl.textContent = cs.tagline;
   if(cs.logoB64){
-    if(navImg){ navImg.src=cs.logoDataUrl||(cs.logoB64?'data:'+(cs.logoMime||'image/png')+';base64,'+cs.logoB64:''); navImg.style.display='block'; }
+    if(navImg){
+    const _nsrc=cs.logoDataUrl||(cs.logoB64?'data:'+(cs.logoMime||'image/png')+';base64,'+cs.logoB64:'');
+    if(_nsrc){ navImg.src=_nsrc; navImg.style.display='block'; if(navIcon) navIcon.style.display='none'; }
+    else { navImg.src=''; navImg.style.display='none'; if(navIcon) navIcon.style.display='flex'; }
+  }
     if(navIcon) navIcon.style.display='none'; // hide fallback icon when logo present
   } else {
     if(navImg)  navImg.style.display='none';
@@ -5227,7 +5233,11 @@ function applyBrandingToUI(cs){
   }
   // Update login logo
   const loginImg=document.getElementById('login-logo-img');
-  if(loginImg&&(cs.logoDataUrl||cs.logoB64)){loginImg.src=cs.logoDataUrl||(cs.logoB64?'data:'+(cs.logoMime||'image/png')+';base64,'+cs.logoB64:'');}
+  if(loginImg){
+    const _lsrc=cs.logoDataUrl||(cs.logoB64?'data:'+(cs.logoMime||'image/png')+';base64,'+cs.logoB64:'');
+    if(_lsrc){ loginImg.src=_lsrc; loginImg.style.display='block'; }
+    else { loginImg.src=''; loginImg.style.display='none'; }
+  }
   // Update login tagline
   const loginTag=document.getElementById('login-tagline');
   if(loginTag)loginTag.textContent=cs.tagline||'';
