@@ -1823,6 +1823,9 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 <script>
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
+const _APP_SECRET = 'MHR_9A_wRcm-HPdnuZCbJ4NXMZJxjuTYceubJUlXqyqefYA';
+const _SB_URL = 'https://zkrhhelxapixvuumyvug.supabase.co';
+const _SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InprcmhoZWx4YXBpeHZ1dW15dnVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc4OTM1NTEsImV4cCI6MjA2MzQ2OTU1MX0.Zy_yhJGPBMNnMPLkUCJuFYxEbGAq7aN3IFDrFPVpHmk';
 // ── Single Supabase client factory — prevents multiple instances ─────────────
 function _sbCreate(url, key){
   if(_sb) return _sb; // already exists — reuse
@@ -1845,8 +1848,6 @@ function ensureSB(){
   if(url && key){ _sb = _sbCreate(url, key); return !!_sb; }
   return false;
 }
-const _SB_URL = 'https://zkrhhelxapixvuumyvug.supabase.co';
-const _SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InprcmhoZWx4YXBpeHZ1dW15dnVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc4OTM1NTEsImV4cCI6MjA2MzQ2OTU1MX0.Zy_yhJGPBMNnMPLkUCJuFYxEbGAq7aN3IFDrFPVpHmk';
 
 function initSupabase(){
   // ── Read credentials from URL params first (shared onboarding links) ────────
@@ -1968,7 +1969,7 @@ const SS={
 }
 
 // ── APP SESSION SECRET — must match app.app_secret in Supabase SQL ──────────
-const _APP_SECRET = 'MHR_9A_wRcm-HPdnuZCbJ4NXMZJxjuTYceubJUlXqyqefYA';
+
 async function _sbSetSecret(){
   // No-op: secret is now sent as a request header on every Supabase call.
   // The x-app-secret header is set when createClient() is called.
