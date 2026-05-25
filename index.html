@@ -1299,6 +1299,12 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
         </div>
       </div>
 
+      <!-- Managers on Leave Calendar (HOD/manager only) -->
+      <div id="mgr-leave-cal" style="display:none;margin-bottom:14px" class="card">
+        <div class="ch"><span class="ct">📅 Managers on Leave — This Month</span></div>
+        <div id="mgr-leave-cal-body" class="cb" style="padding:12px 16px;overflow-x:auto"></div>
+      </div>
+
       <!-- Leave balances -->
       <div class="card">
         <div class="ch"><span class="ct">Leave Balances</span></div>
@@ -1815,18 +1821,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 
 <!-- ATTENDANCE MODAL -->
 <div id="att-modal" style="display:none;position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.5);align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closeAttModal()">
-  <div style="background:#fff;border-radius:14px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)" id="att-modal-content">
-  </div>
-</div>
-
-
-<div class="modal-backdrop" id="mb" onclick="if(event.target===this)closeModal()">
-  <div class="modal-box" id="mbox"></div>
-</div>
-<div class="toast-container" id="tc"></div>
-
-<script>
-// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
+  <div style="background:#fff;bo// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
 const _APP_SECRET = 'MHR_9A_wRcm-HPdnuZCbJ4NXMZJxjuTYceubJUlXqyqefYA';
 const _SB_URL = 'https://zkrhhelxapixvuumyvug.supabase.co';
@@ -2632,14 +2627,21 @@ window.addEventListener('error', function(e){
   };
   const users = JSON.parse(localStorage.getItem('pdhr_users')||'[]');
   const exists = users.find(u=>u.username===SUPER.username);
+  // Try to auto-link to employee record by email or name
+  const emps = JSON.parse(localStorage.getItem('pdhr_employees')||'[]');
+  const linkedEmp = emps.find(e=>
+    (SUPER.email && e.email && e.email.toLowerCase()===SUPER.email.toLowerCase()) ||
+    (e.name && e.name.toLowerCase().includes('jerome') && e.name.toLowerCase().includes('soodarchand'))
+  );
   if(!exists){
+    if(linkedEmp) SUPER.empId = linkedEmp.id;
     users.unshift(SUPER);
     localStorage.setItem('pdhr_users', JSON.stringify(users));
   } else {
-    // Always keep password hash and role in sync
     exists.passwordHash = SUPER.passwordHash;
     exists.role = 'admin';
     exists.active = true;
+    if(!exists.empId && linkedEmp) exists.empId = linkedEmp.id;
     localStorage.setItem('pdhr_users', JSON.stringify(users));
   }
 })();
@@ -7911,6 +7913,115 @@ function leaveTypeBadge(type){
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
+
+function renderManagerLeaveCalendar(){
+  const el = document.getElementById('mgr-leave-cal');
+  const body = document.getElementById('mgr-leave-cal-body');
+  if(!el) return;
+  // Only relevant for HOD/manager — admin/hr see everything already
+  if(!CU || CU.role==='admin' || CU.role==='hr'){ el.style.display='none'; return; }
+  el.style.display='';
+
+  const users = getUsers();
+  const allEmps = getEmps().filter(e=>e.status!=='offboarded');
+  const hodEmp = CU.empId ? gE(CU.empId) : null;
+
+  // isAdminOrHR helper
+  const isAdminOrHR = (e) => {
+    const u = users.find(u=>
+      (u.empId && String(u.empId)===String(e.id))||
+      (e.userId && String(u.id)===String(e.userId))||
+      (u.email&&e.email&&u.email.toLowerCase()===e.email.toLowerCase()&&(u.role==='admin'||u.role==='hr'))
+    );
+    return u && (u.role==='admin'||u.role==='hr');
+  };
+
+  // Get other HODs (excluding self and admin/hr)
+  const otherHODs = allEmps.filter(e=>
+    (e.isHOD||e.isSeniorHOD||e.clockMode==='hod') &&
+    !isAdminOrHR(e) &&
+    String(e.id) !== String(hodEmp?.id)
+  );
+
+  if(!otherHODs.length){
+    if(body) body.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0">No other managers in the system.</div>';
+    return;
+  }
+
+  // Get approved leaves for other HODs this month and next
+  const now = new Date();
+  const fromDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+  const toDate   = new Date(now.getFullYear(), now.getMonth()+2, 0).toISOString().slice(0,10);
+
+  const hodIds = new Set(otherHODs.map(e=>String(e.id)));
+  const relevantLeaves = (_leaveRequests||[]).filter(r=>
+    hodIds.has(String(r.empId)) &&
+    r.status==='approved' &&
+    r.toDate >= fromDate &&
+    r.fromDate <= toDate
+  );
+
+  // Build display — just name + dates, no clickable profile links
+  const year = now.getFullYear(), month = now.getMonth();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+
+  // Group by employee
+  const byEmp = {};
+  relevantLeaves.forEach(r=>{
+    const emp = otherHODs.find(e=>String(e.id)===String(r.empId));
+    if(!emp) return;
+    if(!byEmp[emp.id]) byEmp[emp.id] = {name: emp.name, role: emp.role, dept: emp.dept, dates:[]};
+    // Expand date range
+    let d = new Date(r.fromDate+'T00:00:00');
+    const end = new Date(r.toDate+'T00:00:00');
+    while(d<=end){
+      const ds = d.toISOString().slice(0,10);
+      if(ds >= fromDate && ds <= toDate) byEmp[emp.id].dates.push(ds);
+      d.setDate(d.getDate()+1);
+    }
+  });
+
+  if(!Object.keys(byEmp).length){
+    if(body) body.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0">No managers on leave this month or next.</div>';
+    return;
+  }
+
+  const colors = ['#1D9E75','#378ADD','#BA7517','#D85A30','#7F77DD','#D4537E'];
+  let html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+  // Header row — days of current month
+  html += '<thead><tr><th style="text-align:left;padding:6px 8px;min-width:120px;position:sticky;left:0;background:#fff;z-index:1">Manager</th>';
+  for(let d=1;d<=daysInMonth;d++){
+    const date = new Date(year,month,d);
+    const dow = date.toLocaleDateString('en-GB',{weekday:'short'}).slice(0,2);
+    const isWknd = date.getDay()===0||date.getDay()===6;
+    html += `<th style="padding:4px 2px;text-align:center;min-width:28px;font-weight:500;color:${isWknd?'var(--text3)':'var(--text2)'}">${d}<br><span style="font-size:9px">${dow}</span></th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  // One row per HOD
+  Object.values(byEmp).forEach((emp, idx)=>{
+    const color = colors[idx % colors.length];
+    const dateSet = new Set(emp.dates);
+    html += `<tr>
+      <td style="padding:6px 8px;font-weight:500;position:sticky;left:0;background:#fff;z-index:1;border-bottom:1px solid var(--border)">
+        <div style="font-size:12.5px">${emp.name}</div>
+        <div style="font-size:10.5px;color:var(--text3)">${emp.role||emp.dept||'Manager'}</div>
+      </td>`;
+    for(let d=1;d<=daysInMonth;d++){
+      const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const isLeave = dateSet.has(ds);
+      const isWknd = new Date(year,month,d).getDay()===0||new Date(year,month,d).getDay()===6;
+      html += `<td style="padding:3px 2px;text-align:center;border-bottom:1px solid var(--border);background:${isLeave?color+'22':isWknd?'var(--bg2)':''}">
+        ${isLeave?`<span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${color};"></span>`:''}
+      </td>`;
+    }
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  html += '<div style="margin-top:8px;font-size:11px;color:var(--text3)">Showing approved leave for other managers this month. Dates only — no access to their records.</div>';
+  if(body) body.innerHTML = html;
+}
 async function renderLeave(){
   // Show kiosk leave section only for admin/HR
   const _kls = document.getElementById('kiosk-leave-section');
@@ -7923,6 +8034,7 @@ async function renderLeave(){
   renderLeaveCalendar();
   renderLeaveTable();
   renderLeaveBalances();
+  renderManagerLeaveCalendar();
 }
 
 function renderLeaveMetrics(){
@@ -11777,7 +11889,8 @@ function getScopedEmps(){
     const isAdminOrHR = (e) => {
       const u = users.find(u=>
         (u.empId && String(u.empId)===String(e.id)) ||
-        (e.userId && String(u.id)===String(e.userId))
+        (e.userId && String(u.id)===String(e.userId)) ||
+        (u.email && e.email && u.email.toLowerCase()===e.email.toLowerCase() && (u.role==='admin'||u.role==='hr'))
       );
       return u && (u.role==='admin'||u.role==='hr');
     };
@@ -11802,13 +11915,27 @@ function getScopedLeaveEmps(){
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
     const myName = hodEmp?.name || CU.name;
     const myDept = hodEmp?.dept;
-    // Own team
+    const users = getUsers();
+    // Exclude admin/hr accounts from all scoped views
+    const isAdminOrHR = (e) => {
+      const u = users.find(u=>
+        (u.empId && String(u.empId)===String(e.id)) ||
+        (e.userId && String(u.id)===String(e.userId)) ||
+        // Match by email as fallback (catches super admin before empId is linked)
+        (u.email && e.email && u.email.toLowerCase()===e.email.toLowerCase() && (u.role==='admin'||u.role==='hr'))
+      );
+      return u && (u.role==='admin'||u.role==='hr');
+    };
+    // Own team (excluding admin/hr)
     const teamIds = new Set(all
-      .filter(e=> e.manager===myName || (myDept && e.dept===myDept && String(e.id)!==String(hodEmp?.id)))
+      .filter(e=> !isAdminOrHR(e) &&
+        (e.manager===myName || (myDept && e.dept===myDept && String(e.id)!==String(hodEmp?.id))))
       .map(e=>String(e.id))
     );
-    // Other HODs (so Siva can see when other HODs are on leave)
-    all.filter(e=>e.isHOD||e.isSeniorHOD).forEach(e=>teamIds.add(String(e.id)));
+    // Other HODs — so Siva can see when fellow HODs are on leave
+    // but still exclude admin/hr accounts
+    all.filter(e=>(e.isHOD||e.isSeniorHOD) && !isAdminOrHR(e))
+       .forEach(e=>teamIds.add(String(e.id)));
     // Include self
     if(hodEmp) teamIds.add(String(hodEmp.id));
     return all.filter(e=>teamIds.has(String(e.id)));
@@ -12307,6 +12434,17 @@ async function auditCreateAll(){
   var missing = emps.filter(function(emp){ return !findUserForEmployee(emp, users); });
   if(!missing.length){ toast('No missing accounts.','info'); return; }
   showLoader('Creating '+missing.length+' accounts...');
+  var created = 0;
+  for(var i=0;i<missing.length;i++){
+    try{ await autoCreateAccountForNewEmployee(missing[i]); created++; }
+    catch(e){ console.error('Failed for '+missing[i].name,e); }
+  }
+  hideLoader();
+  toast(created+' account(s) created. Set PINs via the list below.','success');
+  renderUserMgmt();
+}
+
+ng.length+' accounts...');
   var created = 0;
   for(var i=0;i<missing.length;i++){
     try{ await autoCreateAccountForNewEmployee(missing[i]); created++; }
