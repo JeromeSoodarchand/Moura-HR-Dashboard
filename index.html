@@ -1567,7 +1567,8 @@ const saveTrAsgn=v=>saveData('trainingAssignments',v);
 // ── EMPLOYEES ──
 async function dbGetEmployees(){
   ensureSB();
-  if(!sbReady()) return [];
+  const _localEmps = getData('employees');
+  if(!sbReady()) return _localEmps;
   try{
     const {data,error}=await _sb.from('employees').select('*').order('created_at',{ascending:false});
     if(error){console.error('dbGetEmployees error:',error);return _cache.emps||[];}
@@ -7937,19 +7938,8 @@ async function loginPinSubmit(){
   }
   const pinHash = simpleHash(_loginPin);
 
-  // Connect Supabase if needed
-  const sbUrl=localStorage.getItem('sb_url')||'';
-  const sbKey=localStorage.getItem('sb_key')||'';
-  if(sbUrl&&sbKey&&!_sb){ _sb=_sbCreate(sbUrl,sbKey); }
-  if(sbReady()) await _sbSetSecret();
-
-  // Reload employees AND users fresh from DB/localStorage before PIN lookup
-  // This ensures pinHash fields are current even on first page load
-  // Always reload fresh from DB — works in incognito (no localStorage cache)
-  if(!_sb){
-    const u=sbUrl||_SB_URL, k=sbKey||_SB_KEY;
-    if(u&&k) _sb=_sbCreate(u,k);
-  }
+  // Ensure Supabase is connected (uses embedded creds as fallback)
+  ensureSB();
   if(sbReady()) await _sbSetSecret();
   if(sbReady()){
     try{ const fresh=await dbGetEmployees(); if(fresh&&fresh.length) _cache.emps=fresh; } catch(e){ console.warn('DB load error:',e); }
