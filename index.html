@@ -1821,7 +1821,17 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 
 <!-- ATTENDANCE MODAL -->
 <div id="att-modal" style="display:none;position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.5);align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closeAttModal()">
-  <div style="background:#fff;bo// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)" id="att-modal-content">
+  </div>
+</div>
+
+<div class="modal-backdrop" id="mb" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box" id="mbox"></div>
+</div>
+<div class="toast-container" id="tc"></div>
+
+<script>
+// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
 const _APP_SECRET = 'MHR_9A_wRcm-HPdnuZCbJ4NXMZJxjuTYceubJUlXqyqefYA';
 const _SB_URL = 'https://zkrhhelxapixvuumyvug.supabase.co';
@@ -12428,32 +12438,8 @@ function renderUserAuditSummary(){
   el.innerHTML = html;
 }
 
-async function auditCreateAll(){
-  var emps = getEmps().filter(function(e){ return e.status!=='offboarded'; });
-  var users = getUsers();
-  var missing = emps.filter(function(emp){ return !findUserForEmployee(emp, users); });
-  if(!missing.length){ toast('No missing accounts.','info'); return; }
-  showLoader('Creating '+missing.length+' accounts...');
-  var created = 0;
-  for(var i=0;i<missing.length;i++){
-    try{ await autoCreateAccountForNewEmployee(missing[i]); created++; }
-    catch(e){ console.error('Failed for '+missing[i].name,e); }
-  }
-  hideLoader();
-  toast(created+' account(s) created. Set PINs via the list below.','success');
-  renderUserMgmt();
-}
 
-ng.length+' accounts...');
-  var created = 0;
-  for(var i=0;i<missing.length;i++){
-    try{ await autoCreateAccountForNewEmployee(missing[i]); created++; }
-    catch(e){ console.error('Failed for '+missing[i].name,e); }
-  }
-  hideLoader();
-  toast(created+' account(s) created. Set PINs via the list below.','success');
-  renderUserMgmt();
-}
+
 
 </script>
 
