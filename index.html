@@ -1349,6 +1349,12 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
   </div><!-- /app-body -->
 </div><!-- /app -->
 
+<!-- ATTENDANCE MODAL -->
+<div id="att-modal" style="display:none;position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.5);align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closeAttModal()">
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)" id="att-modal-content">
+  </div>
+</div>
+
 <div class="modal-backdrop" id="mb" onclick="if(event.target===this)closeModal()">
   <div class="modal-box" id="mbox"></div>
 
@@ -2330,7 +2336,7 @@ async function showEmployeeClockInScreen(user){
   if(!_cache.emps.length){ try{ _cache.emps=await dbGetEmployees(); }catch(e){} }
 
   // Find employee record
-  const emps = getEmps().filter(e=>e.status!=='offboarded');
+  const emps = getScopedEmps().filter(e=>e.status!=='offboarded');
   let emp = emps.find(e=>
     (user.email&&e.email&&e.email.toLowerCase()===user.email.toLowerCase())||
     (user.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===user.phone.replace(/[^0-9]/g,''))||
@@ -2684,7 +2690,7 @@ async function promptLoginClockIn(user){
   if(!_attLocations.length) return;
 
   if(!_cache.emps.length){ try{ _cache.emps=await dbGetEmployees(); }catch(e){} }
-  const emps = getEmps().filter(e=>e.status!=='offboarded');
+  const emps = getScopedEmps().filter(e=>e.status!=='offboarded');
 
   // Match user to employee — STRICT matching only (email or phone)
   // Never use fuzzy name/username matching — too risky
@@ -3096,7 +3102,7 @@ function renderDashboard(){
 
 // ─── EMPLOYEES ────────────────────────────────────────────────────────────────
 function renderEmployees(){
-  let list=[...getEmps()];
+  let list=[...getScopedEmps()];
   if(ef!=='all')list=list.filter(e=>e.status===ef);
   if(empSearch)list=list.filter(e=>[e.name,e.dept,e.role,e.email].join(' ').toLowerCase().includes(empSearch));
   const showSal=hasPerm('view_salary');
@@ -3126,7 +3132,7 @@ function filterEmp(v){empSearch=v.toLowerCase();renderEmployees();}
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
 function renderOnboarding(){
   const stages=['Week 1 — Orientation','Week 2-3 — Training','Final Review'];
-  const onb=getEmps().filter(e=>e.status==='onboarding');
+  const onb=getScopedEmps().filter(e=>e.status==='onboarding');
   document.getElementById('onb-kanban').innerHTML=stages.map((s,i)=>{
     const emps=onb.filter((_,j)=>j%3===i);
     return`<div class="kc"><div class="kch">${s}<span style="background:var(--bg3);padding:2px 7px;border-radius:10px;font-size:11px">${emps.length}</span></div>
@@ -3224,7 +3230,10 @@ function activateEmployee(id){
 
 // ─── EVENTS ───────────────────────────────────────────────────────────────────
 function renderEvents(){
-  let list=[...getEvts()].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const _scopedEmpIds = new Set(getScopedEmps().map(e=>String(e.id)));
+  let list=[...getEvts()]
+    .filter(ev=>!ev.empId||_scopedEmpIds.has(String(ev.empId)))
+    .sort((a,b)=>new Date(b.date)-new Date(a.date));
   if(evf!=='all')list=list.filter(e=>e.type===evf);
   document.getElementById('events-tbody').innerHTML=list.map(ev=>{
     const emp=gE(ev.empId),cfg=TCFG[ev.type]||{label:ev.type,bg:'#eee',color:'#333'};
@@ -3316,7 +3325,7 @@ function quickComplete(id){
 
 // ─── OFFBOARDING ─────────────────────────────────────────────────────────────
 function renderOffboarding(){
-  const off=getEmps().filter(e=>e.status==='offboarded');
+  const off=getScopedEmps().filter(e=>e.status==='offboarded');
   document.getElementById('off-tbody').innerHTML=off.map(emp=>{
     const c=aColor(emp.name),cl=emp.offChecklist||{},done=Object.values(cl).filter(Boolean).length,tot=Object.keys(cl).length;
     return`<tr>
@@ -3331,7 +3340,7 @@ function renderOffboarding(){
 
 // ─── ANALYTICS ───────────────────────────────────────────────────────────────
 function renderAnalytics(){
-  const emps=getEmps(),evts=getEvts(),asgn=getTrAsgn();
+  const emps=getScopedEmps(),evts=getEvts(),asgn=getTrAsgn();
   const active=emps.filter(e=>e.status==='active').length;
   const abs=evts.filter(e=>e.type==='absence').length;
   const trComp=asgn.filter(a=>a.status==='completed').length,trTot=asgn.length;
@@ -3729,7 +3738,7 @@ function openModal(type,pid,pid2){
   // ── ADD EVENT ──
   } else if(type==='addEvent'){
     if(!hasPerm('log_events')){toast('Access denied.','error');return;}
-    const ae=getEmps().filter(e=>e.status!=='offboarded');
+    const ae=getScopedEmps().filter(e=>e.status!=='offboarded');
     mb.innerHTML=`<div class="modal-title">Log Event <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="fg"><label class="fl">Employee *</label><select class="fs" id="femp">${ae.map(e=>`<option value="${e.id}"${String(e.id)===String(pid)?' selected':''}>${e.name} — ${e.dept}</option>`).join('')}</select></div>
       <div class="fr"><div class="fg"><label class="fl">Type</label><select class="fs" id="ftyp">${Object.entries(getTCFG()).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}</select></div>
@@ -3764,7 +3773,7 @@ function openModal(type,pid,pid2){
   // ── ASSIGN TRAINING ──
   } else if(type==='assignTraining'){
     if(!hasPerm('manage_training')){toast('Access denied.','error');return;}
-    const ae=getEmps().filter(e=>e.status!=='offboarded');
+    const ae=getScopedEmps().filter(e=>e.status!=='offboarded');
     mb.innerHTML=`<div class="modal-title">Assign Training <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="fg"><label class="fl">Employee *</label><select class="fs" id="ftre">${ae.map(e=>`<option value="${e.id}"${String(e.id)===String(pid)?' selected':''}>${e.name} — ${e.dept}</option>`).join('')}</select></div>
       <div class="fg"><label class="fl">Training program *</label><select class="fs" id="ftrp">${getTrProgs().map(p=>`<option value="${p.id}"${String(p.id)===String(pid2)?' selected':''}>${p.name} (${p.category} · ${p.duration})</option>`).join('')}</select></div>
@@ -3788,7 +3797,7 @@ function openModal(type,pid,pid2){
   // ── OFFBOARD ──
   } else if(type==='offboard'){
     if(!hasPerm('manage_offboarding')){toast('Access denied.','error');return;}
-    const ae=getEmps().filter(e=>e.status!=='offboarded');
+    const ae=getScopedEmps().filter(e=>e.status!=='offboarded');
     mb.innerHTML=`<div class="modal-title">Offboard Employee <button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="fg"><label class="fl">Employee *</label><select class="fs" id="foe">${ae.map(e=>`<option value="${e.id}"${String(e.id)===String(pid)?' selected':''}>${e.name} — ${e.dept}</option>`).join('')}</select></div>
       <div class="fr"><div class="fg"><label class="fl">Last working day</label><input class="fi" id="fold" type="date" value="${td()}"></div>
@@ -4275,7 +4284,7 @@ function submitUpdateTr(id){
   }).catch(err=>{ hideLoader();saveTrAsgn(asgn);toast('DB error: '+(err.message||err),'error');closeModal();renderTraining(); });
 }
 
-function submitOffboard(){
+async function submitOffboard(){
   const emps=getEmps();
   const empId=parseInt(document.getElementById('foe').value);
   const emp=emps.find(e=>String(e.id)===String(empId));
@@ -4888,7 +4897,7 @@ function renderSettings(){
   const prev=document.getElementById('settings-logo-preview');
   const ph=document.getElementById('settings-logo-placeholder');
   if(cs.logoB64){
-    prev.src='data:image/png;base64,'+cs.logoB64;
+    prev.src=cs.logoDataUrl||(cs.logoB64?'data:'+(cs.logoMime||'image/png')+';base64,'+cs.logoB64:'');
     prev.style.display='block';ph.style.display='none';
   } else {
     prev.style.display='none';ph.style.display='block';
@@ -5132,16 +5141,19 @@ function handleLogoUpload(input){
   const reader=new FileReader();
   reader.onload=e=>{
     const result=e.target.result; // data:image/...;base64,...
-    const b64=result.split(',')[1];
-    const cs=getSettings();cs.logoB64=b64;cs.logoMime=file.type;
+    const cs=getSettings();
+    cs.logoDataUrl=result;  // store full data URL
+    cs.logoB64=result.split(',')[1];
+    cs.logoMime=file.type;  // e.g. "image/png"
     S.set('companySettings',cs);
     // Preview
     const prev=document.getElementById('settings-logo-preview');
     const ph=document.getElementById('settings-logo-placeholder');
-    prev.src=result;prev.style.display='block';ph.style.display='none';
+    if(prev){prev.src=result;prev.style.display='block';}
+    if(ph)ph.style.display='none';
     // Apply to nav and login immediately
     applyBrandingToUI(cs);
-    toast('Logo uploaded.','success');
+    toast('Logo uploaded. Click Save to keep changes.','success');
   };
   reader.readAsDataURL(file);
 }
@@ -5198,7 +5210,7 @@ function applyBrandingToUI(cs){
   const _loginTagEl = document.getElementById('login-tagline');
   if(_loginTagEl && cs.tagline) _loginTagEl.textContent = cs.tagline;
   if(cs.logoB64){
-    if(navImg){ navImg.src='data:image/'+(cs.logoMime||'png')+';base64,'+cs.logoB64; navImg.style.display='block'; }
+    if(navImg){ navImg.src=cs.logoDataUrl||(cs.logoB64?'data:'+(cs.logoMime||'image/png')+';base64,'+cs.logoB64:''); navImg.style.display='block'; }
     if(navIcon) navIcon.style.display='none'; // hide fallback icon when logo present
   } else {
     if(navImg)  navImg.style.display='none';
@@ -5206,7 +5218,7 @@ function applyBrandingToUI(cs){
   }
   // Update login logo
   const loginImg=document.getElementById('login-logo-img');
-  if(loginImg&&cs.logoB64){loginImg.src='data:image/'+(cs.logoMime||'png')+';base64,'+cs.logoB64;}
+  if(loginImg&&(cs.logoDataUrl||cs.logoB64)){loginImg.src=cs.logoDataUrl||(cs.logoB64?'data:'+(cs.logoMime||'image/png')+';base64,'+cs.logoB64:'');}
   // Update login tagline
   const loginTag=document.getElementById('login-tagline');
   if(loginTag)loginTag.textContent=cs.tagline||'';
@@ -6042,7 +6054,8 @@ let _qrScanner = null;
 
 async function dbGetAttendance(dateFrom, dateTo){
   ensureSB();
-  if(!sbReady()) return [];
+  const local = _attendance || [];
+  if(!sbReady()) return local;
   try{
     let q = _sb.from('attendance').select('*').order('clock_in', {ascending:false});
     if(dateFrom) q = q.gte('date', dateFrom);
@@ -6050,7 +6063,7 @@ async function dbGetAttendance(dateFrom, dateTo){
     const {data, error} = await q;
     if(error){ console.error('dbGetAttendance:', error); return local; }
     return data.map(rowToAtt);
-  } catch(e){ return local; }
+  } catch(e){ console.error('dbGetAttendance exception:',e); return local; }
 }
 
 async function dbSaveAttendance(rec){
@@ -6148,7 +6161,7 @@ async function renderAttendance(){
 }
 
 function renderAttLiveBoard(){
-  const emps = getEmps().filter(e=>e.status!=='offboarded');
+  const emps = getScopedEmps().filter(e=>e.status!=='offboarded');
   const clockedIn = _attendance.filter(r=>r.date===todayStr()&&!r.clockOut);
   const lc = document.getElementById('att-live-count');
   if(lc) lc.textContent = clockedIn.length+' on site';
@@ -6862,7 +6875,7 @@ async function executeDeleteUser(userId, empAction){
 function openAccountAudit(){
   if(!canEdit()){toast('HR and Admin only.','error');return;}
 
-  const emps   = getEmps().filter(e=>e.status!=='offboarded');
+  const emps   = getScopedEmps().filter(e=>e.status!=='offboarded');
   const users  = getUsers();
 
   // Classify each employee
@@ -7006,7 +7019,7 @@ async function auditCreateOne(empId){
 async function auditCreateAll(){
   if(!confirm('Create accounts for all '+missing.length+' employees and set their PINs?')) return;
   closeModal();
-  const emps   = getEmps().filter(e=>e.status!=='offboarded');
+  const emps   = getScopedEmps().filter(e=>e.status!=='offboarded');
   const users  = getUsers();
   const missing = emps.filter(emp=>{
     const user = findUserForEmployee(emp, users);
@@ -7269,11 +7282,12 @@ let _leaveCalMonth = new Date().getMonth();
 // ── DB helpers ────────────────────────────────────────────────────────────────
 async function dbGetLeaveRequests(){
   ensureSB();
-  if(!sbReady()) return [];
+  const local = _leaveRequests || S.get('leaveRequests', []);
+  if(!sbReady()) return local;
   try{
     const {data,error} = await _sb.from('leave_requests').select('*').order('created_at',{ascending:false});
-    if(error){ return local; }
-    return data.map(r=>({
+    if(error){ console.error('dbGetLeaveRequests:', error); return local; }
+    const reqs = data.map(r=>({
       id:r.id, empId:r.emp_id, type:r.type, fromDate:r.from_date, toDate:r.to_date,
       days:r.days, reason:r.reason||'', status:r.status,
       hodStatus:r.hod_status||'pending',
@@ -7286,7 +7300,9 @@ async function dbGetLeaveRequests(){
       reviewedBy:r.reviewed_by||'', reviewNote:r.review_note||'',
       createdAt:r.created_at, updatedAt:r.updated_at
     }));
-  } catch(e){ return local; }
+    S.set('leaveRequests', reqs);
+    return reqs;
+  } catch(e){ console.error('dbGetLeaveRequests exception:',e); return local; }
 }
 
 async function dbSaveLeaveRequest(req){
@@ -7326,15 +7342,16 @@ async function dbSaveLeaveRequest(req){
 
 async function dbGetLeaveBalances(){
   ensureSB();
-  if(!sbReady()) return {};
+  const local = _leaveBalances || S.get('leaveBalances', {});
+  if(!sbReady()) return local;
   try{
     const {data,error} = await _sb.from('leave_balances').select('*');
-    if(error) return local;
+    if(error){ console.error('dbGetLeaveBalances:', error); return local; }
     const out = {};
     data.forEach(r=>{ out[r.emp_id]={annual:r.annual||20,sick:r.sick||15,casual:r.casual||10}; });
     S.set('leaveBalances', out);
     return out;
-  } catch(e){ return local; }
+  } catch(e){ console.error('dbGetLeaveBalances:',e); return local; }
 }
 
 async function dbSaveLeaveBalance(empId, balances){
@@ -7426,7 +7443,7 @@ function renderLeaveMetrics(){
   const pending  = getVisibleLeaveRequests().filter(r=>r.status==='pending').length;
   const approved = getVisibleLeaveRequests().filter(r=>r.status==='approved'&&new Date(r.fromDate)>=new Date(new Date().getFullYear()+'-01-01')).length;
   const onLeave  = getVisibleLeaveRequests().filter(r=>r.status==='approved'&&r.fromDate<=todayStr()&&r.toDate>=todayStr()).length;
-  const emps     = getEmps().filter(e=>e.status!=='offboarded').length;
+  const emps     = getScopedEmps().filter(e=>e.status!=='offboarded').length;
   el.innerHTML = `
     <div class="mc"><div class="mc-accent" style="background:var(--amber)"></div>
       <div class="mc-label">Pending approval</div><div class="mc-value">${pending}</div>
@@ -7581,7 +7598,7 @@ function renderLeaveBalances(){
 // ── Actions ───────────────────────────────────────────────────────────────────
 function openLeaveRequestModal(empId){
   if(!empId){
-    const emps2 = getEmps().filter(e=>e.status!=='offboarded');
+    const emps2 = getScopedEmps().filter(e=>e.status!=='offboarded');
     const me = emps2.find(e=>
       (CU.empId && String(e.id)===String(CU.empId))||
       (CU.email&&e.email&&e.email.toLowerCase()===CU.email.toLowerCase())||
@@ -7592,7 +7609,7 @@ function openLeaveRequestModal(empId){
 
   const mb=document.getElementById('mbox');mb.className='modal-box';
   document.getElementById('mb').classList.add('open');
-  const emps=getEmps().filter(e=>e.status!=='offboarded');
+  const emps=getScopedEmps().filter(e=>e.status!=='offboarded');
   const isHR = CU&&(CU.role==='admin'||CU.role==='hr');
   const thisEmp = emps.find(e=>String(e.id)===String(empId));
 
@@ -7845,7 +7862,7 @@ function exportLeaveCSV(){
 
 function empRequestLeave(){
   // Find this employee's record and open leave request pre-filled
-  const emps = getEmps().filter(e=>e.status!=='offboarded');
+  const emps = getScopedEmps().filter(e=>e.status!=='offboarded');
   const me = emps.find(e=>
     (CU.email&&e.email&&e.email.toLowerCase()===CU.email.toLowerCase())||
     (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===CU.phone.replace(/[^0-9]/g,''))
@@ -8047,7 +8064,7 @@ function openKiosk(){
 function renderKioskEmpList(filter){
   const el = document.getElementById('kiosk-emp-list');
   if(!el) return;
-  const emps = getEmps().filter(e=>e.status!=='offboarded');
+  const emps = getScopedEmps().filter(e=>e.status!=='offboarded');
   const filtered = filter
     ? emps.filter(e=>e.name.toLowerCase().includes(filter.toLowerCase()))
     : emps;
@@ -8261,7 +8278,7 @@ function renderKioskLive(){
   if(!live) return;
   const localAtt=S.get('attendance',[]);
   const today=localAtt.filter(r=>r.date===todayStr());
-  const emps=getEmps().filter(e=>e.status!=='offboarded');
+  const emps=getScopedEmps().filter(e=>e.status!=='offboarded');
   const chips=emps.map(emp=>{
     const rec=today.find(r=>String(r.empId)===String(emp.id)&&!r.clockOut);
     if(!rec&&!today.find(r=>String(r.empId)===String(emp.id))) return '';
@@ -8413,7 +8430,7 @@ async function runAnomalyCheck(){
     recs = S.get('attendance',[]).filter(r=>r.date===date);
   }
 
-  const emps     = getEmps().filter(e=>e.status!=='offboarded');
+  const emps     = getScopedEmps().filter(e=>e.status!=='offboarded');
   const isToday  = date === todayStr();
   const isWeekend= [0,6].includes(new Date(date+'T00:00:00').getDay());
   const isHoliday= MAURITIUS_HOLIDAYS_2025.includes(date);
@@ -8967,7 +8984,7 @@ async function runOvertimeReport(){
   // Populate dept filter
   const deptSel = document.getElementById('ot-dept-filter');
   if(deptSel && deptSel.options.length<=1){
-    const depts = [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
+    const depts = [...new Set(getScopedEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
     depts.forEach(d=>{ const o=document.createElement('option'); o.value=d; o.textContent=d; deptSel.appendChild(o); });
   }
 
@@ -9158,7 +9175,7 @@ function initOTDateRange(){
   // Populate dept filter
   const deptSel = document.getElementById('ot-dept-filter');
   if(deptSel && deptSel.options.length<=1){
-    const depts = [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
+    const depts = [...new Set(getScopedEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
     depts.forEach(d=>{ const o=document.createElement('option'); o.value=d; o.textContent=d; deptSel.appendChild(o); });
   }
 }
