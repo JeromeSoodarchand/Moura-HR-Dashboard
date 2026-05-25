@@ -6427,108 +6427,78 @@ function openAttendanceModal(type){
 }
 
 function renderManageLocations(content){
-  content.innerHTML='<div style="padding:20px">'+
-    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">'+
-      '<div style="font-size:15px;font-weight:600">Locations & QR Codes</div>'+
-      '<button onclick="closeAttModal()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--text3)">X</button>'+
-    '</div>'+
-    '<div id="locations-list">'+
-      (_attLocations.map(loc=>'<div style="background:var(--bg2);border-radius:var(--radius);padding:12px;margin-bottom:10px;display:flex;gap:10px;align-items:flex-start">'+
-        '<div style="flex:1"><div style="font-weight:500;font-size:13px">'+loc.name+'</div>'+(loc.address?'<div class="txs tm">'+loc.address+'</div>':'')+
-        '<div style="font-size:11px;color:var(--text3);margin-top:4px;font-family:monospace">QR: '+loc.qrCode+'</div></div>'+
-        '<div id="qr-'+loc.id+'" style="flex-shrink:0"></div>'+
-        '<div style="display:flex;flex-direction:column;gap:4px">'+
-          '<button class="btn btn-xs" onclick="printLocationQR('+JSON.stringify(loc.id)+','+JSON.stringify(loc.name)+','+JSON.stringify(loc.qrCode)+')">Print QR</button>'+
-          '<button class="btn btn-xs btn-danger" onclick="removeLocation('+JSON.stringify(loc.id)+')">Remove</button>'+
-        '</div></div>').join('')||'<div class="tm txs" style="padding:12px;text-align:center">No locations yet.</div>')+
-    '</div>'+
-    '<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">'+
-      '<div style="font-size:12px;font-weight:500;margin-bottom:8px">Add new location</div>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-        '<input class="fi" id="loc-name" placeholder="Location name" style="flex:1;min-width:140px">'+
-        '<input class="fi" id="loc-addr" placeholder="Address (optional)" style="flex:1;min-width:140px">'+
-        '<button class="btn btn-primary" onclick="addLocation()">+ Add</button>'+
-      '</div></div></div>';
-  setTimeout(()=>{
-    _attLocations.forEach(loc=>{
-      const el=document.getElementById('qr-'+loc.id);
-      if(el&&window.QRCode){el.innerHTML='';new QRCode(el,{text:loc.qrCode,width:64,height:64,colorDark:'#1E1445',colorLight:'#ffffff'});}
-    });
-  },100);
+  if(!content) return;
+  content.innerHTML=`
+    <div style="padding:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-size:15px;font-weight:600">📍 Locations & QR Codes</div>
+        <button onclick="closeAttModal()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--text3)">✕</button>
+      </div>
+      <div id="locations-list">
+        ${_attLocations.length===0
+          ? '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">No locations yet. Add one below.</div>'
+          : _attLocations.map(loc=>`
+            <div style="background:var(--bg2);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <div>
+                  <div style="font-weight:600;font-size:13.5px">${loc.name}</div>
+                  ${loc.address?`<div style="font-size:12px;color:var(--text3)">${loc.address}</div>`:''}
+                </div>
+                <div style="display:flex;gap:6px">
+                  <button class="btn btn-sm btn-primary" onclick="printLocationQR('${loc.id}','${loc.name}','${loc.qrCode}')">🖨 Print QR</button>
+                  <button class="btn btn-sm" onclick="showLocationQR('${loc.id}','${loc.name}','${loc.qrCode}')">🔲 View QR</button>
+                  <button class="btn btn-sm btn-danger" onclick="removeLocation('${loc.id}')">🗑</button>
+                </div>
+              </div>
+              <div style="font-size:11px;color:var(--text3);font-family:monospace;background:var(--bg3);padding:4px 8px;border-radius:4px">${loc.qrCode}</div>
+            </div>`).join('')}
+      </div>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">Add Location</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <input class="fi" id="loc-name" placeholder="Location name *" style="font-size:13px">
+          <input class="fi" id="loc-addr" placeholder="Address (optional)" style="font-size:13px">
+        </div>
+        <button class="btn btn-primary" onclick="addLocation()">+ Add Location</button>
+      </div>
+    </div>`;
 }
 
-async function addLocation(){
-  const name=(document.getElementById('loc-name')||{}).value||'';
-  if(!name.trim()){toast('Location name required.','error');return;}
-  const addr=(document.getElementById('loc-addr')||{}).value||'';
-  const qrCode='LOC-'+name.toUpperCase().replace(/[^A-Z0-9]/g,'-')+'-'+Date.now().toString(36).toUpperCase();
-  const loc={id:Date.now(),name:name.trim(),address:addr,qrCode};
-  showLoader('Saving...');
-  await dbSaveLocation(loc);
-  hideLoader();
-  _attLocations=S.get('attLocations',[]);
-  renderManageLocations(document.getElementById('att-modal-content'));
-  toast('Location "'+name+'" added.','success');
-}
-
-async function removeLocation(id){
-  if(!confirm('Remove this location?'))return;
-  await dbDeleteLocation(id);
-  _attLocations=S.get('attLocations',[]);
-  renderManageLocations(document.getElementById('att-modal-content'));
-  toast('Location removed.','success');
-}
-
-function printLocationQR(id,name,qrCode){
-  const win=window.open('','_blank','width=400,height=500');
-  const styles='body{font-family:-apple-system,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;background:#fff}'+
-    '.title{font-size:22px;font-weight:700;color:#1E1445;margin-bottom:4px}'+
-    '.sub{font-size:13px;color:#888;margin-bottom:20px}'+
-    '.code{font-size:11px;color:#aaa;margin-top:16px;font-family:monospace}';
-  const qrScript='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
-  win.document.write('<!DOCTYPE html><html><head><title>QR - '+name+'</title>'+
-    '<style>'+styles+'</style></head><body>'+
-    '<div class="title">'+getSettings().orgName+'</div>'+
-    '<div class="sub">Attendance — '+name+'</div>'+
-    '<div id="qr"></div>'+
-    '<div class="code">'+qrCode+'</div>'+
-    '<scri'+'pt src="'+qrScript+'"></scri'+'pt>'+
-    '<scri'+'pt>'+
-      'new QRCode(document.getElementById("qr"),{text:"'+qrCode+'",width:200,height:200,colorDark:"#1E1445"});'+
-      'setTimeout(function(){window.print();},800);'+
-    '</scri'+'pt>'+
-    '</body></html>');
+function printLocationQR(id, name, qrCode){
+  const win = window.open('', '_blank', 'width=500,height=600');
+  if(!win){ toast('Please allow popups to print QR codes.', 'error'); return; }
+  const qrScript = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+  win.document.write(`<!DOCTYPE html><html><head>
+    <title>QR Code — ${name}</title>
+    <style>
+      body{font-family:-apple-system,sans-serif;display:flex;flex-direction:column;align-items:center;
+           justify-content:center;min-height:100vh;margin:0;background:#fff;padding:20px;box-sizing:border-box}
+      .org{font-size:13px;color:#888;margin-bottom:8px;letter-spacing:.05em}
+      .title{font-size:24px;font-weight:700;color:#1E1445;margin-bottom:4px;text-align:center}
+      .sub{font-size:13px;color:#888;margin-bottom:24px}
+      #qr{margin-bottom:16px}
+      .code{font-size:10px;color:#bbb;font-family:monospace;margin-top:8px}
+      .instr{font-size:12px;color:#555;margin-top:16px;text-align:center;max-width:280px}
+    </style>
+  </head><body>
+    <div class="title">${name}</div>
+    <div class="sub">Scan to clock in / clock out</div>
+    <div id="qr"></div>
+    <div class="code">${qrCode}</div>
+    <div class="instr">Open SolentraHR on your phone and scan this code</div>
+    <script src="${qrScript}"><\/script>
+    <script>
+      window.onload = function(){
+        new QRCode(document.getElementById('qr'), {
+          text: '${qrCode}', width: 220, height: 220,
+          colorDark: '#1E1445', colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.H
+        });
+        setTimeout(function(){ window.print(); }, 800);
+      };
+    <\/script>
+  </body></html>`);
   win.document.close();
-}
-async function startQRScanner(isClockedIn, emp){
-  try{
-    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-    const video=document.getElementById('qr-video');
-    if(!video){stream.getTracks().forEach(t=>t.stop());return;}
-    video.srcObject=stream;
-    _qrScanner=stream;
-    const canvas=document.createElement('canvas');
-    const ctx=canvas.getContext('2d');
-    function scan(){
-      if(!document.getElementById('qr-video')){stream.getTracks().forEach(t=>t.stop());return;}
-      if(video.readyState===video.HAVE_ENOUGH_DATA){
-        canvas.width=video.videoWidth;canvas.height=video.videoHeight;
-        ctx.drawImage(video,0,0);
-        const imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
-        const code=window.jsQR&&window.jsQR(imgData.data,imgData.width,imgData.height,{inversionAttempts:'dontInvert'});
-        if(code&&code.data){
-          const loc=_attLocations.find(l=>l.qrCode===code.data);
-          if(loc){stopQRScanner();processClockAction(loc.id,loc.name,isClockedIn,emp?emp.id:null);return;}
-          else{const s=document.getElementById('qr-status');if(s)s.textContent='Unknown QR code. Try another.';}
-        }
-      }
-      requestAnimationFrame(scan);
-    }
-    video.onloadedmetadata=()=>requestAnimationFrame(scan);
-  } catch(err){
-    const wrap=document.getElementById('qr-video-wrap');
-    if(wrap)wrap.innerHTML='<div style="padding:24px;text-align:center;color:var(--text3)"><div style="font-size:32px;margin-bottom:8px">📷</div><div style="font-size:13px">Camera not available.<br>Use manual selector below.</div></div>';
-  }
 }
 
 function stopQRScanner(){ if(_qrScanner){_qrScanner.getTracks().forEach(t=>t.stop());_qrScanner=null;} }
@@ -11450,6 +11420,32 @@ async function handleEmployeeQRScan(qrData, emp, statusElId){
   }catch(e){
     if(statusEl) statusEl.textContent = '❌ Clock-in failed. Try again.';
   }
+}
+
+function showLocationQR(id, name, qrCode){
+  const mb = document.getElementById('mbox');
+  if(!mb) return;
+  mb.className = 'modal-box';
+  mb.innerHTML = `
+    <div class="modal-title">QR Code — ${name} <button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div style="text-align:center;padding:20px">
+      <div id="loc-qr-display" style="display:inline-block;margin-bottom:16px"></div>
+      <div style="font-size:12px;color:var(--text3);font-family:monospace;margin-bottom:16px">${qrCode}</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:16px">Employees scan this code to clock in at <strong>${name}</strong></div>
+      <div style="display:flex;gap:8px;justify-content:center">
+        <button class="btn btn-primary" onclick="printLocationQR('${id}','${name}','${qrCode}')">🖨 Print</button>
+        <button class="btn" onclick="closeModal()">Close</button>
+      </div>
+    </div>`;
+  document.getElementById('mb').classList.add('open');
+  setTimeout(()=>{
+    const el = document.getElementById('loc-qr-display');
+    if(el && typeof QRCode !== 'undefined'){
+      new QRCode(el, {text: qrCode, width: 200, height: 200,
+        colorDark: '#1E1445', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.H});
+    }
+  }, 100);
 }
 
 
