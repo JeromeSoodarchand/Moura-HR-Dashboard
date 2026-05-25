@@ -12087,46 +12087,58 @@ async function saveHRPin(userId, empName){
   const errEl = document.getElementById('hr-pin-err');
   const pin = pinEl?.value.trim();
   if(!/^[0-9]{4}$/.test(pin)){
-    errEl.textContent = 'PIN must be exactly 4 digits.';
-    errEl.style.display = 'block';
+    if(errEl){ errEl.textContent = 'PIN must be exactly 4 digits.'; errEl.style.display = 'block'; }
     return;
   }
   const pinHash = simpleHash(pin);
-  // Check for PIN conflicts
+  // Check for PIN conflicts across all employees
   const conflict = getEmps().filter(e=>e.status!=='offboarded').find(e=>{
-    const u = findUserForEmployee(e, getUsers());
-    return e.pinHash===pinHash && String(u?.id||e.id)!==String(userId);
+    return e.pinHash===pinHash && String(e.id)!==String(userId);
   });
   if(conflict){
-    errEl.textContent = 'PIN already used by another employee. Choose a different one.';
-    errEl.style.display = 'block';
+    if(errEl){ errEl.textContent = 'PIN already used by another employee. Choose a different one.'; errEl.style.display = 'block'; }
     return;
   }
-  // Save PIN to the employee record
-  const allEmps = getEmps();
-  const emp = allEmps.find(e=>{
-    const u = findUserForEmployee(e, getUsers());
-    return String(u?.id)===String(userId) || String(e.userId)===String(userId) || String(e.id)===String(userId);
-  });
+
+  // Save PIN to employee record — only update pin_hash column
+  const emp = getEmps().find(e=>
+    String(e.id)===String(userId) ||
+    String(e.userId)===String(userId) ||
+    (() => { const u=findUserForEmployee(e, getUsers()); return u && String(u.id)===String(userId); })()
+  );
   if(emp){
     emp.pinHash = pinHash;
-    await dbSaveEmployee(emp).catch(()=>{});
+    // Update cache locally first
+    const ei = _cache.emps.findIndex(e=>String(e.id)===String(emp.id));
+    if(ei>=0) _cache.emps[ei] = emp;
+    saveEmps(_cache.emps);
+    // Only send pin_hash to Supabase (avoids "column not found" errors)
+    if(sbReady() && String(emp.id).length < 13){
+      await _sb.from('employees').update({pin_hash: pinHash, updated_at: new Date().toISOString()})
+        .eq('id', emp.id)
+        .then(({error}) => { if(error) console.warn('PIN employee save error:', error.message); });
+    }
   }
-  // Mark user account as setup done
+
+  // Save PIN to user account
   const user = getUsers().find(u=>String(u.id)===String(userId));
   if(user){
     user.setupDone = true;
     user.setupToken = null;
+    user.pinHash = pinHash;
     user.passwordHash = pinHash;
-    await dbSaveUser(user).catch(()=>{});
     const idx = _userCache.findIndex(u=>String(u.id)===String(userId));
     if(idx>=0) _userCache[idx] = user;
+    else _userCache.push(user);
     S.set('users', _userCache);
+    // Save to Supabase
+    dbSaveUser(user).catch(e=>console.warn('PIN user save error:', e));
   }
-  dbAddAudit(CU.name, 'HR set PIN for: '+empName);
+
+  dbAddAudit(CU?.name||'HR', 'Set PIN for: '+empName);
   closeModal();
-  toast('PIN set for '+empName+'. They can log in immediately.', 'success');
-  setTimeout(openAccountAudit, 300);
+  toast('PIN set for '+empName+'. They can now log in.', 'success');
+  setTimeout(()=>{ if(typeof openAccountAudit==='function') openAccountAudit(); }, 300);
 }
 
 // ── Handle QR code scanned from employee mobile screen ───────────────────────
