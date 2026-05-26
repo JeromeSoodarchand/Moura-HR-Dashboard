@@ -2495,9 +2495,11 @@ function showSetupScreen(){
 }
 
 async function boot(){
-  // Step 1 — init Supabase from stored credentials
-  initSupabase();
-  const alreadyConnected = !!localStorage.getItem('sb_connected');
+  // Step 1 — init Supabase from hardcoded credentials (always available)
+  ensureSB();
+  // Mark as connected if we have a client
+  if(_sb && !localStorage.getItem('sb_connected')) localStorage.setItem('sb_connected','1');
+  const alreadyConnected = !!_sb;
 
   // Step 2 — super admin IIFE already seeded localStorage above
   const localUsers = S.get('users',[]);
