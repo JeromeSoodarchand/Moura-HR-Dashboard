@@ -12241,8 +12241,8 @@ async function dbGetEmployees(){
   const _localEmps = getData('employees');
   if(!sbReady()) return _localEmps;
   try{
-    const {data,error}=await _sb.from('employees').select('*').order('created_at',{ascending:false});
-    if(error){console.error('dbGetEmployees error:',error);return _cache.emps||[];}
+    const {data,error}=await _sb.from('employees').select('*').order('id',{ascending:false});
+    if(error){console.error('dbGetEmployees error:',error);toast('DB error: '+JSON.stringify(error),'error');return _cache.emps||[];}
     const fetched = data.map(rowToEmp);
     // Sync pinHash + all fields to localStorage so PIN login works offline
     const local = getData('employees');
@@ -12416,7 +12416,7 @@ async function dbGetAssignments(){
   ensureSB();
   if(!sbReady()) return [];
   try{
-    const {data,error}=await _sb.from('training_assignments').select('*').order('created_at',{ascending:false});
+    const {data,error}=await _sb.from('training_assignments').select('*').order('id',{ascending:false});
     if(error){console.error('dbGetAssignments error:',error);return getData('trainingAssignments');}
     return data.map(rowToAsgn);
   } catch(err){ console.error('dbGetAssignments exception:',err);return getData('trainingAssignments'); }
@@ -14445,7 +14445,6 @@ function _genEmpNo(){
 }
 
 function submitAdd(){
-  toast('Saving...','success');
   const name=(document.getElementById('fn')?.value||'').trim();
   const email=(document.getElementById('fe')?.value||'').trim();
   const phone=normalisePhone(document.getElementById('fph').value);
@@ -14478,7 +14477,6 @@ function submitAdd(){
     isSeniorHOD:document.getElementById('fis-senior-hod')?.checked||false,
     pinHash:(()=>{const p=(document.getElementById('femp-pin')?.value||'').replace(/[^0-9]/g,'');return p.length===4?simpleHash(p):null;})(),
   };
-  toast('Calling dbSaveEmployee...','success');
   showLoader('Saving…');
   dbSaveEmployee(newEmp).then(async saved=>{
     hideLoader();
@@ -18041,7 +18039,7 @@ async function dbGetLeaveRequests(){
   const local = _leaveRequests || S.get('leaveRequests', []);
   if(!sbReady()) return local;
   try{
-    const {data,error} = await _sb.from('leave_requests').select('*').order('created_at',{ascending:false});
+    const {data,error} = await _sb.from('leave_requests').select('*').order('id',{ascending:false});
     if(error){ console.error('dbGetLeaveRequests:', error); return local; }
     const reqs = data.map(r=>({
       id:r.id, empId:r.emp_id, type:r.type, fromDate:r.from_date, toDate:r.to_date,
