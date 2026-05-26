@@ -6463,31 +6463,33 @@ async function dbSaveLocation(loc){
   _attLocations = local;
   if(!sbReady()) return loc;
   try{
-    const row = {name:loc.name,qr_code:loc.qrCode,address:loc.address||''};
+    const row = {name:loc.name, qr_code:loc.qrCode, address:loc.address||''};
     if(loc.id && String(loc.id).length < 13){
+      // Update existing
       const {error} = await _sb.from('att_locations').update(row).eq('id',loc.id);
-      if(error){ console.error('Update location error:',error); }
+      if(error) console.warn('Update location error:', error.message);
     } else {
-      delete row.id;
-      const {data,error} = await _sb.from('att_locations').insert(row).select();
-      if(error){ console.error('Insert location error:',error); }
-      else if(data){
-        const locData = Array.isArray(data) ? data[0] : data;
-        if(!locData) return loc;
-        loc.id = locData.id;
-        // Regenerate QR code with the real DB id so scanner can match by id
-        loc.qrCode = 'loc:' + data.id + ':' + loc.name.replace(/[\r\n]/g,'');
-        // Update localStorage with the corrected record (real id + qrCode)
-        const local2 = S.get('attLocations', []);
-        const j = local2.findIndex(l=>String(l.id)===String(data.id)||l.qrCode===('loc:'+Date.now()+':'+encodeURIComponent(loc.name)));
-        // Find by temp timestamp id (the one we inserted with)
-        const k = local2.findIndex(l=>l.qrCode&&l.qrCode.includes(':'+encodeURIComponent(loc.name))&&String(l.id).length>=13);
-        if(k>=0){ local2[k]=loc; S.set('attLocations',local2); _attLocations=local2; }
-        // Also update the qr_code in Supabase with the real id-based QR
-        await _sb.from('att_locations').update({qr_code:loc.qrCode}).eq('id',data.id);
+      // Insert new
+      const {data, error} = await _sb.from('att_locations').insert(row).select();
+      if(error){
+        console.warn('Insert location error:', error.message);
+      } else {
+        const saved = Array.isArray(data) ? data[0] : data;
+        if(saved && saved.id){
+          loc.id = saved.id;
+          loc.qrCode = 'loc:' + saved.id + ':' + loc.name;
+          // Update cache with real id and qrCode
+          const locs = S.get('attLocations', []);
+          const idx = locs.findIndex(l => String(l.id).length >= 13); // find temp timestamp id
+          if(idx >= 0){ locs[idx] = loc; } else { locs.push(loc); }
+          S.set('attLocations', locs);
+          _attLocations = locs;
+          // Update qr_code in Supabase with real id
+          await _sb.from('att_locations').update({qr_code: loc.qrCode}).eq('id', saved.id);
+        }
       }
     }
-  } catch(e){ console.error('dbSaveLocation exception:', e); }
+  } catch(e){ console.warn('dbSaveLocation exception:', e.message); }
   return loc;
 }
 
