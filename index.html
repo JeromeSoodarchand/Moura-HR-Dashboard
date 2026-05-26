@@ -17828,48 +17828,26 @@ async function auditCreateOne(empId){
 }
 
 async function auditCreateAll(){
-  if(!confirm('Create accounts for all '+missing.length+' employees and set their PINs?')) return;
-  closeModal();
-  const emps   = getScopedEmps().filter(e=>e.status!=='offboarded');
-  const users  = getUsers();
-  const missing = emps.filter(emp=>{
-    const user = findUserForEmployee(emp, users);
-    return !user && emp.phone;
-  });
-  if(!missing.length){toast('No employees without accounts.','info');return;}
+  const emps  = getScopedEmps().filter(e=>e.status!=='offboarded');
+  const users = getUsers();
+  // Find employees without any linked user account
+  const missing = emps.filter(emp=>!findUserForEmployee(emp, users));
+  if(!missing.length){ toast('All employees already have accounts.','info'); return; }
+  if(!confirm('Create accounts for '+missing.length+' employee(s)?')) return;
 
-  showLoader('Creating '+missing.length+' accounts…');
-  const created = [];
+  showLoader('Creating accounts…');
+  let created = 0;
   for(const emp of missing){
-    const existing = getUsers().find(u=>findUserForEmployee(emp,[u]));
-    if(existing){ created.push(existing); continue; }
-    const username  = phoneToUsername(emp.phone);
-    const setupToken= generateSetupToken();
-    const newUser = {
-      id:Date.now()+Math.random(), name:emp.name, username,
-      phone:emp.phone, email:emp.email||'',
-      role:'viewer', active:true,
-      createdAt:new Date().toISOString(),
-      passwordHash:'', setupToken, setupDone:false,
-      empId: emp.id
-    };
     try{
-      const saved = await dbSaveUser(newUser);
-      const u = saved||newUser;
-      if(!_userCache.find(x=>x.username===u.username)) _userCache.push(u);
-      // Link back to employee
-      const empObj = gE(emp.id);
-      if(empObj){ empObj.userId=u.id; dbSaveEmployee(empObj).catch(()=>{}); }
-      created.push(u);
-    } catch(err){ console.error('Create user error for '+emp.name, err); }
+      await autoCreateAccountForNewEmployee(emp);
+      created++;
+    } catch(err){ console.error('Create account error for '+emp.name, err); }
   }
-  S.set('users', _userCache);
   hideLoader();
-  dbAddAudit(CU.name,'Bulk account creation: '+created.length+' accounts created');
-  if(created.length){
-    toast(created.length+' accounts created. Set PINs for each employee.','success');
-    setTimeout(openAccountAudit, 300);
-  } else toast('No new accounts created.','info');
+  await dbGetUsers(); // reload users from Supabase
+  dbAddAudit(CU.name,'Bulk account creation: '+created+' accounts created');
+  toast(created+' account(s) created.','success');
+  setTimeout(renderUserMgmt, 300);
 }
 
 function auditResend(userJson){
