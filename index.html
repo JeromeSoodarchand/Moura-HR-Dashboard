@@ -11213,7 +11213,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         <button class="fb" onclick="setEF('onboarding',this)">Onboarding</button>
         <button class="fb" onclick="setEF('offboarded',this)">Offboarded</button>
       </div>
-      <div class="card"><table><thead><tr><th>Employee</th><th>Department</th><th>Role</th><th>Start</th><th>Salary</th><th>Status</th><th>Daily Rate</th><th>HR Account</th><th>Events</th><th></th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
+      <div class="card"><table><thead><tr><th>ID</th><th>Employee</th><th>Department</th><th>Role</th><th>Start</th><th>Salary</th><th>Status</th><th>HR Account</th><th>Events</th><th></th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
     </div>
 
     <!-- ONBOARDING -->
@@ -11948,7 +11948,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
 <div class="toast-container" id="tc"></div>
 
 <script>
-// ─── SUPABAS// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
+// ─── S// ─── SUPABAS// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
 const _APP_SECRET = 'MHR_9A_wRcm-HPdnuZCbJ4NXMZJxjuTYceubJUlXqyqefYA';
 const _SB_URL = 'https://mstyeqlabtjvkbnoutit.supabase.co';
@@ -12416,7 +12416,7 @@ async function dbGetUsers(){
   ensureSB();
   if(!sbReady()) return [];
   try{
-  const {data,error}=await _sb.from('hr_users').select('*').order('created_at');
+  const {data,error}=await _sb.from('hr_users').select('*').order('id',{ascending:true});
   if(error){console.error(error);return S.get('users',[]);}
   const users = data.map(r=>({
     id:r.id,name:r.name,username:r.username,
@@ -13596,10 +13596,11 @@ function renderEmployees(){
     const c=aColor(emp.name),cnt=gEE(emp.id).length;
     const sal=showSal&&emp.salary?fCur(emp.salary.amount,emp.salary.currency):'•••••';
     return`<tr onclick="${emp.id?'viewEmp('+emp.id+')':''}" style="cursor:pointer${emp.id?'':';opacity:.6;cursor:not-allowed'}">
-      <td><div class="emp-cell"><div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div><div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.empNo?'<span style="font-family:monospace;font-size:10.5px;color:var(--text3);margin-right:4px">'+ emp.empNo+'</span>':''}${emp.email||emp.phone||''}</div></div></div></td>
+      <td style="font-family:monospace;font-size:12px;color:var(--text3);white-space:nowrap">${emp.empNo||'—'}</td>
+      <td><div class="emp-cell"><div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div><div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.email||emp.phone||''}</div></div></div></td>
       <td>${emp.dept}</td><td>${emp.role}</td><td>${fDate(emp.start)}</td>
       <td style="font-weight:500">${sal}</td><td>${sB(emp.status)}${emp.attendanceEditor?'<span class="badge" style="background:#1E144520;color:#1E1445;margin-left:4px" title="Attendance Editor">&#x1F4CA; Att. Editor</span>':''}${emp.isHOD?'<span class="badge" style="background:#BA751720;color:#BA7517;margin-left:4px">HOD</span>':''}${emp.isSeniorHOD?'<span class="badge" style="background:#7F77DD20;color:#7F77DD;margin-left:4px">Sr. HOD</span>':''}</td>
-      <td style="font-size:12px;font-weight:500">'—'</td>
+
       <td style="font-size:12px">${(()=>{
         const u=getUsers().find(u=>u.empId&&String(u.empId)===String(emp.id));
         if(u) return `<span class="badge" style="background:#1E144520;color:#1E1445">&#10003; ${u.role[0].toUpperCase()+u.role.slice(1)}</span>`;
@@ -13864,7 +13865,8 @@ function renderAnalytics(){
 }
 
 // ─── USER MANAGEMENT ─────────────────────────────────────────────────────────
-function renderUserMgmt(){
+async function renderUserMgmt(){
+  if(sbReady()){ try{ await dbGetUsers(); }catch(e){} }
   const users=getUsers();
   document.getElementById('user-count-label').textContent=users.length+' user'+(users.length!==1?'s':'');
   if(users.length===0){
@@ -14508,17 +14510,24 @@ function submitAdd(){
       employeeName:name, role:newEmp.role, dept:newEmp.dept,
       startDate:newEmp.start, manager:newEmp.manager, addedBy:CU.name
     });
-    autoCreateAccountForNewEmployee(s).catch(e=>console.error('Auto-account error:',e));
     closeModal();
-    // Reload employees from Supabase to get real ids
+    // Reload employees from Supabase to get real ids BEFORE creating account
     try{
       const fresh = await dbGetEmployees();
       _cache.emps = fresh;
       saveEmps(fresh);
+      // Find the newly saved employee with real DB id
+      const realEmp = fresh.find(e=>
+        (emp.email && e.email && e.email.toLowerCase()===emp.email.toLowerCase()) ||
+        (emp.name && e.name && e.name.toLowerCase()===emp.name.toLowerCase())
+      ) || s;
+      // Now create account with real emp id
+      autoCreateAccountForNewEmployee(realEmp).catch(e=>console.error('Auto-account error:',e));
     }catch(e){
       _cache.emps = _cache.emps.filter(e=>String(e.id)!==String(newEmp.id));
       _cache.emps.unshift(s);
       saveEmps(_cache.emps);
+      autoCreateAccountForNewEmployee(s).catch(e=>console.error('Auto-account error:',e));
     }
     renderDashboard();
     if(document.getElementById('page-employees')?.classList.contains('active')) renderEmployees();
@@ -22028,7 +22037,8 @@ async function autoCreateAccountForNewEmployee(emp){
   if(existing){ console.log('Account already exists for', emp.name); return; }
 
   // Generate employee ID string e.g. EMP007
-  const empIdStr = 'EMP' + String(emp.id).slice(-6).padStart(3,'0');
+  // Use empNo if already assigned, otherwise generate from real DB id
+  const empIdStr = emp.empNo || ('EMP' + String(emp.id).padStart(3,'0'));
 
   // Role based on HOD flags
   const role = (emp.isHOD || emp.isSeniorHOD) ? 'manager' : 'viewer';
@@ -22762,7 +22772,7 @@ function renderUserAuditSummary(){
   }
   el.innerHTML = html;
 }
-</script>
+>
 
 <!-- KIOSK / PIN SCREEN -->
 <div id="kiosk-screen" style="display:none;position:fixed;inset:0;z-index:8000;background:linear-gradient(160deg,#0A0620 0%,#1E1445 60%,#2D1B6B 100%);display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;font-family:inherit">
