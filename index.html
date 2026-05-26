@@ -12279,7 +12279,9 @@ async function dbSaveEmployee(emp){
     // Remove nulls
     Object.keys(row).forEach(k=>{ if(row[k]===undefined||row[k]===null) delete row[k]; });
 
+    alert('Attempting insert for: ' + emp.name);
     const {error} = await _sb.from('employees').insert(row);
+    alert('Insert done. error=' + JSON.stringify(error));
     if(error){
       toast('Save error: ' + error.message, 'error');
       console.error('Insert employee error:', error);
