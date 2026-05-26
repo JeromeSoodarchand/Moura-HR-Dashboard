@@ -11065,176 +11065,140 @@ async function mobileQRClockIn(empId, locationId, locationName){
 }
 
 async function startQRCamera(empId, locationId, locationName){
-  // Check for file:// protocol — getUserMedia blocked on file:// on iOS/Chrome
-  if(window.location.protocol === 'file:'){
-    const mb2 = document.getElementById('mbox');
-    if(mb2){
-      mb2.innerHTML = `
-        <div class="modal-title">Camera Not Available
-          <button class="modal-close" onclick="stopQRScan()">✕</button>
-        </div>
-        <div style="padding:16px;text-align:center">
-          <div style="font-size:40px;margin-bottom:12px">⚠️</div>
-          <div style="font-size:14px;font-weight:600;margin-bottom:8px">Camera blocked by browser</div>
-          <div style="font-size:13px;color:var(--text3);margin-bottom:16px;line-height:1.6">
-            Camera access requires the app to be served over <strong>HTTPS</strong>.<br>
-            Opening the HTML file directly (<code>file://</code>) blocks camera on iOS and Chrome.
-          </div>
-          <div style="font-size:12px;color:var(--text3);background:var(--bg2);border-radius:8px;padding:10px;text-align:left">
-            <strong>To enable QR scanning:</strong><br>
-            1. Host the file on a web server (Netlify, GitHub Pages etc)<br>
-            2. Or use a local server: <code>npx serve .</code><br>
-            3. Access via <code>https://</code> URL
-          </div>
-        </div>
-        <div class="mf">
-          <button class="btn btn-primary" onclick="stopQRScan()">Close</button>
-        </div>`;
-    }
-    document.getElementById('mb')?.classList.add('open');
-    return;
-  }
-  if(!navigator.mediaDevices?.getUserMedia){
-    toast('Camera not available on this device.','error');
-    stopQRScan();
-    return;
-  }
-
   const mb = document.getElementById('mbox');
   if(!mb) return;
-  mb.innerHTML = `
-    <div class="modal-title" style="margin-bottom:10px">
-      📷 Scanning...
-      <button class="modal-close" onclick="stopQRScan()">✕</button>
-    </div>
-    <div style="text-align:center">
-      <div style="position:relative;display:inline-block;width:100%;max-width:340px">
-        <video id="qr-video" style="width:100%;border-radius:10px;background:#000;display:block" autoplay playsinline muted></video>
-        <canvas id="qr-canvas" style="display:none"></canvas>
-        <div style="position:absolute;inset:0;pointer-events:none;border-radius:10px;overflow:hidden">
-          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:65%;padding-top:65%;border:3px solid #00ff88;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.55)"></div>
-        </div>
-      </div>
-      <div id="qr-status" style="margin-top:10px;font-size:13px;color:var(--text2);min-height:40px;line-height:1.5;padding:0 8px">
-        ⏳ Starting camera...
-      </div>
-      <div id="qr-debug" style="margin-top:4px;font-size:10px;color:var(--text3);font-family:monospace;word-break:break-all;padding:0 8px;min-height:14px"></div>
-    </div>
-    <div class="mf" style="margin-top:10px">
-      <button class="btn" onclick="stopQRScan()">Cancel</button>
-    </div>`;
-
-  // Show protocol info for debugging
-  const dbgEl = document.getElementById('qr-status');
-  if(dbgEl) dbgEl.textContent = 'Protocol: ' + window.location.protocol + ' | Camera: ' + (!!navigator.mediaDevices);
 
   // Ensure locations loaded
   if(!_attLocations||!_attLocations.length){
     try{ _attLocations = await dbGetLocations(); }catch(e){}
   }
 
-  let stream = null;
-  let scanning = true;
-  let lastScan = '';
+  mb.innerHTML = `
+    <div class="modal-title" style="margin-bottom:10px">
+      Scanning QR Code
+      <button class="modal-close" onclick="stopQRScan()">✕</button>
+    </div>
+    <div style="text-align:center;padding:8px">
+      <video id="qr-video" style="width:100%;max-width:340px;border-radius:10px;background:#000;display:block;margin:0 auto" autoplay playsinline muted></video>
+      <canvas id="qr-canvas" style="width:100%;max-width:340px;display:block;margin:4px auto;border:1px solid #eee;border-radius:6px"></canvas>
+      <div id="qr-status" style="margin-top:8px;font-size:13px;color:var(--text2);min-height:40px;padding:0 8px">
+        Starting camera...
+      </div>
+      <div id="qr-debug" style="font-size:10px;color:#aaa;margin-top:4px;word-break:break-all;padding:0 8px"></div>
+    </div>
+    <div class="mf" style="margin-top:10px">
+      <button class="btn" onclick="stopQRScan()">Cancel</button>
+    </div>`;
 
+  const statusEl = document.getElementById('qr-status');
+  const debugEl  = document.getElementById('qr-debug');
+
+  // Check camera available
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    if(statusEl) statusEl.textContent = 'Camera not available on this device/browser.';
+    return;
+  }
+
+  let stream = null;
   try{
     stream = await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
+      video:{ facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} }
     });
-    window._qrStream = stream;
-    const video = document.getElementById('qr-video');
-    if(!video){ stopQRScan(); return; }
-
-    // Attach stream first, then play (important for iOS Safari)
-    video.srcObject = stream;
-    video.setAttribute('playsinline',''); // extra insurance for iOS
-    video.setAttribute('muted','');
-
-    // Wait for video to be ready before starting scan
-    await new Promise((resolve) => {
-      video.onloadedmetadata = () => { video.play().then(resolve).catch(resolve); };
-      video.onerror = resolve;
-      // Fallback timeout in case events don't fire
-      setTimeout(resolve, 2000);
-    });
-
-    const statusEl  = document.getElementById('qr-status');
-    const debugEl   = document.getElementById('qr-debug');
-    if(statusEl) statusEl.textContent = 'Point camera at QR code — align inside the green box';
-
-    const tryMatch = (raw) => {
-      if(!raw) return null;
-      const locs = _attLocations||[];
-      // Direct QR match
-      let m = locs.find(l=>l.qrCode===raw);
-      if(m) return m;
-      // loc: format
-      if(raw.startsWith('loc:')){
-        const parts = raw.split(':');
-        const sid = parts[1];
-        const sname = parts.slice(2).join(':');
-        m = locs.find(l=>String(l.id)===String(sid));
-        if(m) return m;
-        m = locs.find(l=>l.name&&sname&&l.name.trim().toLowerCase()===sname.trim().toLowerCase());
-        if(m) return m;
-        // Return synthetic location even if not in list
-        return {id:sid, name:sname, qrCode:raw};
-      }
-      // Exact id match
-      m = locs.find(l=>String(l.id)===raw);
-      if(m) return m;
-      return null;
-    };
-
-    const doScan = () => {
-      if(!scanning) return;
-      const v = document.getElementById('qr-video');
-      const cv = document.getElementById('qr-canvas');
-      if(!v||!cv){ scanning=false; clearInterval(window._qrScanInterval); return; }
-      if(v.readyState < 2 || v.videoWidth===0) return;
-      cv.width=v.videoWidth; cv.height=v.videoHeight;
-      const ctx=cv.getContext('2d');
-      try{ ctx.drawImage(v,0,0); }catch(e){ return; }
-
-      let raw = null;
-      if(typeof jsQR==='function'){
-        try{
-          const img=ctx.getImageData(0,0,cv.width,cv.height);
-          const code=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
-          if(code) raw=code.data;
-        }catch(e){}
-      }
-
-      if(raw && raw!==lastScan){
-        lastScan=raw;
-        if(debugEl) debugEl.textContent='Scanned: '+raw;
-        const matched=tryMatch(raw);
-        if(matched){
-          scanning=false;
-          clearInterval(window._qrScanInterval);
-          stream.getTracks().forEach(t=>t.stop());
-          window._qrStream=null;
-          if(statusEl) statusEl.innerHTML='✅ <strong>'+matched.name+'</strong> recognised!';
-          setTimeout(()=>{ stopQRScan(); mobileConfirmClockIn(empId,matched.id,matched.name); },400);
-          return;
-        } else {
-          if(statusEl) statusEl.textContent='⚠ Code found but not a location QR. Try again.';
-          setTimeout(()=>{
-            if(statusEl) statusEl.textContent='Point camera at QR code — align inside the green box';
-          },2000);
-          lastScan=''; // allow retry
-        }
-      }
-      // interval handles looping
-    };
-    window._qrScanInterval = setInterval(doScan, 300);
-
-  }catch(e){
-    const statusEl=document.getElementById('qr-status');
-    if(statusEl) statusEl.innerHTML='❌ Camera access denied.<br><span style="font-size:11px;color:var(--text3)">Allow camera in browser settings and try again.</span>';
-    console.error('Camera error:',e);
+  }catch(err){
+    if(statusEl) statusEl.textContent = 'Camera permission denied. Please allow camera access.';
+    return;
   }
+
+  window._qrStream = stream;
+  const video = document.getElementById('qr-video');
+  const canvas = document.getElementById('qr-canvas');
+  if(!video || !canvas){ stream.getTracks().forEach(t=>t.stop()); return; }
+
+  video.srcObject = stream;
+  video.play().catch(()=>{});
+
+  if(statusEl) statusEl.textContent = 'Camera ready — point at QR code';
+
+  const tryMatch = (raw) => {
+    if(!raw) return null;
+    const locs = _attLocations||[];
+    let m = locs.find(l=>l.qrCode===raw);
+    if(m) return m;
+    if(raw.startsWith('loc:')){
+      const parts = raw.split(':');
+      const sid = parts[1];
+      const sname = parts.slice(2).join(':');
+      m = locs.find(l=>String(l.id)===String(sid));
+      if(m) return m;
+      m = locs.find(l=>l.name&&sname&&l.name.toLowerCase()===sname.toLowerCase());
+      if(m) return m;
+      return {id:sid, name:sname||locationName, qrCode:raw};
+    }
+    return locs.find(l=>String(l.id)===raw) || null;
+  };
+
+  let scanning = true;
+  let lastRaw = '';
+  let frameCount = 0;
+
+  const doScan = () => {
+    if(!scanning) return;
+    const v = document.getElementById('qr-video');
+    const cv = document.getElementById('qr-canvas');
+    if(!v || !cv){ scanning=false; clearInterval(window._qrScanInterval); return; }
+
+    frameCount++;
+    const w = v.videoWidth || 640;
+    const h = v.videoHeight || 480;
+    cv.width = w;
+    cv.height = h;
+
+    const ctx = cv.getContext('2d');
+    try{ ctx.drawImage(v, 0, 0, w, h); }catch(e){ 
+      if(debugEl) debugEl.textContent = 'Draw error: ' + e.message;
+      return; 
+    }
+
+    // Update debug EVERY frame
+    if(debugEl) debugEl.textContent = 'f:' + frameCount + ' ' + w + 'x' + h + ' jsQR:' + (typeof jsQR);
+
+    if(typeof jsQR !== 'function'){
+      if(statusEl) statusEl.textContent = 'jsQR not loaded!';
+      return;
+    }
+
+    let raw = null;
+    try{
+      const img = ctx.getImageData(0, 0, w, h);
+      const code = jsQR(img.data, img.width, img.height, {inversionAttempts:'attemptBoth'});
+      if(code){ raw = code.data; }
+      if(debugEl) debugEl.textContent = 'f:' + frameCount + ' ' + w + 'x' + h + (raw?' GOT:'+raw:' scanning...');
+    }catch(e){
+      if(debugEl) debugEl.textContent = 'jsQR error: ' + e.message;
+    }
+
+    if(raw && raw !== lastRaw){
+      lastRaw = raw;
+      if(debugEl) debugEl.textContent = 'Read: ' + raw;
+      const matched = tryMatch(raw);
+      if(matched){
+        scanning = false;
+        clearInterval(window._qrScanInterval);
+        stream.getTracks().forEach(t=>t.stop());
+        window._qrStream = null;
+        if(statusEl) statusEl.innerHTML = '✅ <strong>' + matched.name + '</strong>';
+        setTimeout(()=>{ stopQRScan(); mobileConfirmClockIn(empId, matched.id, matched.name); }, 500);
+      } else {
+        if(statusEl) statusEl.textContent = 'Code read but not a location QR. Try again.';
+        setTimeout(()=>{ lastRaw=''; if(statusEl) statusEl.textContent='Point camera at QR code'; }, 2000);
+      }
+    }
+  };
+
+  // Start scanning with setInterval
+  window._qrScanInterval = setInterval(doScan, 300);
 }
+
 
 
 async function _handleQRData(scannedData, empId){
