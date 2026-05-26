@@ -80,7 +80,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .sb-user-info{flex:1;min-width:0}
 .sb-user-name{font-size:11.5px;font-weight:500;color:rgba(255,255,255,0.78);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sb-user-role{font-size:9.5px;color:rgba(255,255,255,0.28);margin-top:1px}
-.sb-logout{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;padding:6px;margin-top:4px;border-radius:7px;border:1px solid rgba(255,255,255,0.08);background:transparent;color:rgba(255,255,255,0.32);font-size:11px;font-family:inherit;cursor:pointer;transition:all .15s}
+.sb-logout{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 6px;margin-top:4px;border-radius:7px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.6);font-size:11px;font-family:inherit;cursor:pointer;transition:all .15s}
 .sb-logout:hover{background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.65);border-color:rgba(255,255,255,0.14)}
 .sb-logout svg{width:12px;height:12px}
 
@@ -399,6 +399,8 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
   .nav-tab.active::before{display:none}
   .sb-user{justify-content:center;padding:8px 0}
   .sb-logout .sb-logout-text{display:none}
+  .sb-logout{padding:10px 6px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.08)}
+  .sb-logout svg{width:20px;height:20px}
 }
 @media(max-width:768px){.metrics,.g2,.g3,.kanban,.ig{grid-template-columns:1fr 1fr}}
 @media(max-width:500px){.metrics,.ig{grid-template-columns:1fr}}
@@ -1825,7 +1827,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
   </div>
 </div>
 
-<div class="modal-backdrop" id="mb" onclick="if(event.target===this)closeModal()">
+<div class="modal-backdrop"<div class="modal-backdrop" id="mb" onclick="if(event.target===this)closeModal()">
   <div class="modal-box" id="mbox"></div>
 </div>
 <div class="toast-container" id="tc"></div>
@@ -10973,6 +10975,35 @@ async function mobileQRClockIn(empId, locationId, locationName){
 }
 
 async function startQRCamera(empId, locationId, locationName){
+  // Check for file:// protocol — getUserMedia blocked on file:// on iOS/Chrome
+  if(window.location.protocol === 'file:'){
+    const mb2 = document.getElementById('mbox');
+    if(mb2){
+      mb2.innerHTML = `
+        <div class="modal-title">Camera Not Available
+          <button class="modal-close" onclick="stopQRScan()">✕</button>
+        </div>
+        <div style="padding:16px;text-align:center">
+          <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:8px">Camera blocked by browser</div>
+          <div style="font-size:13px;color:var(--text3);margin-bottom:16px;line-height:1.6">
+            Camera access requires the app to be served over <strong>HTTPS</strong>.<br>
+            Opening the HTML file directly (<code>file://</code>) blocks camera on iOS and Chrome.
+          </div>
+          <div style="font-size:12px;color:var(--text3);background:var(--bg2);border-radius:8px;padding:10px;text-align:left">
+            <strong>To enable QR scanning:</strong><br>
+            1. Host the file on a web server (Netlify, GitHub Pages etc)<br>
+            2. Or use a local server: <code>npx serve .</code><br>
+            3. Access via <code>https://</code> URL
+          </div>
+        </div>
+        <div class="mf">
+          <button class="btn btn-primary" onclick="stopQRScan()">Close</button>
+        </div>`;
+    }
+    document.getElementById('mb')?.classList.add('open');
+    return;
+  }
   if(!navigator.mediaDevices?.getUserMedia){
     toast('Camera not available on this device.','error');
     stopQRScan();
@@ -12549,11 +12580,6 @@ function renderUserAuditSummary(){
   }
   el.innerHTML = html;
 }
-
-
-
-
-
 </script>
 
 <!-- KIOSK / PIN SCREEN -->
