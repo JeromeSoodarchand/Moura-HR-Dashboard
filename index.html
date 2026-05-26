@@ -12283,7 +12283,9 @@ async function dbSaveEmployee(emp){
       delete row.id;
       // Remove undefined/null values that Supabase may reject
       Object.keys(row).forEach(k=>{if(row[k]===undefined||row[k]===null)delete row[k];});
+      console.log('Inserting employee row:', JSON.stringify(Object.keys(row)));
       let {data:_insRaw,error}=await _sb.from('employees').insert(row).select();
+      console.log('Insert result:', JSON.stringify({data:_insRaw, error}));
       let data=Array.isArray(_insRaw)?_insRaw[0]:_insRaw;
       if(error){
         // Retry with safe columns only
@@ -12683,6 +12685,28 @@ function showSetupScreen(){
   if(setupSec) setupSec.style.display='block';
 }
 
+
+// Assign EMP numbers to employees that don't have one yet
+async function assignMissingEmpNos(){
+  const emps = getEmps();
+  const needsNo = emps.filter(e => !e.empNo);
+  if(!needsNo.length) return;
+  // Get existing numbers to avoid conflicts
+  const existing = emps.filter(e=>e.empNo).map(e=>parseInt((e.empNo||'').replace(/[^0-9]/g,''))).filter(n=>!isNaN(n));
+  let next = existing.length ? Math.max(...existing) + 1 : 1;
+  for(const emp of needsNo){
+    emp.empNo = 'EMP' + String(next).padStart(3,'0');
+    next++;
+    // Save to Supabase
+    if(sbReady() && String(emp.id).length < 13){
+      await _sb.from('employees').update({emp_no: emp.empNo, updated_at: new Date().toISOString()}).eq('id', emp.id);
+    }
+  }
+  // Update cache
+  saveEmps(emps);
+  _cache.emps = emps;
+}
+
 async function boot(){
   // Step 1 — init Supabase from hardcoded credentials (always available)
   ensureSB();
@@ -12735,6 +12759,7 @@ async function boot(){
       const _app=document.getElementById('app');
       _app.style.display='flex';_app.style.flexDirection='row';
       applyPermissions();applyAttEditorPerm();applyStoredBranding();initInactivityTracking();
+  assignMissingEmpNos().catch(()=>{});
       // Route same as login — but if HOD was on HR platform, go there directly
       const _rEmp = CU.empId ? gE(CU.empId) : null;
       const _rCM  = _rEmp?.clockMode||'kiosk';
@@ -14405,7 +14430,7 @@ function _genEmpNo(){
   const existing = getEmps().map(e=>e.empNo).filter(Boolean);
   const nums = existing.map(n=>parseInt((n||'').replace(/[^0-9]/g,''))).filter(n=>!isNaN(n));
   const next = nums.length ? Math.max(...nums) + 1 : 1;
-  return 'EMP-' + String(next).padStart(4, '0');
+  return 'EMP' + String(next).padStart(3, '0');
 }
 
 function submitAdd(){
