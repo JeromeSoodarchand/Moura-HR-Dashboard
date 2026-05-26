@@ -11124,6 +11124,10 @@ async function startQRCamera(empId, locationId, locationName){
       <button class="btn" onclick="stopQRScan()">Cancel</button>
     </div>`;
 
+  // Show protocol info for debugging
+  const dbgEl = document.getElementById('qr-status');
+  if(dbgEl) dbgEl.textContent = 'Protocol: ' + window.location.protocol + ' | Camera: ' + (!!navigator.mediaDevices);
+
   // Ensure locations loaded
   if(!_attLocations||!_attLocations.length){
     try{ _attLocations = await dbGetLocations(); }catch(e){}
