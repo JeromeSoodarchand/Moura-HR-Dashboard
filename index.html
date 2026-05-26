@@ -12251,7 +12251,8 @@ async function dbSaveEmployee(emp){
   try{
     const row=empToRow(emp);
     if(emp.id && String(emp.id).length<13){ // numeric DB id = update (shorter than JS timestamp)
-      let {data,error}=await _sb.from('employees').update(row).eq('id',emp.id).select();
+      let {data:_updRaw,error}=await _sb.from('employees').update(row).eq('id',emp.id).select();
+      let data=Array.isArray(_updRaw)?_updRaw[0]:_updRaw;
       if(error){
         // Retry with minimal safe columns only (handles missing columns in schema)
         const safeRow = {
@@ -12282,7 +12283,8 @@ async function dbSaveEmployee(emp){
       delete row.id;
       // Remove undefined/null values that Supabase may reject
       Object.keys(row).forEach(k=>{if(row[k]===undefined||row[k]===null)delete row[k];});
-      let {data,error}=await _sb.from('employees').insert(row).select();
+      let {data:_insRaw,error}=await _sb.from('employees').insert(row).select();
+      let data=Array.isArray(_insRaw)?_insRaw[0]:_insRaw;
       if(error){
         // Retry with safe columns only
         const safeInsert = {
@@ -12511,9 +12513,9 @@ async function dbSetSetting(key,value){
 // ── ROW MAPPERS ──
 function rowToEmp(r){
   return{id:r.id,empNo:r.emp_no||null,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
-    salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:r.salary_history||[]}:null,dailyRate:r.daily_rate?{amount:parseFloat(r.daily_rate),currency:r.daily_rate_currency||'MUR',notes:r.daily_rate_notes||''}:null,
-    checklist:r.checklist||{},offChecklist:r.off_checklist||{},lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
-    photoUrl:r.photo_url||null,files:r.files||[],clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:r.att_editor||false,isHOD:r.is_hod||false,isSeniorHOD:r.is_senior_hod||false};
+    salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:typeof r.salary_history==='string'?JSON.parse(r.salary_history||'[]'):(r.salary_history||[])}:null,dailyRate:r.daily_rate?{amount:parseFloat(r.daily_rate),currency:r.daily_rate_currency||'MUR',notes:r.daily_rate_notes||''}:null,
+    checklist:typeof r.checklist==='string'?JSON.parse(r.checklist||'{}'):(r.checklist||{}),offChecklist:typeof r.off_checklist==='string'?JSON.parse(r.off_checklist||'{}'):(r.off_checklist||{}),lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
+    photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:r.att_editor||false,isHOD:r.is_hod||false,isSeniorHOD:r.is_senior_hod||false};
 }
 function empToRow(e){
   const row={
@@ -12532,14 +12534,14 @@ function empToRow(e){
     salary_frequency: e.salary?.frequency || null,
     salary_last_review:  e.salary?.lastReview  || null,
     salary_next_review:  e.salary?.nextReview   || null,
-    salary_history:  Array.isArray(e.salary?.history) ? e.salary.history : [],
+    salary_history:  JSON.stringify(Array.isArray(e.salary?.history) ? e.salary.history : []),
     daily_rate:          e.dailyRate?.amount   ?? null,
     daily_rate_currency: e.dailyRate?.currency || 'MUR',
     daily_rate_notes:    e.dailyRate?.notes    || null,
-    // JSON columns
-    checklist:     e.checklist      || {},
-    off_checklist: e.offChecklist   || {},
-    files:         Array.isArray(e.files) ? e.files : [],
+    // JSON columns — stored as text in DB, must be stringified
+    checklist:     JSON.stringify(e.checklist      || {}),
+    off_checklist: JSON.stringify(e.offChecklist   || {}),
+    files:         JSON.stringify(Array.isArray(e.files) ? e.files : []),
     // Other
     last_day:             e.lastDay             || null,
     reason:               e.reason              || null,
@@ -21182,12 +21184,17 @@ async function startQRCamera(empId, locationId, locationName){
       <button class="modal-close" onclick="stopQRScan()">✕</button>
     </div>
     <div style="text-align:center;padding:8px">
-      <video id="qr-video" style="width:100%;max-width:340px;border-radius:10px;background:#000;display:block;margin:0 auto" autoplay playsinline muted></video>
-      <canvas id="qr-canvas" style="width:100%;max-width:340px;display:block;margin:4px auto;border:1px solid #eee;border-radius:6px"></canvas>
-      <div id="qr-status" style="margin-top:8px;font-size:13px;color:var(--text2);min-height:40px;padding:0 8px">
-        Starting camera...
+      <div style="position:relative;display:inline-block;width:100%;max-width:340px">
+        <video id="qr-video" style="width:100%;border-radius:10px;background:#000;display:block" autoplay playsinline muted></video>
+        <canvas id="qr-canvas" style="display:none"></canvas>
+        <div style="position:absolute;inset:0;pointer-events:none;border-radius:10px;overflow:hidden">
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:65%;padding-top:65%;border:3px solid #00ff88;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.5)"></div>
+        </div>
       </div>
-      <div id="qr-debug" style="font-size:10px;color:#aaa;margin-top:4px;word-break:break-all;padding:0 8px"></div>
+      <div id="qr-status" style="margin-top:10px;font-size:13px;color:var(--text2);min-height:36px;padding:0 8px">
+        Point camera at QR code
+      </div>
+      <div id="qr-debug" style="display:none"></div>
     </div>
     <div class="mf" style="margin-top:10px">
       <button class="btn" onclick="stopQRScan()">Cancel</button>
