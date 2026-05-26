@@ -12515,7 +12515,7 @@ async function dbSetSetting(key,value){
 // ── ROW MAPPERS ──
 function rowToEmp(r){
   return{id:r.id,empNo:r.emp_no||null,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
-    salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:typeof r.salary_history==='string'?JSON.parse(r.salary_history||'[]'):(r.salary_history||[])}:null,dailyRate:r.daily_rate?{amount:parseFloat(r.daily_rate),currency:r.daily_rate_currency||'MUR',notes:r.daily_rate_notes||''}:null,
+    salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:typeof r.salary_history==='string'?JSON.parse(r.salary_history||'[]'):(r.salary_history||[])}:null,
     checklist:typeof r.checklist==='string'?JSON.parse(r.checklist||'{}'):(r.checklist||{}),offChecklist:typeof r.off_checklist==='string'?JSON.parse(r.off_checklist||'{}'):(r.off_checklist||{}),lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
     photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:r.att_editor||false,isHOD:r.is_hod||false,isSeniorHOD:r.is_senior_hod||false};
 }
@@ -12537,9 +12537,7 @@ function empToRow(e){
     salary_last_review:  e.salary?.lastReview  || null,
     salary_next_review:  e.salary?.nextReview   || null,
     salary_history:  JSON.stringify(Array.isArray(e.salary?.history) ? e.salary.history : []),
-    daily_rate:          e.dailyRate?.amount   ?? null,
-    daily_rate_currency: e.dailyRate?.currency || 'MUR',
-    daily_rate_notes:    e.dailyRate?.notes    || null,
+
     // JSON columns — stored as text in DB, must be stringified
     checklist:     JSON.stringify(e.checklist      || {}),
     off_checklist: JSON.stringify(e.offChecklist   || {}),
@@ -13562,9 +13560,7 @@ function renderEmployees(){
       <td><div class="emp-cell"><div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div><div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.empNo?'<span style="font-family:monospace;font-size:10.5px;color:var(--text3);margin-right:4px">'+ emp.empNo+'</span>':''}${emp.email||emp.phone||''}</div></div></div></td>
       <td>${emp.dept}</td><td>${emp.role}</td><td>${fDate(emp.start)}</td>
       <td style="font-weight:500">${sal}</td><td>${sB(emp.status)}${emp.attendanceEditor?'<span class="badge" style="background:#1E144520;color:#1E1445;margin-left:4px" title="Attendance Editor">&#x1F4CA; Att. Editor</span>':''}${emp.isHOD?'<span class="badge" style="background:#BA751720;color:#BA7517;margin-left:4px">HOD</span>':''}${emp.isSeniorHOD?'<span class="badge" style="background:#7F77DD20;color:#7F77DD;margin-left:4px">Sr. HOD</span>':''}</td>
-      <td style="font-size:12px;font-weight:500">${emp.dailyRate
-        ? fCur(emp.dailyRate.amount,emp.dailyRate.currency)+'/day'
-        : '<span style="color:var(--text3)">—</span>'}</td>
+      <td style="font-size:12px;font-weight:500">'—'</td>
       <td style="font-size:12px">${(()=>{
         const u=getUsers().find(u=>u.empId&&String(u.empId)===String(emp.id));
         if(u) return `<span class="badge" style="background:#1E144520;color:#1E1445">&#10003; ${u.role[0].toUpperCase()+u.role.slice(1)}</span>`;
@@ -13953,10 +13949,7 @@ function viewEmp(id){
       </tbody></table>
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <div style="font-size:13px;font-weight:600;margin-bottom:8px">Daily Rate</div>
-        ${emp.dailyRate
-          ? `<div class="sal-card"><div class="sal-label">Current Daily Rate</div><div class="sal-value">${fCur(emp.dailyRate.amount,emp.dailyRate.currency)}/day</div>${emp.dailyRate.notes?`<div class="sal-meta">${emp.dailyRate.notes}</div>`:''}</div>`
-          : '<div class="txs tm" style="margin-bottom:8px">No daily rate set.</div>'}
-        ${canEdit()?`<button class="btn btn-sm" onclick="closeModal();openUpdateDailyRateModal(${id})">&#9998; Update Daily Rate</button>`:''}
+                ${canEdit()?`<button class="btn btn-sm" onclick="closeModal();openUpdateDailyRateModal(${id})">&#9998; Update Daily Rate</button>`:''}
       </div>
       ${canEdit()?`<div style="margin-top:8px"><button class="btn btn-sm btn-primary" onclick="closeModal();openModal('updateSalary',${id})">Update Salary</button></div>`:''}
       `:'<div class="tm ts">No salary data.</div>'}
@@ -22126,59 +22119,9 @@ async function submitEditLeave(reqId){
 }
 
 // ── DAILY RATE MANAGEMENT ────────────────────────────────────────────────────
-function openUpdateDailyRateModal(empId){
-  if(!canEdit()){ toast('HR and Admin only.','error'); return; }
-  const emp = gE(empId);
-  if(!emp) return;
-  const dr = emp.dailyRate;
-  const mb = document.getElementById('mbox');
-  if(!mb) return;
-  mb.className = 'modal-box';
-  mb.innerHTML = `
-    <div class="modal-title">Daily Rate — ${emp.name} <button class="modal-close" onclick="closeModal()">&#x2715;</button></div>
-    ${dr ? `<div style="background:var(--bg2);border-radius:var(--radius);padding:10px 12px;margin-bottom:14px;font-size:13px">
-      Current: <strong>${fCur(dr.amount, dr.currency)} / day</strong>${dr.notes?` <span style="color:var(--text3)">· ${dr.notes}</span>`:''}
-    </div>` : '<div style="background:var(--amber-light);border-radius:var(--radius);padding:10px 12px;margin-bottom:14px;font-size:12.5px;color:var(--amber-deep)">No daily rate set yet.</div>'}
-    <div class="fr3">
-      <div class="fg" style="grid-column:span 2"><label class="fl">Daily rate amount *</label>
-        <input class="fi" id="dr-amount" type="number" step="0.01" min="0" placeholder="e.g. 1500" value="${dr?.amount||''}">
-      </div>
-      <div class="fg"><label class="fl">Currency</label>
-        <select class="fs" id="dr-currency">
-          ${['MUR','USD','EUR','GBP','AUD','CAD'].map(c=>`<option ${(dr?.currency||'MUR')===c?'selected':''}>${c}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-    <div class="fg"><label class="fl">Notes</label>
-      <input class="fi" id="dr-notes" placeholder="e.g. Includes allowances" value="${dr?.notes||''}">
-    </div>
-    <div class="mf">
-      <button class="btn" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitUpdateDailyRate(${empId})">Save</button>
-    </div>`;
-  document.getElementById('mb').classList.add('open');
-}
 
-async function submitUpdateDailyRate(empId){
-  const emp = gE(empId);
-  if(!emp) return;
-  const amount = parseFloat(document.getElementById('dr-amount')?.value);
-  if(!amount || amount <= 0){ toast('Enter a valid daily rate.','error'); return; }
-  const currency = document.getElementById('dr-currency')?.value || 'MUR';
-  const notes    = document.getElementById('dr-notes')?.value || '';
-  emp.dailyRate  = { amount, currency, notes };
-  showLoader('Saving…');
-  try{
-    await dbSaveEmployee(emp);
-    closeModal();
-    toast('Daily rate updated — ' + fCur(amount, currency) + '/day', 'success');
-    addNotif('Daily rate updated for ' + emp.name, 'info');
-    if(document.getElementById('page-employees')?.classList.contains('active')) renderEmployees();
-  } catch(e){
-    toast('Failed to save: '+(e.message||e),'error');
-  }
-  hideLoader();
-}
+
+
 
 // ── HOD SCOPE HELPERS ─────────────────────────────────────────────────────────
 // Returns the set of employee IDs the current user can see/edit
