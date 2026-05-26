@@ -2880,7 +2880,7 @@ function startEmpClockTick(){
               canvas.width=vid.videoWidth; canvas.height=vid.videoHeight;
               ctx.drawImage(vid,0,0);
               try{
-                const codes = jsQR(ctx.getImageData(0,0,canvas.width,canvas.height).data, canvas.width, canvas.height);
+                const codes = jsQR(ctx.getImageData(0,0,canvas.width,canvas.height).data, canvas.width, canvas.height, {inversionAttempts:'dontInvert'});
                 if(codes && codes.data){
                   stream.getTracks().forEach(t=>t.stop());
                   handleEmployeeQRScan(codes.data, emp);
@@ -12373,15 +12373,28 @@ async function saveHRPin(userId, empName){
 async function handleEmployeeQRScan(qrData, emp, statusElId){
   const statusEl = statusElId ? document.getElementById(statusElId) : null;
   let locationId = null, locationName = null;
+  // Ensure locations are loaded
+  if(!_attLocations||!_attLocations.length){
+    try{ _attLocations = await dbGetLocations(); }catch(e){}
+  }
   try{
     if(qrData.startsWith('loc:')){
       const parts = qrData.split(':');
-      locationId = parts[1];
-      locationName = decodeURIComponent(parts.slice(2).join(':'));
-    } else {
-      // Try to match against known locations
+      const scannedId = parts[1];
+      const scannedName = decodeURIComponent(parts.slice(2).join(':'));
+      // Match by exact QR, id, or name
       const locs = _attLocations||[];
-      const match = locs.find(l=>String(l.id)===qrData||l.qrCode===qrData);
+      const match = locs.find(l=>
+        l.qrCode===qrData ||
+        String(l.id)===String(scannedId) ||
+        (scannedName && l.name && l.name.toLowerCase()===scannedName.toLowerCase())
+      );
+      if(match){ locationId=String(match.id); locationName=match.name; }
+      else { locationId=scannedId; locationName=scannedName; }
+    } else {
+      const locs = _attLocations||[];
+      const match = locs.find(l=>String(l.id)===qrData||l.qrCode===qrData||
+        (l.name&&l.name.toLowerCase()===qrData.toLowerCase()));
       if(match){ locationId=String(match.id); locationName=match.name; }
     }
   }catch(e){}
