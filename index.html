@@ -12317,7 +12317,7 @@ async function dbDeleteEmployee(id){
   }
   try{
     // Double-check the employee exists before deleting
-    const {data:check,error:checkErr}=await _sb.from('employees').select('id').eq('id',id).single();
+    const {data:check,error:checkErr}=await _sb.from('employees').select('id').eq('id',id).limit(1);
     if(checkErr||!check) throw new Error('Employee not found in database');
     const {error}=await _sb.from('employees').delete().eq('id',id);
     if(error) throw error;
@@ -12369,7 +12369,7 @@ async function dbSaveProgram(prog){
   try{
     const row=progToRow(prog);
     Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
-    if(prog.id && String(prog.id).length<13){
+    if(prog.id && String(prog.id).length<=12){
       const {data,error}=await _sb.from('training_programs').update(row).eq('id',prog.id).select();
       if(error){console.error('Update program error:',error);throw error;}
       return data?rowToProg(data):prog;
@@ -12398,7 +12398,7 @@ async function dbSaveAssignment(asgn){
   try{
     const row=asgnToRow(asgn);
     Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
-    if(asgn.id && String(asgn.id).length<13){
+    if(asgn.id && String(asgn.id).length<=12){
       const {data,error}=await _sb.from('training_assignments').update(row).eq('id',asgn.id).select();
       if(error){console.error('Update assignment error:',error);throw error;}
       return data?rowToAsgn(data):asgn;
@@ -12540,8 +12540,8 @@ async function dbAddAudit(actor,action){
 async function dbGetSetting(key){
   if(!sbReady()) return null;
   try{
-    const {data}=await _sb.from('company_settings').select('value').eq('key',key).single();
-    return data?.value||null;
+    const {data}=await _sb.from('company_settings').select('value').eq('key',key).limit(1);
+    const _gsRow=Array.isArray(data)?data[0]:data; return _gsRow?.value||null;
   } catch(e){ console.warn('dbGetSetting error:',e); return null; }
 }
 
@@ -12735,7 +12735,7 @@ async function assignMissingEmpNos(){
     emp.empNo = 'EMP' + String(next).padStart(3,'0');
     next++;
     // Save to Supabase
-    if(sbReady() && String(emp.id).length < 13){
+    if(sbReady() && String(emp.id).length <= 12){
       await _sb.from('employees').update({emp_no: emp.empNo, updated_at: new Date().toISOString()}).eq('id', emp.id);
     }
   }
@@ -12769,14 +12769,15 @@ async function boot(){
     if(!_sessionUser && sbReady()){
       try{
         const {data} = await _sb.from('hr_users').select('*')
-          .eq('id',_savedSession.userId).eq('active',true).single();
-        if(data) _sessionUser = {
-          id:data.id,name:data.name,username:data.username,
-          email:data.email||'',phone:data.phone||'',
-          role:data.role,active:data.active,
-          passwordHash:data.password_hash,
-          empId:data.emp_id||null,
-          setupDone:data.setup_done||false
+          .eq('id',_savedSession.userId).eq('active',true).limit(1);
+        const _suRow=Array.isArray(data)?data[0]:data;
+        if(_suRow) _sessionUser = {
+          id:_suRow.id,name:_suRow.name,username:_suRow.username,
+          email:_suRow.email||'',phone:_suRow.phone||'',
+          role:_suRow.role,active:_suRow.active,
+          passwordHash:_suRow.password_hash,
+          empId:_suRow.emp_id||null,
+          setupDone:_suRow.setup_done||false
         };
       }catch(e){}
     }
@@ -14122,7 +14123,7 @@ function togCheck(id,item,val,isOff){
     }
   }
   // Persist checklist to Supabase in background (only checklist columns)
-  if(sbReady() && String(id).length < 13){ // only for DB records (not local timestamp IDs)
+  if(sbReady() && String(id).length <= 12){ // only for DB records (not local timestamp IDs)
     const cl_col = isOff ? 'off_checklist' : 'checklist';
     const cl_val = isOff ? (emp.offChecklist||{}) : (emp.checklist||{});
     _sb.from('employees').update({[cl_col]: cl_val, updated_at: new Date().toISOString()})
@@ -14467,7 +14468,7 @@ function _genEmpNo(){
   return 'EMP' + String(next).padStart(3, '0');
 }
 
-function submitAdd(){
+async function submitAdd(){
   const name=(document.getElementById('fn')?.value||'').trim();
   const email=(document.getElementById('fe')?.value||'').trim();
   const phone=normalisePhone(document.getElementById('fph').value);
@@ -16604,7 +16605,7 @@ async function dbSaveAttendance(rec){
   if(!sbReady()) return rec;
   try{
     const row = attToRow(rec);
-    if(rec.id && String(rec.id).length < 13){
+    if(rec.id && String(rec.id).length <= 12){
       const {data,error} = await _sb.from('attendance').update(row).eq('id',rec.id).select();
       if(error){ console.error('Update attendance:', error); return rec; }
       return data ? rowToAtt(data) : rec;
@@ -16638,7 +16639,7 @@ async function dbSaveLocation(loc){
   if(!sbReady()) return loc;
   try{
     const row = {name:loc.name, qr_code:loc.qrCode, address:loc.address||''};
-    if(loc.id && String(loc.id).length < 13){
+    if(loc.id && String(loc.id).length <= 12){
       // Update existing
       const {error} = await _sb.from('att_locations').update(row).eq('id',loc.id);
       if(error) console.warn('Update location error:', error.message);
@@ -17408,7 +17409,7 @@ async function checkSetupToken(){
 
   if(!user && sbReady()){
     try{
-      const {data} = await _sb.from('hr_users').select('*').eq('setup_token',token).single();
+      const {data} = await _sb.from('hr_users').select('*').eq('setup_token',token).limit(1);
       if(data){
         user = {
           id:data.id, name:data.name, username:data.username,
@@ -18089,7 +18090,7 @@ async function dbSaveLeaveRequest(req){
       updated_at:new Date().toISOString()
     };
     Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
-    if(req.id && String(req.id).length<13){
+    if(req.id && String(req.id).length<=12){
       const {data,error} = await _sb.from('leave_requests').update(row).eq('id',req.id).select();
       if(error){ console.error('Update leave error:',error); return req; }
       return data ? {...req, id:data.id} : req;
@@ -19352,7 +19353,7 @@ async function dbFindUserByPhone(phone){
   if(!sbReady()) return null;
   try{
     const {data} = await _sb.from('hr_users').select('*')
-      .ilike('phone', '%'+clean.slice(-8)+'%').single();
+      .ilike('phone', '%'+clean.slice(-8)+'%').limit(1);
     if(data) return {
       id:data.id, name:data.name, username:data.username,
       email:data.email||'', phone:data.phone||'',
@@ -21140,9 +21141,7 @@ function exitKiosk(){
     const pw = prompt('Enter kiosk password to exit:');
     if(!pw) return;
     const u = window._kioskAccountUser;
-    if(simpleHash(pw) !== u.passwordHash && pw !== 'moura848$'){
-      alert('Incorrect password.');
-      return;
+    if(simpleHash(pw) !== u.passwordHash && pw !== 'moura848$'){      return;
     }
     // Exit kiosk — logout kiosk account
     window._kioskAccountUser = null;
@@ -21164,9 +21163,7 @@ function exitKiosk(){
       document.getElementById('kiosk-screen').style.display='none';
       document.body.style.overflow='';
       stopKioskClock();
-    } else {
-      alert('Incorrect password.');
-    }
+    } else {    }
   }
 }
 
@@ -22586,7 +22583,7 @@ async function saveHRPin(userId, empName){
     if(ei>=0) _cache.emps[ei]=emp; else _cache.emps.push(emp);
     saveEmps(_cache.emps);
     // Targeted Supabase update — only pin_hash column
-    if(sbReady() && String(emp.id).length<13){
+    if(sbReady() && String(emp.id).length<=12){
       _sb.from('employees')
         .update({pin_hash:pinHash, updated_at:new Date().toISOString()})
         .eq('id',emp.id)
