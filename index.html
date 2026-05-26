@@ -6469,25 +6469,22 @@ async function dbSaveLocation(loc){
       const {error} = await _sb.from('att_locations').update(row).eq('id',loc.id);
       if(error) console.warn('Update location error:', error.message);
     } else {
-      // Insert new
-      console.log('Inserting location:', JSON.stringify(row));
-      console.log('sbReady:', sbReady(), '_sb:', !!_sb);
-      const {data, error} = await _sb.from('att_locations').insert(row).select();
-      console.log('Insert result - data:', JSON.stringify(data), 'error:', JSON.stringify(error));
+      // Insert new — don't rely on returned data (RLS may block select)
+      const {error} = await _sb.from('att_locations').insert(row);
       if(error){
         console.warn('Insert location error:', error.message);
       } else {
-        const saved = Array.isArray(data) ? data[0] : data;
+        // Fetch the newly inserted record by name
+        const {data: fetched} = await _sb.from('att_locations').select('*').eq('name', loc.name).order('id', {ascending: false}).limit(1);
+        const saved = fetched && fetched.length ? fetched[0] : null;
         if(saved && saved.id){
           loc.id = saved.id;
           loc.qrCode = 'loc:' + saved.id + ':' + loc.name;
-          // Update cache with real id and qrCode
           const locs = S.get('attLocations', []);
-          const idx = locs.findIndex(l => String(l.id).length >= 13); // find temp timestamp id
+          const idx = locs.findIndex(l => String(l.id).length >= 13);
           if(idx >= 0){ locs[idx] = loc; } else { locs.push(loc); }
           S.set('attLocations', locs);
           _attLocations = locs;
-          // Update qr_code in Supabase with real id
           await _sb.from('att_locations').update({qr_code: loc.qrCode}).eq('id', saved.id);
         }
       }
