@@ -12264,7 +12264,7 @@ async function dbSaveEmployee(emp){
   }
   try{
     const row=empToRow(emp);
-    if(emp.id && String(emp.id).length<13){ // numeric DB id = update (shorter than JS timestamp)
+    if(emp.id && String(emp.id).length<=12){ // numeric DB id = update (Supabase bigserial max ~12 digits for decades)
       let {data:_updRaw,error}=await _sb.from('employees').update(row).eq('id',emp.id).select();
       let data=Array.isArray(_updRaw)?_updRaw[0]:_updRaw;
       if(error){
@@ -12296,10 +12296,8 @@ async function dbSaveEmployee(emp){
     } else { // new employee = insert
       delete row.id;
       Object.keys(row).forEach(k=>{if(row[k]===undefined||row[k]===null)delete row[k];});
-      toast('Inserting to Supabase: '+Object.keys(row).length+' cols','success');
       let {data:_insRaw,error}=await _sb.from('employees').insert(row).select();
       let data=Array.isArray(_insRaw)?_insRaw[0]:_insRaw;
-      toast('Insert done: data='+(data?data.id:'null')+' error='+(error?error.code:'none'),'success');
       if(error){
         // Retry with safe columns only
         const safeInsert = {
