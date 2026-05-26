@@ -405,6 +405,13 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 @media(max-width:768px){.metrics,.g2,.g3,.kanban,.ig{grid-template-columns:1fr 1fr}}
 @media(max-width:500px){.metrics,.ig{grid-template-columns:1fr}}
 
+
+/* Mobile logout button in topnav */
+.mobile-logout-btn{display:none;align-items:center;gap:6px;padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap}
+.mobile-logout-btn:hover{background:var(--bg2)}
+@media(max-width:900px){
+  .mobile-logout-btn{display:flex}
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"function renderUserAuditSummary(){
   const el = document.getElementById('account-audit-summary');
@@ -11162,6 +11169,11 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         </div>
       </div>
       <!-- user info in sidebar -->
+      <!-- Mobile logout button - only visible on narrow screens -->
+      <button onclick="doLogout()" class="mobile-logout-btn" title="Sign out">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span>Sign out</span>
+      </button>
     </div>
   
   </nav>
@@ -12283,11 +12295,11 @@ async function dbSaveEmployee(emp){
       delete row.id;
       // Remove undefined/null values that Supabase may reject
       Object.keys(row).forEach(k=>{if(row[k]===undefined||row[k]===null)delete row[k];});
-      console.log('Inserting employee row:', JSON.stringify(Object.keys(row)));
       let {data:_insRaw,error}=await _sb.from('employees').insert(row).select();
-      console.log('Insert result:', JSON.stringify({data:_insRaw, error}));
       let data=Array.isArray(_insRaw)?_insRaw[0]:_insRaw;
       if(error){
+        toast('Insert error: '+JSON.stringify(error),'error');
+        console.error('Insert employee error:', error);
         // Retry with safe columns only
         const safeInsert = {
           name: row.name, email: row.email, phone: row.phone,
@@ -12304,6 +12316,13 @@ async function dbSaveEmployee(emp){
           return emp;
         }
         data=retry.data; error=null;
+      }
+      // If data is empty (RLS blocks SELECT after INSERT), fetch back by email/name
+      if(!data && emp.email){
+        const {data:fetched} = await _sb.from('employees').select('*')
+          .eq('email', emp.email).order('id',{ascending:false}).limit(1);
+        const found = Array.isArray(fetched)?fetched[0]:fetched;
+        if(found) return rowToEmp(found);
       }
       return data?rowToEmp(data):emp;
     }
