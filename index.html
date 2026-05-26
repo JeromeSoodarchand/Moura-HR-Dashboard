@@ -2250,7 +2250,7 @@ async function dbSaveEvent(evt){
     const row=evtToRow(evt);delete row.id;
     const {data,error}=await _sb.from('events').insert(row).select();
     if(error){console.error('Insert event error:',error);return evt;}
-    return data?rowToEvt(data):evt;
+    const evtSaved=Array.isArray(data)?data[0]:data; return evtSaved?rowToEvt(evtSaved):evt;
   } catch(err){
     console.error('dbSaveEvent exception:',err);
     return evt;
@@ -2356,6 +2356,7 @@ async function dbSaveUser(user){
       if(error){console.error('Update user error:',error);throw error;}
       return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at,seniorHOD:data.senior_hod||false,crossLeaveVisibility:data.cross_leave_visibility||false};
     } else {
+      delete row.id;
       const {data,error}=await _sb.from('hr_users').insert(row).select();
       if(error){console.error('Insert user error:',error);throw error;}
       return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at,seniorHOD:data.senior_hod||false,crossLeaveVisibility:data.cross_leave_visibility||false};
@@ -2385,7 +2386,7 @@ async function dbFindUser(username){
 async function dbAddAudit(actor,action){
   addAudit(actor,action); // always local
   if(!sbReady()) return;
-  try{ await _sb.from('audit_log').insert({actor,action}); }
+  try{ await _sb.from('audit_log').insert({user_name:actor,action:action}); }
   catch(e){ console.warn('Audit log error:',e); }
 }
 
