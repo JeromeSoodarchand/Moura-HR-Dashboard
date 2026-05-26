@@ -14420,7 +14420,7 @@ function submitAdd(){
   const email=(document.getElementById('fe')?.value||'').trim();
   const phone=normalisePhone(document.getElementById('fph').value);
   if(!name){toast('Name is required.','error');return;}
-  if(!email&&!phone){toast('Email or mobile number is required.','error');return;}
+
   // Duplicate check — phone and email must be unique across all employees
   const allEmps = getEmps();
   if(phone){
