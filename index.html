@@ -11019,8 +11019,19 @@ async function startQRCamera(empId, locationId, locationName){
     window._qrStream = stream;
     const video = document.getElementById('qr-video');
     if(!video){ stopQRScan(); return; }
+
+    // Attach stream first, then play (important for iOS Safari)
     video.srcObject = stream;
-    await video.play();
+    video.setAttribute('playsinline',''); // extra insurance for iOS
+    video.setAttribute('muted','');
+
+    // Wait for video to be ready before starting scan
+    await new Promise((resolve) => {
+      video.onloadedmetadata = () => { video.play().then(resolve).catch(resolve); };
+      video.onerror = resolve;
+      // Fallback timeout in case events don't fire
+      setTimeout(resolve, 2000);
+    });
 
     const statusEl  = document.getElementById('qr-status');
     const debugEl   = document.getElementById('qr-debug');
@@ -11050,20 +11061,17 @@ async function startQRCamera(empId, locationId, locationName){
       return null;
     };
 
-    const scanTick = () => {
+    const doScan = () => {
       if(!scanning) return;
       const v = document.getElementById('qr-video');
       const cv = document.getElementById('qr-canvas');
-      if(!v||!cv){ scanning=false; return; }
-      if(v.readyState < 2 || v.videoWidth===0){
-        requestAnimationFrame(scanTick); return;
-      }
+      if(!v||!cv){ scanning=false; clearInterval(window._qrScanInterval); return; }
+      if(v.readyState < 2 || v.videoWidth===0) return;
       cv.width=v.videoWidth; cv.height=v.videoHeight;
       const ctx=cv.getContext('2d');
-      ctx.drawImage(v,0,0);
+      try{ ctx.drawImage(v,0,0); }catch(e){ return; }
 
       let raw = null;
-      // Try jsQR
       if(typeof jsQR==='function'){
         try{
           const img=ctx.getImageData(0,0,cv.width,cv.height);
@@ -11078,6 +11086,7 @@ async function startQRCamera(empId, locationId, locationName){
         const matched=tryMatch(raw);
         if(matched){
           scanning=false;
+          clearInterval(window._qrScanInterval);
           stream.getTracks().forEach(t=>t.stop());
           window._qrStream=null;
           if(statusEl) statusEl.innerHTML='✅ <strong>'+matched.name+'</strong> recognised!';
@@ -11091,9 +11100,9 @@ async function startQRCamera(empId, locationId, locationName){
           lastScan=''; // allow retry
         }
       }
-      if(scanning) requestAnimationFrame(scanTick);
+      // interval handles looping
     };
-    requestAnimationFrame(scanTick);
+    window._qrScanInterval = setInterval(doScan, 300);
 
   }catch(e){
     const statusEl=document.getElementById('qr-status');
