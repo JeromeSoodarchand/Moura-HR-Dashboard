@@ -2227,7 +2227,7 @@ async function dbGetEvents(){
   ensureSB();
   if(!sbReady()) return [];
   try{
-    const {data,error}=await _sb.from('events').select('*').order('event_date',{ascending:false});
+    const {data,error}=await _sb.from('events').select('*').order('date',{ascending:false});
     if(error){console.error('dbGetEvents error:',error);return getData('events');}
     return data.map(rowToEvt);
   } catch(err){ console.error('dbGetEvents exception:',err);return getData('events'); }
@@ -2251,7 +2251,7 @@ async function dbGetPrograms(){
   ensureSB();
   if(!sbReady()) return [];
   try{
-    const {data,error}=await _sb.from('training_programs').select('*').order('name');
+    const {data,error}=await _sb.from('training_programs').select('*').order('title');
     if(error){console.error('dbGetPrograms error:',error);return getData('trainingPrograms');}
     return data.map(rowToProg);
   } catch(err){ console.error('dbGetPrograms exception:',err);return getData('trainingPrograms'); }
