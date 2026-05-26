@@ -10976,14 +10976,13 @@ async function startQRCamera(empId, locationId, locationName){
   if(!navigator.mediaDevices?.getUserMedia){
     toast('Camera not available on this device.','error');
     stopQRScan();
-    await mobileManualClockIn(empId, locationId, locationName);
     return;
   }
 
   const mb = document.getElementById('mbox');
   if(!mb) return;
   mb.innerHTML = `
-    <div class="modal-title" style="margin-bottom:12px">
+    <div class="modal-title" style="margin-bottom:10px">
       📷 Scanning...
       <button class="modal-close" onclick="stopQRScan()">✕</button>
     </div>
@@ -10992,19 +10991,27 @@ async function startQRCamera(empId, locationId, locationName){
         <video id="qr-video" style="width:100%;border-radius:10px;background:#000;display:block" autoplay playsinline muted></video>
         <canvas id="qr-canvas" style="display:none"></canvas>
         <div style="position:absolute;inset:0;pointer-events:none;border-radius:10px;overflow:hidden">
-          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:60%;padding-top:60%;border:2px solid #fff;border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.5)"></div>
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:65%;padding-top:65%;border:3px solid #00ff88;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.55)"></div>
         </div>
       </div>
-      <div id="qr-status" style="margin-top:12px;font-size:13px;color:var(--text2);min-height:36px;line-height:1.5">
+      <div id="qr-status" style="margin-top:10px;font-size:13px;color:var(--text2);min-height:40px;line-height:1.5;padding:0 8px">
         ⏳ Starting camera...
       </div>
+      <div id="qr-debug" style="margin-top:4px;font-size:10px;color:var(--text3);font-family:monospace;word-break:break-all;padding:0 8px;min-height:14px"></div>
     </div>
-    <div class="mf" style="margin-top:12px">
+    <div class="mf" style="margin-top:10px">
       <button class="btn" onclick="stopQRScan()">Cancel</button>
-
     </div>`;
 
+  // Ensure locations loaded
+  if(!_attLocations||!_attLocations.length){
+    try{ _attLocations = await dbGetLocations(); }catch(e){}
+  }
+
   let stream = null;
+  let scanning = true;
+  let lastScan = '';
+
   try{
     stream = await navigator.mediaDevices.getUserMedia({
       video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
@@ -11015,54 +11022,86 @@ async function startQRCamera(empId, locationId, locationName){
     video.srcObject = stream;
     await video.play();
 
-    const statusEl = document.getElementById('qr-status');
-    if(statusEl) statusEl.textContent = 'Point camera at the location QR code';
+    const statusEl  = document.getElementById('qr-status');
+    const debugEl   = document.getElementById('qr-debug');
+    if(statusEl) statusEl.textContent = 'Point camera at QR code — align inside the green box';
 
-    // Scan loop using jsQR (works on all browsers including Safari iOS)
-    window._qrScanInterval = setInterval(()=>{
-      const video = document.getElementById('qr-video');
-      const canvas = document.getElementById('qr-canvas');
-      if(!video || !canvas || video.readyState < 2) return;
-      if(video.videoWidth === 0) return;
+    const tryMatch = (raw) => {
+      if(!raw) return null;
+      const locs = _attLocations||[];
+      // Direct QR match
+      let m = locs.find(l=>l.qrCode===raw);
+      if(m) return m;
+      // loc: format
+      if(raw.startsWith('loc:')){
+        const parts = raw.split(':');
+        const sid = parts[1];
+        const sname = decodeURIComponent(parts.slice(2).join(':'));
+        m = locs.find(l=>String(l.id)===String(sid));
+        if(m) return m;
+        m = locs.find(l=>l.name&&sname&&l.name.trim().toLowerCase()===sname.trim().toLowerCase());
+        if(m) return m;
+        // Return synthetic location even if not in list
+        return {id:sid, name:sname, qrCode:raw};
+      }
+      // Exact id match
+      m = locs.find(l=>String(l.id)===raw);
+      if(m) return m;
+      return null;
+    };
 
-      canvas.width  = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0);
+    const scanTick = () => {
+      if(!scanning) return;
+      const v = document.getElementById('qr-video');
+      const cv = document.getElementById('qr-canvas');
+      if(!v||!cv){ scanning=false; return; }
+      if(v.readyState < 2 || v.videoWidth===0){
+        requestAnimationFrame(scanTick); return;
+      }
+      cv.width=v.videoWidth; cv.height=v.videoHeight;
+      const ctx=cv.getContext('2d');
+      ctx.drawImage(v,0,0);
 
-      let scannedData = null;
-
-      // Try jsQR first (universal)
-      if(typeof jsQR === 'function'){
+      let raw = null;
+      // Try jsQR
+      if(typeof jsQR==='function'){
         try{
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const code = jsQR(imageData.data, imageData.width, imageData.height, {
-            inversionAttempts: 'dontInvert'
-          });
-          if(code) scannedData = code.data;
+          const img=ctx.getImageData(0,0,cv.width,cv.height);
+          const code=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+          if(code) raw=code.data;
         }catch(e){}
       }
 
-      // Fallback: BarcodeDetector (Chrome/Android)
-      if(!scannedData && typeof BarcodeDetector !== 'undefined'){
-        BarcodeDetector.isSupported?.(['qr_code']).then(()=>{
-          const det = new BarcodeDetector({formats:['qr_code']});
-          det.detect(canvas).then(codes=>{
-            if(codes.length > 0) _handleQRData(codes[0].rawValue, empId);
-          }).catch(()=>{});
-        }).catch(()=>{});
+      if(raw && raw!==lastScan){
+        lastScan=raw;
+        if(debugEl) debugEl.textContent='Scanned: '+raw;
+        const matched=tryMatch(raw);
+        if(matched){
+          scanning=false;
+          stream.getTracks().forEach(t=>t.stop());
+          window._qrStream=null;
+          if(statusEl) statusEl.innerHTML='✅ <strong>'+matched.name+'</strong> recognised!';
+          setTimeout(()=>{ stopQRScan(); mobileConfirmClockIn(empId,matched.id,matched.name); },400);
+          return;
+        } else {
+          if(statusEl) statusEl.textContent='⚠ Code found but not a location QR. Try again.';
+          setTimeout(()=>{
+            if(statusEl) statusEl.textContent='Point camera at QR code — align inside the green box';
+          },2000);
+          lastScan=''; // allow retry
+        }
       }
-
-      if(scannedData) _handleQRData(scannedData, empId);
-    }, 250);
+      if(scanning) requestAnimationFrame(scanTick);
+    };
+    requestAnimationFrame(scanTick);
 
   }catch(e){
-    const statusEl = document.getElementById('qr-status');
-    if(statusEl) statusEl.innerHTML =
-      '❌ Camera access denied.<br><span style="font-size:12px;color:var(--text3)">Please allow camera access in your browser settings, or use "Clock in directly".</span>';
-    console.error('Camera error:', e);
+    const statusEl=document.getElementById('qr-status');
+    if(statusEl) statusEl.innerHTML='❌ Camera access denied.<br><span style="font-size:11px;color:var(--text3)">Allow camera in browser settings and try again.</span>';
+    console.error('Camera error:',e);
   }
 }
+
 
 async function _handleQRData(scannedData, empId){
   // Prevent double-processing
