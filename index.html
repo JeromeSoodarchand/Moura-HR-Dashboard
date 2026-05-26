@@ -12011,11 +12011,8 @@ function _sbCreate(url, key){
             delete h2['Accept'];
             let url2b = url2;
             if(this._filters.length) url2b += (url2b.includes('?')?'&':'?')+this._filters.join('&');
-            console.log('[FETCH INSERT]', url2b, JSON.stringify(this._body).slice(0,100));
             const resp = await fetch(url2b, {method:'POST', headers:h2, body:JSON.stringify(this._body)});
-            console.log('[FETCH INSERT] status:', resp.status, resp.statusText);
             const respText = await resp.text().catch(()=>'');
-            console.log('[FETCH INSERT] response:', respText.slice(0,200));
             let raw = null;
             try{ raw = JSON.parse(respText); }catch(e){}
             const error = resp.ok ? null : {message: respText, code: resp.status};
@@ -12303,8 +12300,6 @@ async function dbSaveEmployee(emp){
       let {data:_insRaw,error}=await _sb.from('employees').insert(row).select();
       let data=Array.isArray(_insRaw)?_insRaw[0]:_insRaw;
       if(error){
-        toast('Insert error: '+JSON.stringify(error),'error');
-        console.error('Insert employee error:', error);
         // Retry with safe columns only
         const safeInsert = {
           name: row.name, email: row.email, phone: row.phone,
@@ -12569,14 +12564,14 @@ function empToRow(e){
     // Other
     last_day:             e.lastDay             || null,
     reason:               e.reason              || null,
-    completed_onboarding: e.completedOnboarding || null,
+    completed_onboarding: e.completedOnboarding != null ? String(e.completedOnboarding) : null,
     photo_url:            e.photoUrl            || null,
     clock_mode:           e.clockMode            || 'qr',
     pin_hash:             e.pinHash              || null,
     user_id:              e.userId               || null,
-    att_editor:           e.attendanceEditor     || false,
-    is_hod:               e.isHOD                || false,
-    is_senior_hod:        e.isSeniorHOD          || false,
+    att_editor:           String(e.attendanceEditor || false),
+    is_hod:               String(e.isHOD || false),
+    is_senior_hod:        String(e.isSeniorHOD || false),
     updated_at:           new Date().toISOString(),
   };
   // Remove any remaining undefined values
@@ -14484,31 +14479,36 @@ function submitAdd(){
     pinHash:(()=>{const p=(document.getElementById('femp-pin')?.value||'').replace(/[^0-9]/g,'');return p.length===4?simpleHash(p):null;})(),
   };
   showLoader('Saving…');
-  dbSaveEmployee(newEmp).then(saved=>{
+  dbSaveEmployee(newEmp).then(async saved=>{
     hideLoader();
     const s=saved||newEmp;
-    // Remove any stale local copy (may have old timestamp id) then add DB version
-    _cache.emps = _cache.emps.filter(e=>String(e.id)!==String(newEmp.id)&&e.email!==s.email);
-    _cache.emps.unshift(s);
-    saveEmps(_cache.emps);
     addNotif('New hire added: '+name,'success');
     dbAddAudit(CU.name,'Added employee: '+name);
     sendHRAlert('new_employee', getHREmails(), {
       employeeName:name, role:newEmp.role, dept:newEmp.dept,
       startDate:newEmp.start, manager:newEmp.manager, addedBy:CU.name
     });
-    // Auto-create HR account for new employee
     autoCreateAccountForNewEmployee(s).catch(e=>console.error('Auto-account error:',e));
     closeModal();
+    // Reload employees from Supabase to get real ids
+    try{
+      const fresh = await dbGetEmployees();
+      _cache.emps = fresh;
+      saveEmps(fresh);
+    }catch(e){
+      _cache.emps = _cache.emps.filter(e=>String(e.id)!==String(newEmp.id));
+      _cache.emps.unshift(s);
+      saveEmps(_cache.emps);
+    }
     renderDashboard();
     if(document.getElementById('page-employees')?.classList.contains('active')) renderEmployees();
-    toast(name+' added. Kiosk access ready.','success');
+    toast(name+' added successfully.','success');
   }).catch(err=>{
     hideLoader();
     console.error('Save employee error:',err);
+    toast('Error: '+(err.message||JSON.stringify(err)),'error');
     _cache.emps.unshift(newEmp);
     saveEmps(_cache.emps);
-    addNotif('New hire added locally: '+name,'success');
     autoCreateAccountForNewEmployee(newEmp).catch(()=>{});
     closeModal();renderDashboard();
     if(document.getElementById('page-employees')?.classList.contains('active')) renderEmployees();
