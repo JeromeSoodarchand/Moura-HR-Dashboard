@@ -874,7 +874,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 <div id="setup-screen" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#0A0820 0%,#1E1445 55%,#2C2070 100%)">
   <div class="login-card" style="width:420px">
     <div style="text-align:center;margin-bottom:16px">
-      <div style="font-size:28px;font-weight:700;color:var(--navy);margin-bottom:4px">SolentraHR</div>
+      <div style="font-size:28px;font-weight:700;color:var(--navy);margin-bottom:4px" id="setup-org-name">SolentraHR</div>
     </div>
     <div class="login-sub">Create your administrator account to get started</div>
     <div style="background:var(--gold-light);border-radius:var(--radius);padding:10px 12px;font-size:12.5px;color:var(--gold-deep);margin-bottom:18px">
@@ -5457,6 +5457,8 @@ function applyBrandingToUI(cs){
   if(_loginOrgEl) _loginOrgEl.textContent = cs.orgName || '';
   const _loginTagEl = document.getElementById('login-tagline');
   if(_loginTagEl && cs.tagline) _loginTagEl.textContent = cs.tagline;
+  const _setupOrgEl = document.getElementById('setup-org-name');
+  if(_setupOrgEl && cs.orgName) _setupOrgEl.textContent = cs.orgName;
   if(cs.logoB64){
     if(navImg){
     const _nsrc=cs.logoDataUrl||(cs.logoB64?'data:'+(cs.logoMime||'image/png')+';base64,'+cs.logoB64:'');
@@ -12454,6 +12456,7 @@ function renderUserAuditSummary(){
   }
   el.innerHTML = html;
 }
+
 
 
 
