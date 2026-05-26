@@ -12257,79 +12257,50 @@ async function dbGetEmployees(){
 }
 
 async function dbSaveEmployee(emp){
-  if(!sbReady()){
-    const e=getEmps();const i=e.findIndex(x=>String(x.id)===String(emp.id));
-    if(i>=0)e[i]=emp;else e.push(emp);
-    saveEmps(e);return emp;
-  }
-  try{
-    const row=empToRow(emp);
-    if(emp.id && String(emp.id).length<=12){ // numeric DB id = update (Supabase bigserial max ~12 digits for decades)
-      let {data:_updRaw,error}=await _sb.from('employees').update(row).eq('id',emp.id).select();
-      let data=Array.isArray(_updRaw)?_updRaw[0]:_updRaw;
-      if(error){
-        // Retry with minimal safe columns only (handles missing columns in schema)
-        const safeRow = {
-          name: row.name, email: row.email, phone: row.phone,
-          role: row.role, dept: row.dept, manager: row.manager,
-          start_date: row.start_date, status: row.status,
-          salary_amount: row.salary_amount, salary_currency: row.salary_currency,
-          salary_frequency: row.salary_frequency,
-          salary_last_review: row.salary_last_review, salary_next_review: row.salary_next_review,
-          checklist: row.checklist, off_checklist: row.off_checklist,
-          last_day: row.last_day, reason: row.reason,
-          pin_hash: row.pin_hash, clock_mode: row.clock_mode,
-          updated_at: row.updated_at
-        };
-        Object.keys(safeRow).forEach(k=>{ if(safeRow[k]===undefined||safeRow[k]===null) delete safeRow[k]; });
-        const retry = await _sb.from('employees').update(safeRow).eq('id',emp.id).select();
-        if(retry.error){
-          console.error('Update employee error:',retry.error);
-          // Save locally and don't show error toast for background saves
-          const e=getEmps();const i=e.findIndex(x=>String(x.id)===String(emp.id));
-          if(i>=0)e[i]=emp;saveEmps(e);
-          return emp;
-        }
-        data = retry.data; error = null;
-      }
-      return data?rowToEmp(data):emp;
-    } else { // new employee = insert
-      delete row.id;
-      Object.keys(row).forEach(k=>{if(row[k]===undefined||row[k]===null)delete row[k];});
-      let {data:_insRaw,error}=await _sb.from('employees').insert(row).select();
-      let data=Array.isArray(_insRaw)?_insRaw[0]:_insRaw;
-      if(error){
-        // Retry with safe columns only
-        const safeInsert = {
-          name: row.name, email: row.email, phone: row.phone,
-          role: row.role, dept: row.dept, manager: row.manager,
-          start_date: row.start_date, status: row.status||'onboarding',
-          checklist: row.checklist||{}, clock_mode: row.clock_mode||'qr'
-        };
-        Object.keys(safeInsert).forEach(k=>{if(safeInsert[k]===undefined||safeInsert[k]===null)delete safeInsert[k];});
-        const retry=await _sb.from('employees').insert(safeInsert).select();
-        if(retry.error){
-          console.error('Insert employee error:',retry.error);
-          // Save locally
-          const e=getEmps();e.push(emp);saveEmps(e);_cache.emps.unshift(emp);
-          return emp;
-        }
-        data=retry.data; error=null;
-      }
-      // If data is empty (RLS blocks SELECT after INSERT), fetch back by email/name
-      if(!data && emp.email){
-        const {data:fetched} = await _sb.from('employees').select('*')
-          .eq('email', emp.email).order('id',{ascending:false}).limit(1);
-        const found = Array.isArray(fetched)?fetched[0]:fetched;
-        if(found) return rowToEmp(found);
-      }
-      return data?rowToEmp(data):emp;
+  // Always save locally first
+  const localEmps = getEmps();
+  const localIdx = localEmps.findIndex(x=>String(x.id)===String(emp.id));
+  if(localIdx>=0) localEmps[localIdx]=emp; else localEmps.push(emp);
+  saveEmps(localEmps);
+
+  if(!sbReady()) return emp;
+
+  const row = empToRow(emp);
+  const isNew = !emp.id || String(emp.id).length >= 13; // timestamp id = new
+
+  if(!isNew){
+    // UPDATE existing employee
+    const {data, error} = await _sb.from('employees').update(row).eq('id', emp.id);
+    if(error) console.warn('Update employee error:', error.message);
+    return emp;
+  } else {
+    // INSERT new employee
+    delete row.id;
+    // Remove nulls
+    Object.keys(row).forEach(k=>{ if(row[k]===undefined||row[k]===null) delete row[k]; });
+
+    const {error} = await _sb.from('employees').insert(row);
+    if(error){
+      toast('Save error: ' + error.message, 'error');
+      console.error('Insert employee error:', error);
+      return emp;
     }
-  } catch(err){
-    console.error('dbSaveEmployee exception:',err);
-    // Don't show toast - save locally and continue
-    const e=getEmps();const i=e.findIndex(x=>String(x.id)===String(emp.id));
-    if(i>=0)e[i]=emp;else e.push(emp);saveEmps(e);
+
+    // Fetch back the saved employee to get real DB id
+    await new Promise(r=>setTimeout(r,500)); // small delay for DB consistency
+    const {data: fetched} = await _sb.from('employees').select('*')
+      .eq('name', emp.name).order('id',{ascending:false}).limit(1);
+    const saved = Array.isArray(fetched) ? fetched[0] : fetched;
+    if(saved){
+      const savedEmp = rowToEmp(saved);
+      // Update local cache with real id
+      const locs = getEmps();
+      const oldIdx = locs.findIndex(x=>String(x.id)===String(emp.id));
+      if(oldIdx>=0) locs[oldIdx] = savedEmp; else locs.unshift(savedEmp);
+      saveEmps(locs);
+      _cache.emps = locs;
+      return savedEmp;
+    }
     return emp;
   }
 }
