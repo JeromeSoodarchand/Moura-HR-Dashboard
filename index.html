@@ -12443,26 +12443,72 @@ async function dbGetUsers(){
 }
 
 async function dbSaveUser(user){
-  if(!sbReady()){ const u=S.get('users',[]);const i=u.findIndex(x=>String(x.id)===String(user.id));if(i>=0)u[i]=user;else u.push(user);S.set('users',u);return user; }
-  const row={name:user.name,username:user.username,email:user.email||null,phone:user.phone||null,role:user.role,active:user.active,password_hash:user.passwordHash,emp_id:user.empId||null,senior_hod:user.seniorHOD||false,cross_leave_visibility:user.crossLeaveVisibility||false};
-  Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
-  try{
-    if(user.id && String(user.id).length<=12){
-      const {data:_uRaw,error}=await _sb.from('hr_users').update(row).eq('id',user.id).select();
-      const data=Array.isArray(_uRaw)?_uRaw[0]:_uRaw;
-      if(error){console.error('Update user error:',error);throw error;}
-      if(!data) return user;
-      return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at,seniorHOD:data.senior_hod||false,crossLeaveVisibility:data.cross_leave_visibility||false};
-    } else {
-      delete row.id;
-      const {data:_iRaw,error}=await _sb.from('hr_users').insert(row).select();
-      const data=Array.isArray(_iRaw)?_iRaw[0]:_iRaw;
-      if(error){console.error('Insert user error:',error);throw error;}
-      if(!data) return user;
-      return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at,seniorHOD:data.senior_hod||false,crossLeaveVisibility:data.cross_leave_visibility||false};
+  // Always save locally first
+  const local = S.get('users',[]);
+  const li = local.findIndex(x=>String(x.id)===String(user.id));
+  if(li>=0) local[li]=user; else local.push(user);
+  S.set('users', local);
+  if(_userCache) {
+    const ci = _userCache.findIndex(x=>String(x.id)===String(user.id));
+    if(ci>=0) _userCache[ci]=user; else _userCache.push(user);
+  }
+
+  if(!sbReady()) return user;
+
+  const row = {
+    name:                   user.name,
+    username:               user.username,
+    email:                  user.email||null,
+    phone:                  user.phone||null,
+    role:                   user.role,
+    active:                 user.active!==false,
+    password_hash:          user.passwordHash||null,
+    pin_hash:               user.pinHash||null,
+    setup_done:             user.setupDone||false,
+    emp_id:                 user.empId||null,
+    senior_hod:             user.seniorHOD||false,
+    cross_leave_visibility: user.crossLeaveVisibility||false,
+  };
+  Object.keys(row).forEach(k=>{ if(row[k]===undefined||row[k]===null) delete row[k]; });
+
+  const isNew = !user.id || String(user.id).length >= 13;
+
+  if(!isNew){
+    // UPDATE
+    await _sb.from('hr_users').update(row).eq('id', user.id);
+    return user;
+  } else {
+    // INSERT
+    const {error} = await _sb.from('hr_users').insert(row);
+    if(error){
+      console.error('Insert user error:', error);
+      return user;
     }
-  } catch(err){
-    console.error('dbSaveUser exception:',err);
+    // Fetch back to get real DB id
+    await new Promise(r=>setTimeout(r,300));
+    const {data: fetched} = await _sb.from('hr_users').select('*')
+      .eq('username', user.username).order('id',{ascending:false}).limit(1);
+    const saved = Array.isArray(fetched) ? fetched[0] : fetched;
+    if(saved){
+      const realUser = {
+        ...user,
+        id:           saved.id,
+        empId:        saved.emp_id||user.empId||null,
+        passwordHash: saved.password_hash||user.passwordHash,
+        pinHash:      saved.pin_hash||user.pinHash||null,
+        setupDone:    saved.setup_done||user.setupDone||false,
+      };
+      // Update local with real id
+      const locs = S.get('users',[]);
+      const oldIdx = locs.findIndex(x=>String(x.id)===String(user.id));
+      if(oldIdx>=0) locs[oldIdx]=realUser; else locs.push(realUser);
+      S.set('users', locs);
+      if(_userCache){
+        const ci = _userCache.findIndex(x=>String(x.id)===String(user.id));
+        if(ci>=0) _userCache[ci]=realUser; else _userCache.push(realUser);
+      }
+      return realUser;
+    }
     return user;
   }
 }
@@ -17438,7 +17484,10 @@ async function submitSetupPin(){
       (u.empId&&String(u.empId)===String(e.id))||
       (e.phone&&u.phone&&u.phone.replace(/[^0-9]/g,'')===e.phone.replace(/[^0-9]/g,''))
     );
-    return e.pinHash===pinHash && String(linkedUser?.id||'')!==String(user.id);
+    // Exclude current user AND current employee from conflict check
+    if(String(linkedUser?.id||'')===String(user.id)) return false;
+    if(user.empId && String(e.id)===String(user.empId)) return false;
+    return e.pinHash===pinHash;
   });
   if(pinConflict){
     if(errEl){ errEl.textContent='This PIN is already taken. Choose a different 4-digit PIN.'; errEl.style.display='block'; }
@@ -21984,6 +22033,7 @@ async function autoCreateAccountForNewEmployee(emp){
   // Role based on HOD flags
   const role = (emp.isHOD || emp.isSeniorHOD) ? 'manager' : 'viewer';
 
+  const hasPIN = !!emp.pinHash;
   const newUser = {
     id:           Date.now(),
     name:         emp.name,
@@ -21992,8 +22042,9 @@ async function autoCreateAccountForNewEmployee(emp){
     phone:        emp.phone || '',
     role:         role,
     active:       true,
-    passwordHash: simpleHash(empIdStr), // default password = employee ID
-    setupDone:    false,
+    passwordHash: hasPIN ? emp.pinHash : simpleHash(empIdStr),
+    pinHash:      emp.pinHash || null,
+    setupDone:    hasPIN, // already set up if PIN was provided
     empId:        emp.id,
     createdAt:    new Date().toISOString(),
     seniorHOD:    emp.isSeniorHOD || false,
