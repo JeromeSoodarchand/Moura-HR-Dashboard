@@ -6387,7 +6387,7 @@ async function dbSaveLocation(loc){
       else if(data){
         loc.id = data.id;
         // Regenerate QR code with the real DB id so scanner can match by id
-        loc.qrCode = 'loc:' + data.id + ':' + encodeURIComponent(loc.name);
+        loc.qrCode = 'loc:' + data.id + ':' + loc.name.replace(/[\r\n]/g,'');
         // Update localStorage with the corrected record (real id + qrCode)
         const local2 = S.get('attLocations', []);
         const j = local2.findIndex(l=>String(l.id)===String(data.id)||l.qrCode===('loc:'+Date.now()+':'+encodeURIComponent(loc.name)));
@@ -6726,7 +6726,7 @@ async function addLocation(){
   if(!name){ toast('Location name required.','error'); return; }
   const addr = (addrEl?.value||'').trim();
   const locId = Date.now();
-  const qrCode = 'loc:'+locId+':'+encodeURIComponent(name);
+  const qrCode = 'loc:'+locId+':'+name.replace(/[\r\n]/g,'');
   const loc = {id:locId, name, address:addr, qrCode};
   showLoader('Saving...');
   await dbSaveLocation(loc);
@@ -8540,16 +8540,16 @@ async function showEmployeeClockInScreen(user){
 
       <!-- Header -->
       <div style="margin-bottom:16px">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
             ${logoSrc?`<img src="${logoSrc}" style="height:24px;width:auto;object-fit:contain;flex-shrink:0">`:``}
             <div style="font-size:13px;font-weight:600;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${cs.orgName||''}</div>
           </div>
-          <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
-            ${(isHRRole||isHODClockMode)?`<button onclick="openFullHRPlatform()" style="font-size:12px;color:#fff;background:var(--navy);border:none;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:500;white-space:nowrap">📊 HR</button>`:''}
-            <button onclick="doLogout()" style="font-size:12px;color:var(--text2);background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;cursor:pointer;white-space:nowrap">Sign out</button>
-          </div>
+          ${(isHRRole||isHODClockMode)?`<button onclick="openFullHRPlatform()" style="font-size:12px;color:#fff;background:var(--navy);border:none;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:500;white-space:nowrap;flex-shrink:0;margin-left:8px">📊 HR Platform</button>`:''}
         </div>
+        <button onclick="doLogout()" style="width:100%;padding:9px;font-size:13px;font-weight:500;color:var(--text2);background:#fff;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-family:inherit">
+          Sign Out
+        </button>
       </div>
 
       <!-- Employee card -->
@@ -11036,7 +11036,7 @@ async function startQRCamera(empId, locationId, locationName){
       if(raw.startsWith('loc:')){
         const parts = raw.split(':');
         const sid = parts[1];
-        const sname = decodeURIComponent(parts.slice(2).join(':'));
+        const sname = parts.slice(2).join(':');
         m = locs.find(l=>String(l.id)===String(sid));
         if(m) return m;
         m = locs.find(l=>l.name&&sname&&l.name.trim().toLowerCase()===sname.trim().toLowerCase());
@@ -11122,7 +11122,7 @@ async function _handleQRData(scannedData, empId){
   if(scannedData.startsWith('loc:')){
     const parts = scannedData.split(':');
     const locId = parts[1];
-    const locName = decodeURIComponent(parts.slice(2).join(':'));
+    const locName = parts.slice(2).join(':');
     // Match by QR code string or by id
     matchedLoc = _attLocations.find(l=>
       l.qrCode === scannedData ||
@@ -12487,9 +12487,9 @@ printLocationQR('${id}','${name}','${qrCode}')">🖨 Print</button>
   setTimeout(()=>{
     const el = document.getElementById('loc-qr-display');
     if(el && typeof QRCode !== 'undefined'){
-      new QRCode(el, {text: qrCode, width: 200, height: 200,
-        colorDark: '#1E1445', colorLight: '#ffffff',
-        correctLevel: QRCode.CorrectLevel.H});
+      new QRCode(el, {text: qrCode, width: 300, height: 300,
+        colorDark: '#000000', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.L});
     }
   }, 100);
 }
