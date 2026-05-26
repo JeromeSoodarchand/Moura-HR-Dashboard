@@ -12447,14 +12447,18 @@ async function dbSaveUser(user){
   const row={name:user.name,username:user.username,email:user.email||null,phone:user.phone||null,role:user.role,active:user.active,password_hash:user.passwordHash,emp_id:user.empId||null,senior_hod:user.seniorHOD||false,cross_leave_visibility:user.crossLeaveVisibility||false};
   Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
   try{
-    if(user.id && String(user.id).length<13){
-      const {data,error}=await _sb.from('hr_users').update(row).eq('id',user.id).select();
+    if(user.id && String(user.id).length<=12){
+      const {data:_uRaw,error}=await _sb.from('hr_users').update(row).eq('id',user.id).select();
+      const data=Array.isArray(_uRaw)?_uRaw[0]:_uRaw;
       if(error){console.error('Update user error:',error);throw error;}
+      if(!data) return user;
       return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at,seniorHOD:data.senior_hod||false,crossLeaveVisibility:data.cross_leave_visibility||false};
     } else {
       delete row.id;
-      const {data,error}=await _sb.from('hr_users').insert(row).select();
+      const {data:_iRaw,error}=await _sb.from('hr_users').insert(row).select();
+      const data=Array.isArray(_iRaw)?_iRaw[0]:_iRaw;
       if(error){console.error('Insert user error:',error);throw error;}
+      if(!data) return user;
       return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at,seniorHOD:data.senior_hod||false,crossLeaveVisibility:data.cross_leave_visibility||false};
     }
   } catch(err){
@@ -14492,10 +14496,7 @@ async function autoCreateUserForEmployee(emp){
   }
   if(!emp.phone){
     // No phone — show a form to enter a phone number first
-    const phone = prompt('This employee has no phone number.\nEnter their mobile number to create an account:');
-    if(!phone||!phone.trim()){ toast('Phone number required to create account.','info'); return; }
-    emp = {...emp, phone: normalisePhone(phone.trim())};
-    // Save phone to employee record
+    // Phone is optional for account creation
     const empObj = gE(emp.id);
     if(empObj){ empObj.phone = emp.phone; dbSaveEmployee(empObj).catch(()=>{}); }
   }
@@ -14875,7 +14876,7 @@ function submitAddUser(){
   const email = document.getElementById('un-email').value.trim();
   const role  = document.getElementById('un-role').value;
   if(!name)  { toast('Full name is required.','error'); return; }
-  if(!phone) { toast('Mobile number is required.','error'); return; }
+  if(!false) { toast('Mobile number is required.','error'); return; }
 
   // Auto-generate username from phone number
   const username = phoneToUsername(phone);
