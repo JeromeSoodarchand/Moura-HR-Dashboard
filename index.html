@@ -11899,16 +11899,22 @@ async function submitUpdateDailyRate(empId){
 function isEmpAdminOrHR(emp){
   if(!emp) return false;
   const users = getUsers();
-  // Build set of admin/hr user signatures (name, email, username — lowercased)
   for(const u of users){
     if(u.role!=='admin' && u.role!=='hr') continue;
-    // Direct link
+    // Direct empId/userId link
     if(u.empId && String(u.empId)===String(emp.id)) return true;
     if(emp.userId && String(u.id)===String(emp.userId)) return true;
     // Email match
-    if(u.email && emp.email && u.email.toLowerCase()===emp.email.toLowerCase()) return true;
-    // Name match (for super admin whose employee record has same name)
-    if(u.name && emp.name && u.name.toLowerCase()===emp.name.toLowerCase()) return true;
+    if(u.email && emp.email &&
+       u.email.toLowerCase()===emp.email.toLowerCase()) return true;
+    // Name match — emp.name may be full name while u.name is first name only
+    // e.g. u.name='Jerome', emp.name='Jerome Soodarchand'
+    if(u.name && emp.name){
+      const uN = u.name.toLowerCase().trim();
+      const eN = emp.name.toLowerCase().trim();
+      // Exact match OR employee full name starts with or contains admin first name
+      if(uN===eN || eN.startsWith(uN+' ') || eN.endsWith(' '+uN)) return true;
+    }
   }
   return false;
 }
@@ -11921,7 +11927,6 @@ function getScopedEmps(){
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
     const myName = hodEmp?.name || CU.name;
     const myDept = hodEmp?.dept;
-  // Helper: is this employee record linked to an admin/hr user account?
     // Team = direct reports + same dept employees (excluding admin/hr accounts)
     return all.filter(e=>
       !isEmpAdminOrHR(e) &&
@@ -11943,18 +11948,6 @@ function getScopedLeaveEmps(){
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
     const myName = hodEmp?.name || CU.name;
     const myDept = hodEmp?.dept;
-  // Helper: is this employee record linked to an admin/hr user account?
-  const getAdminHRUserNames = () => {
-    const users = getUsers();
-    return new Set(
-      users.filter(u=>u.role==='admin'||u.role==='hr')
-           .flatMap(u=>[
-             u.name?.toLowerCase(),
-             u.email?.toLowerCase(),
-             u.username?.toLowerCase()
-           ].filter(Boolean))
-    );
-  };
     // Own team (excluding admin/hr)
     const teamIds = new Set(all
       .filter(e=> !isEmpAdminOrHR(e) &&
