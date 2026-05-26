@@ -6384,9 +6384,21 @@ async function dbSaveLocation(loc){
       delete row.id;
       const {data,error} = await _sb.from('att_locations').insert(row).select().single();
       if(error){ console.error('Insert location error:',error); }
-      else if(data) loc.id = data.id;
+      else if(data){
+        loc.id = data.id;
+        // Regenerate QR code with the real DB id so scanner can match by id
+        loc.qrCode = 'loc:' + data.id + ':' + encodeURIComponent(loc.name);
+        // Update localStorage with the corrected record (real id + qrCode)
+        const local2 = S.get('attLocations', []);
+        const j = local2.findIndex(l=>String(l.id)===String(data.id)||l.qrCode===('loc:'+Date.now()+':'+encodeURIComponent(loc.name)));
+        // Find by temp timestamp id (the one we inserted with)
+        const k = local2.findIndex(l=>l.qrCode&&l.qrCode.includes(':'+encodeURIComponent(loc.name))&&String(l.id).length>=13);
+        if(k>=0){ local2[k]=loc; S.set('attLocations',local2); _attLocations=local2; }
+        // Also update the qr_code in Supabase with the real id-based QR
+        await _sb.from('att_locations').update({qr_code:loc.qrCode}).eq('id',data.id);
+      }
     }
-  } catch(e){ console.error('dbSaveLocation exception:', e); console.warn('Location save error (saved locally):', e.message); }
+  } catch(e){ console.error('dbSaveLocation exception:', e); }
   return loc;
 }
 
@@ -6719,7 +6731,9 @@ async function addLocation(){
   showLoader('Saving...');
   await dbSaveLocation(loc);
   hideLoader();
-  _attLocations = S.get('attLocations',[]);
+  // Reload from DB to get real id and regenerated QR code
+  try{ _attLocations = await dbGetLocations(); }
+  catch(e){ _attLocations = S.get('attLocations',[]); }
   if(nameEl) nameEl.value='';
   if(addrEl) addrEl.value='';
   const content = document.getElementById('att-modal-content');
@@ -8776,7 +8790,8 @@ async function loginPinSubmit(){
     return;
   }
 
-  // Log in
+  // Log in — ensure empId is always linked
+  if(emp && !user.empId) user.empId = emp.id;
   CU = user;
   SS.set('session',{userId:user.id, username:user.username||emp.phone, loginAt:new Date().toISOString()});
   addAudit(user.name,'Logged in via PIN');
@@ -11070,7 +11085,9 @@ async function _handleQRData(scannedData, empId){
     // Match by QR code string or by id
     matchedLoc = _attLocations.find(l=>
       l.qrCode === scannedData ||
-      String(l.id) === String(locId)
+      String(l.id) === String(locId) ||
+      // Fallback: match by decoded name if id mismatch (old QR codes with timestamp id)
+      (locName && l.name && l.name.toLowerCase()===locName.toLowerCase())
     ) || {id:locId, name:locName, qrCode:scannedData};
   } else {
     // Try exact match against any location QR
@@ -11923,10 +11940,11 @@ function getScopedEmps(){
   const all = getEmps().filter(e=>e.status!=='offboarded');
   if(!CU) return all;
   if(CU.role==='admin'||CU.role==='hr') return all;
-  const hodEmp = CU.empId ? gE(CU.empId) : null;
+  const hodEmp = CU.empId ? gE(CU.empId) :
+    getEmps().find(e=>e.name&&CU.name&&e.name.toLowerCase()===CU.name.toLowerCase()) || null;
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
     const myName = hodEmp?.name || CU.name;
-    const myDept = hodEmp?.dept;
+    const myDept = hodEmp?.dept || null;
     // Team = direct reports + same dept employees (excluding admin/hr accounts)
     return all.filter(e=>
       !isEmpAdminOrHR(e) &&
@@ -11944,20 +11962,22 @@ function getScopedLeaveEmps(){
   const all = getEmps().filter(e=>e.status!=='offboarded');
   if(!CU) return all;
   if(CU.role==='admin'||CU.role==='hr') return all;
-  const hodEmp = CU.empId ? gE(CU.empId) : null;
+  const hodEmp = CU.empId ? gE(CU.empId) :
+    getEmps().find(e=>e.name&&CU.name&&e.name.toLowerCase()===CU.name.toLowerCase()) || null;
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
     const myName = hodEmp?.name || CU.name;
-    const myDept = hodEmp?.dept;
+    const myDept = hodEmp?.dept || null;
     // Own team (excluding admin/hr)
     const teamIds = new Set(all
       .filter(e=> !isEmpAdminOrHR(e) &&
         (e.manager===myName || (myDept && e.dept===myDept && String(e.id)!==String(hodEmp?.id))))
       .map(e=>String(e.id))
     );
-    // Other HODs — so Siva can see when fellow HODs are on leave
-    // but still exclude admin/hr accounts
-    all.filter(e=>(e.isHOD||e.isSeniorHOD) && !isEmpAdminOrHR(e))
-       .forEach(e=>teamIds.add(String(e.id)));
+    // Other HODs — only senior HODs see all HOD leave; regular HODs see same dept
+    if(hodEmp?.isSeniorHOD || CU.seniorHOD){
+      all.filter(e=>(e.isHOD||e.isSeniorHOD) && !isEmpAdminOrHR(e))
+         .forEach(e=>teamIds.add(String(e.id)));
+    }
     // Include self
     if(hodEmp) teamIds.add(String(hodEmp.id));
     return all.filter(e=>teamIds.has(String(e.id)));
@@ -12276,58 +12296,75 @@ async function saveHRPin(userId, empName){
   const errEl = document.getElementById('hr-pin-err');
   const pin = pinEl?.value.trim();
   if(!/^[0-9]{4}$/.test(pin)){
-    if(errEl){ errEl.textContent = 'PIN must be exactly 4 digits.'; errEl.style.display = 'block'; }
+    if(errEl){ errEl.textContent='PIN must be exactly 4 digits.'; errEl.style.display='block'; }
     return;
   }
   const pinHash = simpleHash(pin);
-  // Check for PIN conflicts across all employees
-  const conflict = getEmps().filter(e=>e.status!=='offboarded').find(e=>{
-    return e.pinHash===pinHash && String(e.id)!==String(userId);
-  });
+
+  // Find the user account first
+  const user = getUsers().find(u=>String(u.id)===String(userId));
+
+  // Find the linked employee — check multiple signals
+  const allEmps = getEmps();
+  let emp = null;
+  if(user){
+    emp = allEmps.find(e=>
+      (user.empId && String(e.id)===String(user.empId)) ||
+      (e.userId && String(e.userId)===String(user.id)) ||
+      (user.email && e.email && user.email.toLowerCase()===e.email.toLowerCase()) ||
+      (user.phone && e.phone &&
+       user.phone.replace(/[^0-9]/g,'')===e.phone.replace(/[^0-9]/g,''))
+    );
+  }
+  // Fallback: maybe userId IS actually an empId (old call sites)
+  if(!emp) emp = allEmps.find(e=>String(e.id)===String(userId));
+
+  // PIN conflict check (among other employees)
+  const conflict = allEmps.filter(e=>e.status!=='offboarded').find(e=>
+    e.pinHash===pinHash && emp && String(e.id)!==String(emp.id)
+  );
   if(conflict){
-    if(errEl){ errEl.textContent = 'PIN already used by another employee. Choose a different one.'; errEl.style.display = 'block'; }
+    if(errEl){ errEl.textContent='PIN already used. Choose a different one.'; errEl.style.display='block'; }
     return;
   }
 
-  // Save PIN to employee record — only update pin_hash column
-  const emp = getEmps().find(e=>
-    String(e.id)===String(userId) ||
-    String(e.userId)===String(userId) ||
-    (() => { const u=findUserForEmployee(e, getUsers()); return u && String(u.id)===String(userId); })()
-  );
+  // Save PIN on employee record — both locally and to Supabase
   if(emp){
     emp.pinHash = pinHash;
-    // Update cache locally first
     const ei = _cache.emps.findIndex(e=>String(e.id)===String(emp.id));
-    if(ei>=0) _cache.emps[ei] = emp;
+    if(ei>=0) _cache.emps[ei]=emp; else _cache.emps.push(emp);
     saveEmps(_cache.emps);
-    // Only send pin_hash to Supabase (avoids "column not found" errors)
-    if(sbReady() && String(emp.id).length < 13){
-      await _sb.from('employees').update({pin_hash: pinHash, updated_at: new Date().toISOString()})
-        .eq('id', emp.id)
-        .then(({error}) => { if(error) console.warn('PIN employee save error:', error.message); });
+    // Targeted Supabase update — only pin_hash column
+    if(sbReady() && String(emp.id).length<13){
+      _sb.from('employees')
+        .update({pin_hash:pinHash, updated_at:new Date().toISOString()})
+        .eq('id',emp.id)
+        .then(({error})=>{ if(error) console.warn('PIN save (emp) error:',error.message); });
     }
   }
 
-  // Save PIN to user account
-  const user = getUsers().find(u=>String(u.id)===String(userId));
+  // Save PIN on user account
   if(user){
-    user.setupDone = true;
-    user.setupToken = null;
     user.pinHash = pinHash;
     user.passwordHash = pinHash;
-    const idx = _userCache.findIndex(u=>String(u.id)===String(userId));
-    if(idx>=0) _userCache[idx] = user;
-    else _userCache.push(user);
-    S.set('users', _userCache);
-    // Save to Supabase
-    dbSaveUser(user).catch(e=>console.warn('PIN user save error:', e));
+    user.setupDone = true;
+    user.setupToken = null;
+    if(emp && !user.empId) user.empId = emp.id;
+    const ui = _userCache.findIndex(u=>String(u.id)===String(userId));
+    if(ui>=0) _userCache[ui]=user; else _userCache.push(user);
+    S.set('users',_userCache);
+    dbSaveUser(user).catch(e=>console.warn('PIN save (user) error:',e));
   }
 
-  dbAddAudit(CU?.name||'HR', 'Set PIN for: '+empName);
+  if(!emp && !user){
+    if(errEl){ errEl.textContent='Could not find employee. Please refresh and try again.'; errEl.style.display='block'; }
+    return;
+  }
+
+  dbAddAudit(CU?.name||'HR','Set PIN for: '+empName);
   closeModal();
-  toast('PIN set for '+empName+'. They can now log in.', 'success');
-  setTimeout(()=>{ if(typeof openAccountAudit==='function') openAccountAudit(); }, 300);
+  toast('PIN set for '+empName+'. They can now log in.','success');
+  setTimeout(()=>{ if(typeof openAccountAudit==='function') openAccountAudit(); },300);
 }
 
 // ── Handle QR code scanned from employee mobile screen ───────────────────────
