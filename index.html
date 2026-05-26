@@ -6470,7 +6470,10 @@ async function dbSaveLocation(loc){
       if(error) console.warn('Update location error:', error.message);
     } else {
       // Insert new
+      console.log('Inserting location:', JSON.stringify(row));
+      console.log('sbReady:', sbReady(), '_sb:', !!_sb);
       const {data, error} = await _sb.from('att_locations').insert(row).select();
+      console.log('Insert result - data:', JSON.stringify(data), 'error:', JSON.stringify(error));
       if(error){
         console.warn('Insert location error:', error.message);
       } else {
