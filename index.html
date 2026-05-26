@@ -12295,10 +12295,11 @@ async function dbSaveEmployee(emp){
       return data?rowToEmp(data):emp;
     } else { // new employee = insert
       delete row.id;
-      // Remove undefined/null values that Supabase may reject
       Object.keys(row).forEach(k=>{if(row[k]===undefined||row[k]===null)delete row[k];});
+      toast('Inserting to Supabase: '+Object.keys(row).length+' cols','success');
       let {data:_insRaw,error}=await _sb.from('employees').insert(row).select();
       let data=Array.isArray(_insRaw)?_insRaw[0]:_insRaw;
+      toast('Insert done: data='+(data?data.id:'null')+' error='+(error?error.code:'none'),'success');
       if(error){
         // Retry with safe columns only
         const safeInsert = {
