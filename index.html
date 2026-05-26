@@ -1847,7 +1847,7 @@ function _sbCreate(url, key){
     return null;
   }
   try{
-    _sb = supabase.createClient(url, key, {global:{headers:{'x-app-secret':_APP_SECRET}}});
+    _sb = supabase.createClient(url, key);
   }catch(e){ console.warn('Supabase init error:', e); return null; }
   return _sb;
 }
