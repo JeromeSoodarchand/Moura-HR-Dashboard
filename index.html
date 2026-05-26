@@ -2148,7 +2148,7 @@ async function dbSaveEmployee(emp){
   try{
     const row=empToRow(emp);
     if(emp.id && String(emp.id).length<13){ // numeric DB id = update (shorter than JS timestamp)
-      let {data,error}=await _sb.from('employees').update(row).eq('id',emp.id).select().single();
+      let {data,error}=await _sb.from('employees').update(row).eq('id',emp.id).select();
       if(error){
         // Retry with minimal safe columns only (handles missing columns in schema)
         const safeRow = {
@@ -2164,7 +2164,7 @@ async function dbSaveEmployee(emp){
           updated_at: row.updated_at
         };
         Object.keys(safeRow).forEach(k=>{ if(safeRow[k]===undefined||safeRow[k]===null) delete safeRow[k]; });
-        const retry = await _sb.from('employees').update(safeRow).eq('id',emp.id).select().single();
+        const retry = await _sb.from('employees').update(safeRow).eq('id',emp.id).select();
         if(retry.error){
           console.error('Update employee error:',retry.error);
           // Save locally and don't show error toast for background saves
@@ -2179,7 +2179,7 @@ async function dbSaveEmployee(emp){
       delete row.id;
       // Remove undefined/null values that Supabase may reject
       Object.keys(row).forEach(k=>{if(row[k]===undefined||row[k]===null)delete row[k];});
-      let {data,error}=await _sb.from('employees').insert(row).select().single();
+      let {data,error}=await _sb.from('employees').insert(row).select();
       if(error){
         // Retry with safe columns only
         const safeInsert = {
@@ -2189,7 +2189,7 @@ async function dbSaveEmployee(emp){
           checklist: row.checklist||{}, clock_mode: row.clock_mode||'qr'
         };
         Object.keys(safeInsert).forEach(k=>{if(safeInsert[k]===undefined||safeInsert[k]===null)delete safeInsert[k];});
-        const retry=await _sb.from('employees').insert(safeInsert).select().single();
+        const retry=await _sb.from('employees').insert(safeInsert).select();
         if(retry.error){
           console.error('Insert employee error:',retry.error);
           // Save locally
@@ -2248,7 +2248,7 @@ async function dbSaveEvent(evt){
   if(!sbReady()){const e=getEvts();e.push(evt);saveEvts(e);return evt;}
   try{
     const row=evtToRow(evt);delete row.id;
-    const {data,error}=await _sb.from('events').insert(row).select().single();
+    const {data,error}=await _sb.from('events').insert(row).select();
     if(error){console.error('Insert event error:',error);return evt;}
     return data?rowToEvt(data):evt;
   } catch(err){
@@ -2274,12 +2274,12 @@ async function dbSaveProgram(prog){
     const row=progToRow(prog);
     Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
     if(prog.id && String(prog.id).length<13){
-      const {data,error}=await _sb.from('training_programs').update(row).eq('id',prog.id).select().single();
+      const {data,error}=await _sb.from('training_programs').update(row).eq('id',prog.id).select();
       if(error){console.error('Update program error:',error);throw error;}
       return data?rowToProg(data):prog;
     } else {
       delete row.id;
-      const {data,error}=await _sb.from('training_programs').insert(row).select().single();
+      const {data,error}=await _sb.from('training_programs').insert(row).select();
       if(error){console.error('Insert program error:',error);throw error;}
       return data?rowToProg(data):prog;
     }
@@ -2303,12 +2303,12 @@ async function dbSaveAssignment(asgn){
     const row=asgnToRow(asgn);
     Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
     if(asgn.id && String(asgn.id).length<13){
-      const {data,error}=await _sb.from('training_assignments').update(row).eq('id',asgn.id).select().single();
+      const {data,error}=await _sb.from('training_assignments').update(row).eq('id',asgn.id).select();
       if(error){console.error('Update assignment error:',error);throw error;}
       return data?rowToAsgn(data):asgn;
     } else {
       delete row.id;
-      const {data,error}=await _sb.from('training_assignments').insert(row).select().single();
+      const {data,error}=await _sb.from('training_assignments').insert(row).select();
       if(error){console.error('Insert assignment error:',error);throw error;}
       return data?rowToAsgn(data):asgn;
     }
@@ -2352,11 +2352,11 @@ async function dbSaveUser(user){
   Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
   try{
     if(user.id && String(user.id).length<13){
-      const {data,error}=await _sb.from('hr_users').update(row).eq('id',user.id).select().single();
+      const {data,error}=await _sb.from('hr_users').update(row).eq('id',user.id).select();
       if(error){console.error('Update user error:',error);throw error;}
       return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at,seniorHOD:data.senior_hod||false,crossLeaveVisibility:data.cross_leave_visibility||false};
     } else {
-      const {data,error}=await _sb.from('hr_users').insert(row).select().single();
+      const {data,error}=await _sb.from('hr_users').insert(row).select();
       if(error){console.error('Insert user error:',error);throw error;}
       return{id:data.id,name:data.name,username:data.username,email:data.email||'',phone:data.phone||'',role:data.role,active:data.active,passwordHash:data.password_hash,setupToken:data.setup_token||null,setupDone:data.setup_done||false,empId:data.emp_id||null,createdAt:data.created_at,seniorHOD:data.senior_hod||false,crossLeaveVisibility:data.cross_leave_visibility||false};
     }
@@ -6431,12 +6431,12 @@ async function dbSaveAttendance(rec){
   try{
     const row = attToRow(rec);
     if(rec.id && String(rec.id).length < 13){
-      const {data,error} = await _sb.from('attendance').update(row).eq('id',rec.id).select().single();
+      const {data,error} = await _sb.from('attendance').update(row).eq('id',rec.id).select();
       if(error){ console.error('Update attendance:', error); return rec; }
       return data ? rowToAtt(data) : rec;
     } else {
       delete row.id;
-      const {data,error} = await _sb.from('attendance').insert(row).select().single();
+      const {data,error} = await _sb.from('attendance').insert(row).select();
       if(error){ console.error('Insert attendance:', error); return rec; }
       return data ? rowToAtt(data) : rec;
     }
@@ -6469,10 +6469,12 @@ async function dbSaveLocation(loc){
       if(error){ console.error('Update location error:',error); }
     } else {
       delete row.id;
-      const {data,error} = await _sb.from('att_locations').insert(row).select().single();
+      const {data,error} = await _sb.from('att_locations').insert(row).select();
       if(error){ console.error('Insert location error:',error); }
       else if(data){
-        loc.id = data.id;
+        const locData = Array.isArray(data) ? data[0] : data;
+        if(!locData) return loc;
+        loc.id = locData.id;
         // Regenerate QR code with the real DB id so scanner can match by id
         loc.qrCode = 'loc:' + data.id + ':' + loc.name.replace(/[\r\n]/g,'');
         // Update localStorage with the corrected record (real id + qrCode)
@@ -7931,12 +7933,12 @@ async function dbSaveLeaveRequest(req){
     };
     Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
     if(req.id && String(req.id).length<13){
-      const {data,error} = await _sb.from('leave_requests').update(row).eq('id',req.id).select().single();
+      const {data,error} = await _sb.from('leave_requests').update(row).eq('id',req.id).select();
       if(error){ console.error('Update leave error:',error); return req; }
       return data ? {...req, id:data.id} : req;
     } else {
       delete row.id;
-      const {data,error} = await _sb.from('leave_requests').insert(row).select().single();
+      const {data,error} = await _sb.from('leave_requests').insert(row).select();
       if(error){ console.error('Insert leave error:',error); return req; }
       return data ? {...req, id:data.id} : req;
     }
