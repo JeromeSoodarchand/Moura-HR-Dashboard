@@ -1892,34 +1892,34 @@ function _sbCreate(url, key){
             const error = resp.ok ? null : {message: await resp.text(), code: resp.status};
             return {data, error};
           } else if(this._op === 'insert'){
-            let url2b = url2;
-            if(this._single) url2b += (url2b.includes('?')?'&':'?')+'select=*';
-            if(this._filters.length) url2b += (url2b.includes('?')?'&':'?')+this._filters.join('&');
             const h2 = Object.assign({},h,{'Prefer':'return=representation'});
+            delete h2['Accept']; // don't force single-object response for insert
+            let url2b = url2;
+            if(this._filters.length) url2b += (url2b.includes('?')?'&':'?')+this._filters.join('&');
             const resp = await fetch(url2b, {method:'POST', headers:h2, body:JSON.stringify(this._body)});
-            const raw = resp.ok ? await resp.json() : null;
-            const data = this._single&&Array.isArray(raw) ? raw[0]||null : raw;
-            const error = resp.ok ? null : {message: await resp.text(), code: resp.status};
+            const raw = resp.ok ? await resp.json().catch(()=>null) : null;
+            const error = resp.ok ? null : {message: await resp.text().catch(()=>String(resp.status)), code: resp.status};
+            const data = Array.isArray(raw) ? (this._single ? raw[0]||null : raw) : raw;
             return {data, error};
           } else if(this._op === 'update'){
-            let url2d = url2;
-            if(this._single) url2d += (url2d.includes('?')?'&':'?')+'select=*';
-            if(this._filters.length) url2d += (url2d.includes('?')?'&':'?')+this._filters.join('&');
             const h4 = Object.assign({},h,{'Prefer':'return=representation'});
+            delete h4['Accept'];
+            let url2d = url2;
+            if(this._filters.length) url2d += (url2d.includes('?')?'&':'?')+this._filters.join('&');
             const resp = await fetch(url2d, {method:'PATCH', headers:h4, body:JSON.stringify(this._body)});
-            const raw3 = resp.ok ? await resp.json() : null;
-            const data = this._single&&Array.isArray(raw3) ? raw3[0]||null : raw3;
-            const error = resp.ok ? null : {message: await resp.text(), code: resp.status};
+            const raw3 = resp.ok ? await resp.json().catch(()=>null) : null;
+            const error = resp.ok ? null : {message: await resp.text().catch(()=>String(resp.status)), code: resp.status};
+            const data = Array.isArray(raw3) ? (this._single ? raw3[0]||null : raw3) : raw3;
             return {data, error};
           } else if(this._op === 'upsert'){
             const h3 = Object.assign({},h,{'Prefer':'return=representation,resolution=merge-duplicates'});
+            delete h3['Accept'];
             let url2c = url2;
-            if(this._single) url2c += (url2c.includes('?')?'&':'?')+'select=*';
             if(this._filters.length) url2c += (url2c.includes('?')?'&':'?')+this._filters.join('&');
             const resp = await fetch(url2c, {method:'POST', headers:h3, body:JSON.stringify(this._body)});
-            const raw2 = resp.ok ? await resp.json() : null;
-            const data = this._single&&Array.isArray(raw2) ? raw2[0]||null : raw2;
-            const error = resp.ok ? null : {message: await resp.text(), code: resp.status};
+            const raw2 = resp.ok ? await resp.json().catch(()=>null) : null;
+            const error = resp.ok ? null : {message: await resp.text().catch(()=>String(resp.status)), code: resp.status};
+            const data = Array.isArray(raw2) ? (this._single ? raw2[0]||null : raw2) : raw2;
             return {data, error};
           } else if(this._op === 'delete'){
             if(this._filters.length) url2 += '?'+this._filters.join('&');
