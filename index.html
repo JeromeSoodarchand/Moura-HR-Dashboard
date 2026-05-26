@@ -11672,6 +11672,24 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
           <button class="btn btn-primary" onclick="saveCompanySettings()">💾 Save changes</button>
         </div>
       </div>
+
+      <!-- KIOSK MODE -->
+      <div class="card" style="margin-bottom:16px;border:2px solid var(--navy)">
+        <div class="ch">
+          <span class="ct">🖥️ Kiosk Mode</span>
+        </div>
+        <div class="cb" style="padding:16px">
+          <p style="font-size:13px;color:var(--text2);margin-bottom:14px">
+            Launch kiosk mode on this device so employees can clock in and out using their PIN or QR code. The admin dashboard will be hidden.
+          </p>
+          <button class="btn btn-primary" onclick="openKiosk()" style="font-size:14px;padding:10px 24px">
+            🚀 Launch Kiosk Mode
+          </button>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:8px">
+            To exit kiosk mode, enter the admin password when prompted.
+          </div>
+        </div>
+      </div>
       <!-- JOB TITLES -->
       <div class="card" style="margin-top:14px">
         <div class="ch"><span class="ct">Job Titles</span><span style="font-size:12px;color:var(--text3)">Available in the employee role dropdown</span></div>
@@ -12257,17 +12275,27 @@ async function dbGetEmployees(){
 }
 
 async function dbSaveEmployee(emp){
-  // Always save locally first
-  const localEmps = getEmps();
-  const localIdx = localEmps.findIndex(x=>String(x.id)===String(emp.id));
-  if(localIdx>=0) localEmps[localIdx]=emp; else localEmps.push(emp);
-  saveEmps(localEmps);
+  const isNew = !emp.id || String(emp.id).length >= 13;
 
-  if(!sbReady()) return emp;
+  // For existing employees, save locally immediately as optimistic update
+  // For new employees, DON'T save locally yet (avoids duplicate with temp id)
+  if(!isNew){
+    const localEmps = getEmps();
+    const localIdx = localEmps.findIndex(x=>String(x.id)===String(emp.id));
+    if(localIdx>=0) localEmps[localIdx]=emp; else localEmps.push(emp);
+    saveEmps(localEmps);
+  }
+
+  if(!sbReady()){
+    // Offline fallback - save locally even for new
+    const localEmps = getEmps();
+    const localIdx = localEmps.findIndex(x=>String(x.id)===String(emp.id));
+    if(localIdx>=0) localEmps[localIdx]=emp; else localEmps.push(emp);
+    saveEmps(localEmps);
+    return emp;
+  }
 
   const row = empToRow(emp);
-  const isNew = !emp.id || String(emp.id).length >= 13; // timestamp id = new
-
   if(!isNew){
     // UPDATE existing employee
     const {data, error} = await _sb.from('employees').update(row).eq('id', emp.id);
