@@ -12008,12 +12008,17 @@ function _sbCreate(url, key){
             return {data, error};
           } else if(this._op === 'insert'){
             const h2 = Object.assign({},h,{'Prefer':'return=representation'});
-            delete h2['Accept']; // don't force single-object response for insert
+            delete h2['Accept'];
             let url2b = url2;
             if(this._filters.length) url2b += (url2b.includes('?')?'&':'?')+this._filters.join('&');
+            console.log('[FETCH INSERT]', url2b, JSON.stringify(this._body).slice(0,100));
             const resp = await fetch(url2b, {method:'POST', headers:h2, body:JSON.stringify(this._body)});
-            const raw = resp.ok ? await resp.json().catch(()=>null) : null;
-            const error = resp.ok ? null : {message: await resp.text().catch(()=>String(resp.status)), code: resp.status};
+            console.log('[FETCH INSERT] status:', resp.status, resp.statusText);
+            const respText = await resp.text().catch(()=>'');
+            console.log('[FETCH INSERT] response:', respText.slice(0,200));
+            let raw = null;
+            try{ raw = JSON.parse(respText); }catch(e){}
+            const error = resp.ok ? null : {message: respText, code: resp.status};
             const data = Array.isArray(raw) ? (this._single ? raw[0]||null : raw) : raw;
             return {data, error};
           } else if(this._op === 'update'){
