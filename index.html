@@ -14446,6 +14446,7 @@ function _genEmpNo(){
 }
 
 function submitAdd(){
+  toast('Saving...','success');
   const name=(document.getElementById('fn')?.value||'').trim();
   const email=(document.getElementById('fe')?.value||'').trim();
   const phone=normalisePhone(document.getElementById('fph').value);
@@ -14478,6 +14479,7 @@ function submitAdd(){
     isSeniorHOD:document.getElementById('fis-senior-hod')?.checked||false,
     pinHash:(()=>{const p=(document.getElementById('femp-pin')?.value||'').replace(/[^0-9]/g,'');return p.length===4?simpleHash(p):null;})(),
   };
+  toast('Calling dbSaveEmployee...','success');
   showLoader('Saving…');
   dbSaveEmployee(newEmp).then(async saved=>{
     hideLoader();
