@@ -19165,7 +19165,8 @@ function openKiosk(){
 function renderKioskEmpList(filter){
   const el = document.getElementById('kiosk-emp-list');
   if(!el) return;
-  const emps = getScopedEmps().filter(e=>e.status!=='offboarded');
+  // Kiosk always shows ALL active employees regardless of logged-in user's scope
+  const emps = getEmps().filter(e=>e.status!=='offboarded');
   const filtered = filter
     ? emps.filter(e=>e.name.toLowerCase().includes(filter.toLowerCase()))
     : emps;
@@ -19381,7 +19382,8 @@ function renderKioskLive(){
   if(!live) return;
   const localAtt=S.get('attendance',[]);
   const today=localAtt.filter(r=>r.date===todayStr());
-  const emps=getScopedEmps().filter(e=>e.status!=='offboarded');
+  // Kiosk always shows ALL active employees
+  const emps=getEmps().filter(e=>e.status!=='offboarded');
   const chips=emps.map(emp=>{
     const rec=today.find(r=>String(r.empId)===String(emp.id)&&!r.clockOut);
     if(!rec&&!today.find(r=>String(r.empId)===String(emp.id))) return '';
