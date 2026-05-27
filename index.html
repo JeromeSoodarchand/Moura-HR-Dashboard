@@ -11070,7 +11070,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     <nav class="sidebar" id="sidebar">
     <div class="sb-logo">
       <div class="sb-logo-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-      <div><div class="sb-logo-text" id="org-name-nav">My Company</div><div class="sb-logo-sub">Management Portal</div></div>
+      <div><div class="sb-logo-text" id="org-name-nav"></div><div class="sb-logo-sub">Management Portal</div></div>
     </div>
 
     <div class="sb-section" id="sb-sec-overview">Overview</div>
@@ -11967,7 +11967,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
 <div class="toast-container" id="tc"></div>
 
 <script>
-// ─── S// ─── SUPABAS// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
+// ─── S//// ─── S// ─── SUPABAS// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
 const _APP_SECRET = 'MHR_9A_wRcm-HPdnuZCbJ4NXMZJxjuTYceubJUlXqyqefYA';
 const _SB_URL = 'https://mstyeqlabtjvkbnoutit.supabase.co';
@@ -12825,7 +12825,19 @@ async function boot(){
       document.getElementById('login-screen').style.display='none';
       const _app=document.getElementById('app');
       _app.style.display='flex';_app.style.flexDirection='row';
-      applyPermissions();applyAttEditorPerm();applyStoredBranding();initInactivityTracking();
+      applyPermissions();applyAttEditorPerm();
+      // Load company settings from Supabase before applying branding
+      if(sbReady()){
+        try{
+          const {data:csRows}=await _sb.from('company_settings').select('key,value');
+          if(csRows&&csRows.length){
+            const cs=getSettings();
+            csRows.forEach(r=>{ if(r.key&&r.value!==null) cs[r.key]=r.value; });
+            S.set('settings',cs);
+          }
+        }catch(e){}
+      }
+      applyStoredBranding();initInactivityTracking();
   assignMissingEmpNos().catch(()=>{});
       // Route same as login — but if HOD was on HR platform, go there directly
       const _rEmp = CU.empId ? gE(CU.empId) : null;
@@ -14532,7 +14544,6 @@ async function submitAdd(){
   };
   showLoader('Saving…');
   dbSaveEmployee(newEmp).then(async saved=>{
-    hideLoader();
     const s=saved||newEmp;
     addNotif('New hire added: '+name,'success');
     dbAddAudit(CU.name,'Added employee: '+name);
@@ -14541,11 +14552,12 @@ async function submitAdd(){
       startDate:newEmp.start, manager:newEmp.manager, addedBy:CU.name
     });
     closeModal();
-    // Reload employees from Supabase to get real ids BEFORE creating account
+    // Reload from Supabase BEFORE rendering - prevents duplicate flash
     try{
       const fresh = await dbGetEmployees();
-      _cache.emps = fresh;
-      saveEmps(fresh);
+      // Remove any temp-id version of this employee
+      _cache.emps = fresh.filter(e=>String(e.id).length < 13);
+      saveEmps(_cache.emps);
       // Find the newly saved employee with real DB id
       const realEmp = fresh.find(e=>
         (emp.email && e.email && e.email.toLowerCase()===emp.email.toLowerCase()) ||
@@ -14559,6 +14571,7 @@ async function submitAdd(){
       saveEmps(_cache.emps);
       autoCreateAccountForNewEmployee(s).catch(e=>console.error('Auto-account error:',e));
     }
+    hideLoader();
     renderDashboard();
     if(document.getElementById('page-employees')?.classList.contains('active')) renderEmployees();
     toast(name+' added successfully.','success');
@@ -22779,7 +22792,6 @@ function renderUserAuditSummary(){
   el.innerHTML = html;
 }
 
-</script>
 
 <!-- KIOSK / PIN SCREEN -->
 <div id="kiosk-screen" style="display:none;position:fixed;inset:0;z-index:8000;background:linear-gradient(160deg,#0A0620 0%,#1E1445 60%,#2D1B6B 100%);display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;font-family:inherit">
