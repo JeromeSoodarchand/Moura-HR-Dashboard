@@ -12863,6 +12863,14 @@ async function boot(){
             const el=document.getElementById('org-name-login');
             if(el)el.textContent=orgRow.value;
           }
+          const tagRow=data.find(r=>r.key==='tagline');
+          const tlEl=document.getElementById('login-tagline');
+          if(tlEl) tlEl.textContent=(tagRow&&tagRow.value)||'';
+          // Also persist full settings to localStorage so next load is instant
+          const saved=S.get('companySettings',{});
+          const patch={};
+          data.forEach(r=>{try{patch[r.key]=JSON.parse(r.value);}catch{patch[r.key]=r.value;}});
+          S.set('companySettings',Object.assign({},saved,patch));
         }
       });
     }
@@ -12883,6 +12891,11 @@ async function boot(){
         if(settings){
           const orgRow=settings.find(r=>r.key==='orgName');
           if(orgRow&&orgRow.value) S.set('org',orgRow.value);
+          // Persist full settings so showLoginScreen() reads correct values
+          const saved=S.get('companySettings',{});
+          const patch={};
+          settings.forEach(r=>{try{patch[r.key]=JSON.parse(r.value);}catch{patch[r.key]=r.value;}});
+          S.set('companySettings',Object.assign({},saved,patch));
         }
         showLoginScreen();
         return;
