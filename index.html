@@ -19364,12 +19364,30 @@ async function kioskSubmit(){
 }
 
 async function kioskClockIn(emp,loc){
+  // Try to get GPS coordinates
+  let gpsNote = '';
+  let gpsCoords = null;
+  try{
+    if(navigator.geolocation){
+      gpsCoords = await new Promise((resolve)=>{
+        navigator.geolocation.getCurrentPosition(
+          pos=>resolve({lat:pos.coords.latitude.toFixed(6),lng:pos.coords.longitude.toFixed(6),acc:Math.round(pos.coords.accuracy)}),
+          ()=>resolve(null),
+          {timeout:5000,maximumAge:0,enableHighAccuracy:true}
+        );
+      });
+    }
+  }catch(e){}
+  if(gpsCoords) gpsNote = ' | GPS: '+gpsCoords.lat+','+gpsCoords.lng+' (±'+gpsCoords.acc+'m)';
+
   const rec={
     id:Date.now(),empId:emp.id,
     clockIn:new Date().toISOString(),clockOut:null,
     date:todayStr(),durationMinutes:null,
     location:loc.name,locationId:loc.id,
-    notes:'Kiosk PIN clock-in'
+    lat:gpsCoords?gpsCoords.lat:null,
+    lng:gpsCoords?gpsCoords.lng:null,
+    notes:'Kiosk PIN clock-in'+gpsNote
   };
   const localAtt=S.get('attendance',[]);
   localAtt.push(rec);
@@ -19378,7 +19396,8 @@ async function kioskClockIn(emp,loc){
     console.error('Clock-in save failed:',e);
     toast('Clock-in saved locally. Will sync when connection restored.','info');
   });
-  kioskShowResult('👋  '+emp.name+'\nClocked in at '+loc.name,'in');
+  const locLine = gpsCoords ? '\n📍 '+gpsCoords.lat+', '+gpsCoords.lng : '\nClocked in at '+loc.name;
+  kioskShowResult('👋  '+emp.name+locLine,'in');
   setDotsState('success');
 }
 
