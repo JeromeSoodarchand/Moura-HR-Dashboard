@@ -10987,7 +10987,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
 <div id="setup-screen" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#0A0820 0%,#1E1445 55%,#2C2070 100%)">
   <div class="login-card" style="width:420px">
     <div style="text-align:center;margin-bottom:16px">
-      <div style="font-size:28px;font-weight:700;color:var(--navy);margin-bottom:4px" id="setup-org-name">SolentraHR</div>
+      <div style="font-size:28px;font-weight:700;color:var(--navy);margin-bottom:4px" id="setup-org-name"></div>
     </div>
     <div class="login-sub">Create your administrator account to get started</div>
     <div style="background:var(--gold-light);border-radius:var(--radius);padding:10px 12px;font-size:12.5px;color:var(--gold-deep);margin-bottom:18px">
@@ -12826,18 +12826,7 @@ async function boot(){
       const _app=document.getElementById('app');
       _app.style.display='flex';_app.style.flexDirection='row';
       applyPermissions();applyAttEditorPerm();
-      // Load company settings from Supabase before applying branding
-      if(sbReady()){
-        try{
-          const {data:csRows}=await _sb.from('company_settings').select('key,value');
-          if(csRows&&csRows.length){
-            const cs=getSettings();
-            csRows.forEach(r=>{ if(r.key&&r.value!==null) cs[r.key]=r.value; });
-            S.set('companySettings',cs);
-          }
-        }catch(e){}
-      }
-      applyStoredBranding();initInactivityTracking();
+      await applyStoredBranding();initInactivityTracking();
   assignMissingEmpNos().catch(()=>{});
       // Route same as login — but if HOD was on HR platform, go there directly
       const _rEmp = CU.empId ? gE(CU.empId) : null;
@@ -15849,7 +15838,21 @@ function renderSettingsSummary(cs){
 }
 
 // Apply saved branding on every login
-function applyStoredBranding(){
+async function applyStoredBranding(){
+  // Always try to load fresh from Supabase first
+  if(sbReady()){
+    try{
+      const {data:csRows}=await _sb.from('company_settings').select('key,value');
+      if(csRows&&csRows.length){
+        const cs=getSettings();
+        csRows.forEach(r=>{ if(r.key&&r.value!==null) cs[r.key]=r.value; });
+        S.set('companySettings',cs);
+        applyBrandingToUI(cs);
+        return;
+      }
+    }catch(e){}
+  }
+  // Fallback to localStorage
   const cs=getSettings();
   applyBrandingToUI(cs);
 }
