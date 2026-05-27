@@ -13364,28 +13364,23 @@ async function loginClockInFromModal(locationId, locationName, knownEmpId){
 async function loginClockIn(empId, locationId, locationName){
   closeAttModal();
   showLoader('Clocking in...');
+  const {coords, address} = await getGPSLocation();
   const rec = {
     id:Date.now(), empId,
     clockIn:new Date().toISOString(),
     clockOut:null,
     date:todayStr(),
     durationMinutes:null,
-    location:locationName,
+    location:address||locationName,
     locationId:locationId,
-    notes:'Auto clock-in on login'
+    lat:coords?coords.lat:null,
+    lng:coords?coords.lng:null,
+    notes:'Auto clock-in on login'+(address?' | '+address:'')
   };
-  // Try to get GPS
-  try{
-    await new Promise(resolve=>{
-      navigator.geolocation.getCurrentPosition(pos=>{
-        rec.lat=pos.coords.latitude;rec.lng=pos.coords.longitude;resolve();
-      },()=>resolve(),{timeout:3000});
-    });
-  } catch(e){}
   await dbSaveAttendance(rec);
   hideLoader();
-  toast('Clocked in at '+locationName+'. Have a great day!','success');
-  dbAddAudit(CU.name,'Auto clock-in at '+locationName+' on login');
+  toast('Clocked in at '+(address||locationName)+'. Have a great day!','success');
+  dbAddAudit(CU.name,'Auto clock-in at '+(address||locationName)+' on login');
 }
 
 function doLogout(){
@@ -16747,6 +16742,38 @@ function attToRow(r){
   Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
   return row;
 }
+// ── GPS + REVERSE GEOCODE HELPER ─────────────────────────────────────────────
+async function getGPSLocation(){
+  let coords = null;
+  let address = '';
+  try{
+    if(navigator.geolocation){
+      coords = await new Promise(resolve=>{
+        navigator.geolocation.getCurrentPosition(
+          pos=>resolve({lat:pos.coords.latitude.toFixed(6),lng:pos.coords.longitude.toFixed(6),acc:Math.round(pos.coords.accuracy)}),
+          ()=>resolve(null),
+          {timeout:5000,maximumAge:0,enableHighAccuracy:true}
+        );
+      });
+    }
+  }catch(e){}
+  if(coords){
+    try{
+      const resp = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${coords.lat}&lon=${coords.lng}`,
+        {headers:{'Accept-Language':'en','User-Agent':'SolentraHR/1.0'}}
+      );
+      const geo = await resp.json();
+      if(geo && geo.display_name){
+        const a = geo.address||{};
+        const parts = [a.road||a.pedestrian||a.footway, a.suburb||a.neighbourhood||a.village||a.town||a.city].filter(Boolean);
+        address = parts.length ? parts.join(', ') : geo.display_name.split(',').slice(0,2).join(',').trim();
+      }
+    }catch(e){}
+  }
+  return {coords, address};
+}
+
 function fmtTime(isoStr){ if(!isoStr)return '—'; return new Date(isoStr).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); }
 function calcDuration(ci,co){ if(!ci||!co)return null; return Math.round((new Date(co)-new Date(ci))/60000); }
 function fmtDuration(mins){ if(!mins)return '—'; const h=Math.floor(mins/60),m=mins%60; return h>0?h+'h '+m+'m':m+'m'; }
@@ -17398,7 +17425,9 @@ async function processClockAction(locationId, locationName, isClockedIn, empId){
     } else { hideLoader();toast('No open clock-in found.','error'); }
   } else {
     const rec={id:Date.now(),empId,clockIn:new Date().toISOString(),clockOut:null,date:todayStr(),durationMinutes:null,location:locationName,locationId:locationId,notes:''};
-    try{ await new Promise(resolve=>{navigator.geolocation.getCurrentPosition(pos=>{rec.lat=pos.coords.latitude;rec.lng=pos.coords.longitude;resolve();},()=>resolve(),{timeout:3000});}); } catch(e){}
+    const {coords,address} = await getGPSLocation();
+    if(coords){ rec.lat=coords.lat; rec.lng=coords.lng; }
+    if(address){ rec.location=address; rec.notes='GPS: '+address; }
     await dbSaveAttendance(rec);
     hideLoader();closeAttModal();await renderAttendance();
     const emp=gE(empId);
@@ -18928,15 +18957,19 @@ function openFullHRPlatform(){
 
 async function empClockIn(empId, locationId, locationName){
   try{
+    const {coords, address} = await getGPSLocation();
     const rec = {
       id: 'local-'+Date.now(),
       empId: String(empId),
       date: todayStr(),
       clockIn: new Date().toISOString(),
       clockOut: null,
-      location: locationName,
+      location: address||locationName,
       locationId: String(locationId),
-      durationMinutes: null
+      durationMinutes: null,
+      lat: coords?coords.lat:null,
+      lng: coords?coords.lng:null,
+      notes: 'QR clock-in'+(address?' | '+address:'')
     };
     const saved = await dbSaveAttendance(rec);
     if(saved) rec.id = saved.id||rec.id;
@@ -19364,29 +19397,15 @@ async function kioskSubmit(){
 }
 
 async function kioskClockIn(emp,loc){
-  // Try to get GPS coordinates
-  let gpsNote = '';
-  let gpsCoords = null;
-  try{
-    if(navigator.geolocation){
-      gpsCoords = await new Promise((resolve)=>{
-        navigator.geolocation.getCurrentPosition(
-          pos=>resolve({lat:pos.coords.latitude.toFixed(6),lng:pos.coords.longitude.toFixed(6),acc:Math.round(pos.coords.accuracy)}),
-          ()=>resolve(null),
-          {timeout:5000,maximumAge:0,enableHighAccuracy:true}
-        );
-      });
-    }
-  }catch(e){}
-  if(gpsCoords) gpsNote = ' | GPS: '+gpsCoords.lat+','+gpsCoords.lng+' (±'+gpsCoords.acc+'m)';
-
+  const {coords, address} = await getGPSLocation();
+  const gpsNote = coords ? ' | GPS: '+coords.lat+','+coords.lng+(address?' ('+address+')':'') : '';
   const rec={
     id:Date.now(),empId:emp.id,
     clockIn:new Date().toISOString(),clockOut:null,
     date:todayStr(),durationMinutes:null,
-    location:loc.name,locationId:loc.id,
-    lat:gpsCoords?gpsCoords.lat:null,
-    lng:gpsCoords?gpsCoords.lng:null,
+    location:address||loc.name,locationId:loc.id,
+    lat:coords?coords.lat:null,
+    lng:coords?coords.lng:null,
     notes:'Kiosk PIN clock-in'+gpsNote
   };
   const localAtt=S.get('attendance',[]);
@@ -19396,7 +19415,7 @@ async function kioskClockIn(emp,loc){
     console.error('Clock-in save failed:',e);
     toast('Clock-in saved locally. Will sync when connection restored.','info');
   });
-  const locLine = gpsCoords ? '\n📍 '+gpsCoords.lat+', '+gpsCoords.lng : '\nClocked in at '+loc.name;
+  const locLine = address ? '\n📍 '+address : '\nClocked in at '+loc.name;
   kioskShowResult('👋  '+emp.name+locLine,'in');
   setDotsState('success');
 }
