@@ -16738,12 +16738,14 @@ async function dbSaveAttendance(rec){
     if(rec.id && String(rec.id).length <= 12){
       const {data,error} = await _sb.from('attendance').update(row).eq('id',rec.id).select();
       if(error){ console.error('Update attendance:', error); return rec; }
-      return data ? rowToAtt(data) : rec;
+      const row0 = Array.isArray(data) ? data[0] : data;
+      return row0 ? rowToAtt(row0) : rec;
     } else {
       delete row.id;
       const {data,error} = await _sb.from('attendance').insert(row).select();
       if(error){ console.error('Insert attendance:', error); return rec; }
-      return data ? rowToAtt(data) : rec;
+      const row0 = Array.isArray(data) ? data[0] : data;
+      return row0 ? rowToAtt(row0) : rec;
     }
   } catch(e){ console.error('dbSaveAttendance:', e); return rec; }
 }
@@ -19510,19 +19512,26 @@ async function kioskClockIn(emp,loc){
 
   // Save to DB immediately, then update with GPS in background
   dbSaveAttendance(rec).then(saved=>{
-    if(saved&&saved.id) rec.id=saved.id;
+    const savedRec = (saved && saved.empId) ? saved : rec;
+    if(saved && saved.id) savedRec.id = saved.id;
+    // Update _attendance with real record
+    if(!_attendance) _attendance = [];
+    const idx = _attendance.findIndex(r=>String(r.id)===String(rec.id));
+    if(idx>=0) _attendance[idx]=savedRec; else _attendance.push(savedRec);
+    // Update local storage with real ID
+    const la=S.get('attendance',[]);
+    const li=la.findIndex(r=>String(r.id)===String(rec.id));
+    if(li>=0){la[li]=savedRec;S.set('attendance',la);}
     // Now get GPS + address in background and update the record
     getGPSLocation().then(({coords,address})=>{
       if(!coords&&!address) return;
-      rec.lat=coords?coords.lat:null;
-      rec.lng=coords?coords.lng:null;
-      if(address){ rec.location=address; rec.notes='Kiosk PIN clock-in | '+address; }
-      // Update local storage
-      const la=S.get('attendance',[]);
-      const idx=la.findIndex(r=>String(r.id)===String(rec.id));
-      if(idx>=0){la[idx]=rec;S.set('attendance',la);}
-      // Update DB
-      dbSaveAttendance(rec).catch(()=>{});
+      savedRec.lat=coords?coords.lat:null;
+      savedRec.lng=coords?coords.lng:null;
+      if(address){ savedRec.location=address; savedRec.notes='Kiosk PIN clock-in | '+address; }
+      const la2=S.get('attendance',[]);
+      const idx2=la2.findIndex(r=>String(r.id)===String(savedRec.id));
+      if(idx2>=0){la2[idx2]=savedRec;S.set('attendance',la2);}
+      dbSaveAttendance(savedRec).catch(()=>{});
     }).catch(()=>{});
   }).catch(e=>{
     console.error('Clock-in save failed:',e);
