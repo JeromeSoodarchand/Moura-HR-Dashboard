@@ -19208,31 +19208,63 @@ function kioskSelectEmp(empId){
   if(!emp) return;
   _kioskSelectedEmp = emp;
   _kioskPin = '';
-  // No PIN set — go straight to clock-in confirmation
-  if(!emp.pinHash){
-    const _la = S.get('attendance',[]);
-    const _or = _la.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut)||null;
-    window._kioskPendingEmp=emp; window._kioskPendingRec=_or; window._kioskPendingLocalAtt=_la;
-    kioskShowConfirmation(emp,_or,_la); return;
-  }
-  // Has PIN — show PIN entry
+  // Switch to PIN step so reset works correctly
   document.getElementById('kiosk-step-select').style.display='none';
   document.getElementById('kiosk-step-pin').style.display='block';
-  // Clear search input
   const search = document.getElementById('kiosk-search');
   if(search) search.value='';
-  // Show selected employee
+  // Show selected employee name
   const c = aColor(emp.name);
   const av = document.getElementById('kiosk-sel-avatar');
   const nm = document.getElementById('kiosk-sel-name');
   if(av){ av.textContent=inits(emp.name); av.style.background=c+'33'; av.style.color=c; }
   if(nm) nm.textContent = emp.name;
-  // Update prompt based on clocked in status
-  const localAtt = S.get('attendance',[]);
-  const onSite = localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
-  const prompt = document.getElementById('kiosk-prompt');
-  if(prompt) prompt.textContent = onSite ? 'Enter PIN to clock OUT' : 'Enter PIN to clock IN';
-  updateKioskDots();
+
+  // Helper: find open record from local + Supabase, then proceed
+  async function _findOpenAndProceed(){
+    // Check local first
+    let _la = S.get('attendance',[]);
+    let _or = _la.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut)||null;
+    // If not found locally, check Supabase
+    if(!_or && sbReady()){
+      try{
+        const {data} = await _sb.from('attendance')
+          .select('*')
+          .eq('emp_id', String(emp.id))
+          .eq('date', todayStr())
+          .is('clock_out', null)
+          .limit(1);
+        if(data && data.length){
+          const row = data[0];
+          _or = {
+            id: row.id, empId: row.emp_id,
+            date: row.date, clockIn: row.clock_in,
+            clockOut: row.clock_out, location: row.location,
+            locationId: row.location_id, durationMinutes: row.duration_minutes,
+            notes: row.notes
+          };
+          // Sync to local so clock-out can update it
+          _la = _la.filter(r=>String(r.id)!==String(_or.id));
+          _la.push(_or);
+          S.set('attendance', _la);
+        }
+      } catch(e){ console.warn('Kiosk attendance check failed:', e); }
+    }
+
+    if(!emp.pinHash){
+      window._kioskPendingEmp=emp; window._kioskPendingRec=_or; window._kioskPendingLocalAtt=_la;
+      const pinGrid = document.querySelector('#kiosk-step-pin .pin-grid');
+      if(pinGrid) pinGrid.style.display='none';
+      const pinDisplay = document.getElementById('kiosk-dots');
+      if(pinDisplay) pinDisplay.style.display='none';
+      kioskShowConfirmation(emp,_or,_la);
+    } else {
+      const prompt = document.getElementById('kiosk-prompt');
+      if(prompt) prompt.textContent = _or ? 'Enter PIN to clock OUT' : 'Enter PIN to clock IN';
+      updateKioskDots();
+    }
+  }
+  _findOpenAndProceed();
 }
 
 function kioskBackToSelect(){
@@ -19310,10 +19342,25 @@ async function kioskSubmit(){
     },2000);
     return;
   }
-  // PIN verified — show confirmation before clocking
-  const localAtt=S.get('attendance',[]);
-  const openRec=localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
-  kioskShowConfirmation(emp, openRec, localAtt);
+  // PIN verified — check Supabase for open record then show confirmation
+  let _la=S.get('attendance',[]);
+  let openRec=_la.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut)||null;
+  if(!openRec && sbReady()){
+    try{
+      const {data}=await _sb.from('attendance')
+        .select('*').eq('emp_id',String(emp.id)).eq('date',todayStr()).is('clock_out',null).limit(1);
+      if(data&&data.length){
+        const row=data[0];
+        openRec={id:row.id,empId:row.emp_id,date:row.date,clockIn:row.clock_in,
+          clockOut:row.clock_out,location:row.location,locationId:row.location_id,
+          durationMinutes:row.duration_minutes,notes:row.notes};
+        _la=_la.filter(r=>String(r.id)!==String(openRec.id));
+        _la.push(openRec);
+        S.set('attendance',_la);
+      }
+    }catch(e){ console.warn('Kiosk PIN submit attendance check failed:',e); }
+  }
+  kioskShowConfirmation(emp, openRec, _la);
 }
 
 async function kioskClockIn(emp,loc){
@@ -19376,6 +19423,11 @@ function kioskReset(){
   const r=document.getElementById('kiosk-result');
   if(r){r.style.display='none';r.className='kiosk-result';}
   if(_kioskTimer){clearTimeout(_kioskTimer);_kioskTimer=null;}
+  // Restore PIN pad and dots visibility in case they were hidden
+  const pinGrid=document.querySelector('#kiosk-step-pin .pin-grid');
+  if(pinGrid) pinGrid.style.display='';
+  const pinDisplay=document.getElementById('kiosk-dots');
+  if(pinDisplay) pinDisplay.style.display='';
   // Return to step 1 — name selection
   const s1=document.getElementById('kiosk-step-select');
   const s2=document.getElementById('kiosk-step-pin');
