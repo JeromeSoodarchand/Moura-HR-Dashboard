@@ -16755,26 +16755,25 @@ async function dbSaveAttendance(rec){
   try{
     const row = attToRow(rec);
     if(rec.id && String(rec.id).length <= 12){
-      // UPDATE existing record
+      // UPDATE existing Supabase record
       const {error} = await _sb.from('attendance').update(row).eq('id',rec.id);
-      if(error){ console.error('Update attendance:', error); return rec; }
+      if(error) console.error('Update attendance:', error);
       return rec;
     } else {
       // INSERT new record
       delete row.id;
-      const {data,error} = await _sb.from('attendance').insert(row);
+      const {error} = await _sb.from('attendance').insert(row);
       if(error){ console.error('Insert attendance:', error); return rec; }
-      // Fetch the saved record to get the real Supabase ID
+      // Mark as synced by fetching back the real ID
       const {data:fetched} = await _sb.from('attendance')
-        .select('*').eq('emp_id', String(rec.empId)).eq('date', rec.date)
-        .eq('clock_in', rec.clockIn).limit(1);
+        .select('id').eq('emp_id', String(rec.empId)).eq('clock_in', rec.clockIn).limit(1);
       if(fetched && fetched.length){
-        const saved = rowToAtt(fetched[0]);
-        // Update local storage with real ID
+        const realId = fetched[0].id;
+        rec.id = realId;
         const la = S.get('attendance',[]);
-        const li = la.findIndex(r=>String(r.id)===String(rec.id));
-        if(li>=0){ la[li]=saved; S.set('attendance',la); _attendance=la; }
-        return saved;
+        // Replace local temp record with real ID
+        const li = la.findIndex(r=>String(r.clockIn)===String(rec.clockIn)&&String(r.empId)===String(rec.empId));
+        if(li>=0){ la[li]=rec; S.set('attendance',la); _attendance=la; }
       }
       return rec;
     }
@@ -17112,15 +17111,22 @@ function setAttMainTab(tab, el){
     const btn = document.getElementById('att-main-tab-'+t);
     if(btn) btn.classList.toggle('active', t===tab);
   });
-  // Fetch fresh data when switching tabs that need it
   if(tab==='live'){
     const board = document.getElementById('att-live-board');
     if(board) board.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Loading...</div>';
     dbGetAttendance(todayStr(),todayStr()).then(recs=>{
-      _attendance = recs;
+      // Merge Supabase records with local-only records (13-digit IDs not yet in DB)
+      const local = S.get('attendance',[]).filter(r=>r.date===todayStr());
+      const sbIds = new Set(recs.map(r=>String(r.id)));
+      const localOnly = local.filter(r=>!sbIds.has(String(r.id)));
+      _attendance = [...recs, ...localOnly];
       renderAttLiveBoard();
       renderAttMetrics();
-    }).catch(()=>renderAttLiveBoard());
+    }).catch(()=>{
+      // Fall back to local only
+      _attendance = S.get('attendance',[]);
+      renderAttLiveBoard();
+    });
   }
 }
 
