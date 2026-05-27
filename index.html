@@ -334,6 +334,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 .kiosk-logo{font-size:28px;font-weight:700;color:#fff;letter-spacing:.02em}
 .kiosk-sub{font-size:14px;color:rgba(255,255,255,0.4);margin-top:4px;letter-spacing:.05em;text-transform:uppercase}
 .kiosk-time{font-size:48px;font-weight:200;color:#fff;text-align:center;letter-spacing:.05em;margin-bottom:4px;font-variant-numeric:tabular-nums}
+.kiosk-clock{font-size:64px;font-weight:700;color:#fff;text-align:center;letter-spacing:2px;margin-bottom:4px;font-variant-numeric:tabular-nums}
 .kiosk-date{font-size:14px;color:rgba(255,255,255,0.4);text-align:center;margin-bottom:40px;text-transform:uppercase;letter-spacing:.08em}
 .kiosk-card{background:rgba(255,255,255,0.06);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:32px 36px;width:360px;max-width:90vw}
 .kiosk-prompt{font-size:16px;color:rgba(255,255,255,0.7);text-align:center;margin-bottom:20px;font-weight:400}
@@ -19214,15 +19215,17 @@ function kioskBackToSelect(){
 }
 
 function startKioskClock(){
-  _kioskClockTimer = setInterval(()=>{
+  const tick = () => {
     const now=new Date();
-    const t=now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    const t=now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     const d=now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
     const tc=document.getElementById('kiosk-clock');
     const dc=document.getElementById('kiosk-date');
     if(tc)tc.textContent=t;
     if(dc)dc.textContent=d;
-  },1000);
+  };
+  tick(); // run immediately
+  _kioskClockTimer = setInterval(tick,1000);
 }
 
 function stopKioskClock(){
