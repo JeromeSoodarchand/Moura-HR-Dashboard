@@ -16755,16 +16755,28 @@ async function dbSaveAttendance(rec){
   try{
     const row = attToRow(rec);
     if(rec.id && String(rec.id).length <= 12){
-      const {data,error} = await _sb.from('attendance').update(row).eq('id',rec.id).select();
+      // UPDATE existing record
+      const {error} = await _sb.from('attendance').update(row).eq('id',rec.id);
       if(error){ console.error('Update attendance:', error); return rec; }
-      const row0 = Array.isArray(data) ? data[0] : data;
-      return row0 ? rowToAtt(row0) : rec;
+      return rec;
     } else {
+      // INSERT new record
       delete row.id;
-      const {data,error} = await _sb.from('attendance').insert(row).select();
+      const {data,error} = await _sb.from('attendance').insert(row);
       if(error){ console.error('Insert attendance:', error); return rec; }
-      const row0 = Array.isArray(data) ? data[0] : data;
-      return row0 ? rowToAtt(row0) : rec;
+      // Fetch the saved record to get the real Supabase ID
+      const {data:fetched} = await _sb.from('attendance')
+        .select('*').eq('emp_id', String(rec.empId)).eq('date', rec.date)
+        .eq('clock_in', rec.clockIn).limit(1);
+      if(fetched && fetched.length){
+        const saved = rowToAtt(fetched[0]);
+        // Update local storage with real ID
+        const la = S.get('attendance',[]);
+        const li = la.findIndex(r=>String(r.id)===String(rec.id));
+        if(li>=0){ la[li]=saved; S.set('attendance',la); _attendance=la; }
+        return saved;
+      }
+      return rec;
     }
   } catch(e){ console.error('dbSaveAttendance:', e); return rec; }
 }
