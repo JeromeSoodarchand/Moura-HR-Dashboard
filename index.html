@@ -11624,6 +11624,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         <div class="ph-actions">
           <button class="btn" onclick="openAccountAudit()">🔍 Account Audit</button>
           <button class="btn" onclick="generateInviteLink()">🔗 Generate Invite Link</button>
+          <button class="btn btn-blue" onclick="openCreateKioskModal()">📟 Create Kiosk Account</button>
           <button class="btn btn-primary" onclick="openModal('addUser')">+ Create User</button>
         </div>
       </div>
@@ -13364,23 +13365,26 @@ async function loginClockInFromModal(locationId, locationName, knownEmpId){
 async function loginClockIn(empId, locationId, locationName){
   closeAttModal();
   showLoader('Clocking in...');
-  const {coords, address} = await getGPSLocation();
   const rec = {
     id:Date.now(), empId,
     clockIn:new Date().toISOString(),
-    clockOut:null,
-    date:todayStr(),
+    clockOut:null, date:todayStr(),
     durationMinutes:null,
-    location:address||locationName,
-    locationId:locationId,
-    lat:coords?coords.lat:null,
-    lng:coords?coords.lng:null,
-    notes:'Auto clock-in on login'+(address?' | '+address:'')
+    location:locationName, locationId:locationId,
+    lat:null, lng:null,
+    notes:'Auto clock-in on login'
   };
   await dbSaveAttendance(rec);
   hideLoader();
-  toast('Clocked in at '+(address||locationName)+'. Have a great day!','success');
-  dbAddAudit(CU.name,'Auto clock-in at '+(address||locationName)+' on login');
+  toast('Clocked in at '+locationName+'. Have a great day!','success');
+  dbAddAudit(CU.name,'Auto clock-in at '+locationName+' on login');
+  // Update GPS in background
+  getGPSLocation().then(({coords,address})=>{
+    if(!coords&&!address) return;
+    rec.lat=coords?coords.lat:null; rec.lng=coords?coords.lng:null;
+    if(address){rec.location=address;rec.notes='Auto clock-in on login | '+address;}
+    dbSaveAttendance(rec).catch(()=>{});
+  }).catch(()=>{});
 }
 
 function doLogout(){
@@ -13938,6 +13942,80 @@ async function renderUserMgmt(){
   renderAuditLog();
   renderUserAuditSummary();
 }
+function openCreateKioskModal(){
+  // Check if kiosk account already exists
+  const existing = getUsers().find(u=>u.role==='kiosk'&&u.active!==false);
+  if(existing){
+    if(!confirm('A kiosk account ("'+existing.username+'") already exists. Create another one?')) return;
+  }
+  document.getElementById('kiosk-acct-name').value='Kiosk Tablet';
+  document.getElementById('kiosk-acct-user').value='kiosk';
+  document.getElementById('kiosk-acct-pass').value='';
+  document.getElementById('kiosk-create-err').style.display='none';
+  const m=document.getElementById('kiosk-create-modal');
+  m.style.display='flex';
+}
+
+function closeKioskModal(){
+  document.getElementById('kiosk-create-modal').style.display='none';
+}
+
+async function createKioskAccount(){
+  const name = document.getElementById('kiosk-acct-name').value.trim();
+  const username = document.getElementById('kiosk-acct-user').value.trim().toLowerCase();
+  const password = document.getElementById('kiosk-acct-pass').value;
+  const errEl = document.getElementById('kiosk-create-err');
+
+  errEl.style.display='none';
+  if(!name||!username||!password){
+    errEl.textContent='Please fill in all fields.';
+    errEl.style.display='block'; return;
+  }
+  if(password.length < 4){
+    errEl.textContent='Password must be at least 4 characters.';
+    errEl.style.display='block'; return;
+  }
+  const existing = getUsers().find(u=>u.username===username);
+  if(existing){
+    errEl.textContent='Username "'+username+'" is already taken. Choose another.';
+    errEl.style.display='block'; return;
+  }
+
+  const kioskUser = {
+    id: Date.now(),
+    name, username,
+    email:'', phone:'',
+    role:'kiosk',
+    active:true,
+    passwordHash: simpleHash(password),
+    pinHash: null,
+    empId: null,
+    setupDone: true
+  };
+
+  // Save locally
+  const users = getUsers();
+  users.push(kioskUser);
+  saveUsers(users);
+
+  // Save to Supabase
+  if(sbReady()){
+    try{
+      await _sb.from('hr_users').insert({
+        name, username, email:'', phone:'',
+        role:'kiosk', active:true,
+        password_hash: kioskUser.passwordHash,
+        setup_done: true
+      });
+    }catch(e){ console.error('Kiosk account Supabase save:', e); }
+  }
+
+  dbAddAudit(CU.name, 'Created kiosk account: '+username);
+  closeKioskModal();
+  renderUserMgmt();
+  toast('Kiosk account "'+username+'" created! Log in with this account on your tablet.','success');
+}
+
 function toggleUser(userId){
   const u=_userCache.find(x=>x.id==userId)||_userCache.find(x=>String(x.id)===String(userId));
   if(!u)return;
@@ -16748,28 +16826,34 @@ async function getGPSLocation(){
   let address = '';
   try{
     if(navigator.geolocation){
-      coords = await new Promise(resolve=>{
-        navigator.geolocation.getCurrentPosition(
-          pos=>resolve({lat:pos.coords.latitude.toFixed(6),lng:pos.coords.longitude.toFixed(6),acc:Math.round(pos.coords.accuracy)}),
-          ()=>resolve(null),
-          {timeout:5000,maximumAge:0,enableHighAccuracy:true}
-        );
-      });
+      coords = await Promise.race([
+        new Promise(resolve=>{
+          navigator.geolocation.getCurrentPosition(
+            pos=>resolve({lat:pos.coords.latitude.toFixed(6),lng:pos.coords.longitude.toFixed(6),acc:Math.round(pos.coords.accuracy)}),
+            ()=>resolve(null),
+            {timeout:4000,maximumAge:60000,enableHighAccuracy:false}
+          );
+        }),
+        new Promise(resolve=>setTimeout(()=>resolve(null),4500))
+      ]);
     }
-  }catch(e){}
+  }catch(e){ coords=null; }
   if(coords){
     try{
-      const resp = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${coords.lat}&lon=${coords.lng}`,
-        {headers:{'Accept-Language':'en','User-Agent':'SolentraHR/1.0'}}
-      );
+      const resp = await Promise.race([
+        fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${coords.lat}&lon=${coords.lng}`,
+          {headers:{'Accept-Language':'en','User-Agent':'SolentraHR/1.0'}}
+        ),
+        new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')),4000))
+      ]);
       const geo = await resp.json();
       if(geo && geo.display_name){
         const a = geo.address||{};
         const parts = [a.road||a.pedestrian||a.footway, a.suburb||a.neighbourhood||a.village||a.town||a.city].filter(Boolean);
         address = parts.length ? parts.join(', ') : geo.display_name.split(',').slice(0,2).join(',').trim();
       }
-    }catch(e){}
+    }catch(e){ address=''; }
   }
   return {coords, address};
 }
@@ -17424,15 +17508,19 @@ async function processClockAction(locationId, locationName, isClockedIn, empId){
       toast('Clocked out from '+locationName+'. '+fmtDuration(rec.durationMinutes)+' on site.','success');
     } else { hideLoader();toast('No open clock-in found.','error'); }
   } else {
-    const rec={id:Date.now(),empId,clockIn:new Date().toISOString(),clockOut:null,date:todayStr(),durationMinutes:null,location:locationName,locationId:locationId,notes:''};
-    const {coords,address} = await getGPSLocation();
-    if(coords){ rec.lat=coords.lat; rec.lng=coords.lng; }
-    if(address){ rec.location=address; rec.notes='GPS: '+address; }
+    const rec={id:Date.now(),empId,clockIn:new Date().toISOString(),clockOut:null,date:todayStr(),durationMinutes:null,location:locationName,locationId:locationId,lat:null,lng:null,notes:''};
     await dbSaveAttendance(rec);
     hideLoader();closeAttModal();await renderAttendance();
     const emp=gE(empId);
     toast((emp?emp.name:'You')+' clocked in at '+locationName+'.','success');
     dbAddAudit(CU.name,'Clock in: '+(emp?emp.name:empId)+' at '+locationName);
+    // Update GPS in background
+    getGPSLocation().then(({coords,address})=>{
+      if(!coords&&!address) return;
+      rec.lat=coords?coords.lat:null; rec.lng=coords?coords.lng:null;
+      if(address){rec.location=address;rec.notes='GPS: '+address;}
+      dbSaveAttendance(rec).catch(()=>{});
+    }).catch(()=>{});
   }
 }
 
@@ -18957,24 +19045,32 @@ function openFullHRPlatform(){
 
 async function empClockIn(empId, locationId, locationName){
   try{
-    const {coords, address} = await getGPSLocation();
     const rec = {
       id: 'local-'+Date.now(),
       empId: String(empId),
       date: todayStr(),
       clockIn: new Date().toISOString(),
       clockOut: null,
-      location: address||locationName,
+      location: locationName,
       locationId: String(locationId),
       durationMinutes: null,
-      lat: coords?coords.lat:null,
-      lng: coords?coords.lng:null,
-      notes: 'QR clock-in'+(address?' | '+address:'')
+      lat: null, lng: null,
+      notes: 'QR clock-in'
     };
     const saved = await dbSaveAttendance(rec);
     if(saved) rec.id = saved.id||rec.id;
     if(!_attendance) _attendance=[];
     _attendance.push(rec);
+    // Update GPS in background
+    getGPSLocation().then(({coords,address})=>{
+      if(!coords&&!address) return;
+      rec.lat=coords?coords.lat:null; rec.lng=coords?coords.lng:null;
+      if(address){rec.location=address;rec.notes='QR clock-in | '+address;}
+      const la=S.get('attendance',[]);
+      const idx=la.findIndex(r=>String(r.id)===String(rec.id));
+      if(idx>=0){la[idx]=rec;S.set('attendance',la);}
+      dbSaveAttendance(rec).catch(()=>{});
+    }).catch(()=>{});
     return rec;
   } catch(e){ console.error('empClockIn error:',e); throw e; }
 }
@@ -19397,27 +19493,41 @@ async function kioskSubmit(){
 }
 
 async function kioskClockIn(emp,loc){
-  const {coords, address} = await getGPSLocation();
-  const gpsNote = coords ? ' | GPS: '+coords.lat+','+coords.lng+(address?' ('+address+')':'') : '';
+  // Clock in immediately — don't wait for GPS
   const rec={
     id:Date.now(),empId:emp.id,
     clockIn:new Date().toISOString(),clockOut:null,
     date:todayStr(),durationMinutes:null,
-    location:address||loc.name,locationId:loc.id,
-    lat:coords?coords.lat:null,
-    lng:coords?coords.lng:null,
-    notes:'Kiosk PIN clock-in'+gpsNote
+    location:loc.name,locationId:loc.id,
+    lat:null,lng:null,
+    notes:'Kiosk PIN clock-in'
   };
   const localAtt=S.get('attendance',[]);
   localAtt.push(rec);
   S.set('attendance',localAtt);
-  dbSaveAttendance(rec).catch(e=>{
+  kioskShowResult('👋  '+emp.name+'\nClocked in at '+loc.name,'in');
+  setDotsState('success');
+
+  // Save to DB immediately, then update with GPS in background
+  dbSaveAttendance(rec).then(saved=>{
+    if(saved&&saved.id) rec.id=saved.id;
+    // Now get GPS + address in background and update the record
+    getGPSLocation().then(({coords,address})=>{
+      if(!coords&&!address) return;
+      rec.lat=coords?coords.lat:null;
+      rec.lng=coords?coords.lng:null;
+      if(address){ rec.location=address; rec.notes='Kiosk PIN clock-in | '+address; }
+      // Update local storage
+      const la=S.get('attendance',[]);
+      const idx=la.findIndex(r=>String(r.id)===String(rec.id));
+      if(idx>=0){la[idx]=rec;S.set('attendance',la);}
+      // Update DB
+      dbSaveAttendance(rec).catch(()=>{});
+    }).catch(()=>{});
+  }).catch(e=>{
     console.error('Clock-in save failed:',e);
     toast('Clock-in saved locally. Will sync when connection restored.','info');
   });
-  const locLine = address ? '\n📍 '+address : '\nClocked in at '+loc.name;
-  kioskShowResult('👋  '+emp.name+locLine,'in');
-  setDotsState('success');
 }
 
 function kioskShowLocationPicker(emp){
@@ -22964,6 +23074,37 @@ function renderUserAuditSummary(){
 </div>
 
 
+
+<!-- KIOSK ACCOUNT CREATION MODAL -->
+<div id="kiosk-create-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);align-items:center;justify-content:center">
+  <div class="login-card" style="width:380px;border-top:4px solid var(--navy)">
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="font-size:36px;margin-bottom:8px">📟</div>
+      <div style="font-size:16px;font-weight:600;color:var(--navy)">Create Kiosk Account</div>
+      <div style="font-size:13px;color:var(--text3);margin-top:4px">A dedicated tablet account for employee clock-in</div>
+    </div>
+    <div style="background:var(--navy-light);border-radius:var(--radius);padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--navy)">
+      This account will <strong>only</strong> open the kiosk clock-in screen. It has no access to HR data.
+    </div>
+    <div class="lf">
+      <label>Account Name</label>
+      <input id="kiosk-acct-name" class="fi" value="Kiosk Tablet" placeholder="e.g. Kiosk Tablet">
+    </div>
+    <div class="lf">
+      <label>Username</label>
+      <input id="kiosk-acct-user" class="fi" value="kiosk" placeholder="e.g. kiosk">
+    </div>
+    <div class="lf">
+      <label>Password</label>
+      <input id="kiosk-acct-pass" type="password" class="fi" placeholder="Set a password for this tablet">
+    </div>
+    <div id="kiosk-create-err" style="display:none;font-size:12px;color:var(--red);padding:8px 10px;background:var(--red-light);border-radius:var(--radius);margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn" style="flex:1" onclick="closeKioskModal()">Cancel</button>
+      <button class="login-btn" style="flex:2;margin-top:0" onclick="createKioskAccount()">Create Kiosk Account</button>
+    </div>
+  </div>
+</div>
 
 <!-- EMPLOYEE PIN SETUP SCREEN — set kiosk PIN via WhatsApp link -->
 <div id="emp-pin-setup-screen" style="display:none;position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#0A0820 0%,#1E1445 55%,#2C2070 100%);align-items:center;justify-content:center">
