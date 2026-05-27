@@ -19400,21 +19400,22 @@ function kioskSelectEmp(empId){
           .select('*')
           .eq('emp_id', String(emp.id))
           .eq('date', todayStr())
-          .is('clock_out', null)
-          .limit(1);
+          .limit(10);
         if(data && data.length){
-          const row = data[0];
-          _or = {
-            id: row.id, empId: row.emp_id,
-            date: row.date, clockIn: row.clock_in,
-            clockOut: row.clock_out, location: row.location,
-            locationId: row.location_id, durationMinutes: row.duration_minutes,
-            notes: row.notes
-          };
-          // Sync to local so clock-out can update it
-          _la = _la.filter(r=>String(r.id)!==String(_or.id));
-          _la.push(_or);
-          S.set('attendance', _la);
+          const row = data.find(r=>!r.clock_out);
+          if(row){
+            _or = {
+              id: row.id, empId: row.emp_id,
+              date: row.date, clockIn: row.clock_in,
+              clockOut: row.clock_out, location: row.location,
+              locationId: row.location_id, durationMinutes: row.duration_minutes,
+              notes: row.notes
+            };
+            // Sync to local so clock-out can update it
+            _la = _la.filter(r=>String(r.id)!==String(_or.id));
+            _la.push(_or);
+            S.set('attendance', _la);
+          }
         }
       } catch(e){ console.warn('Kiosk attendance check failed:', e); }
     }
@@ -19516,15 +19517,17 @@ async function kioskSubmit(){
   if(!openRec && sbReady()){
     try{
       const {data}=await _sb.from('attendance')
-        .select('*').eq('emp_id',String(emp.id)).eq('date',todayStr()).is('clock_out',null).limit(1);
+        .select('*').eq('emp_id',String(emp.id)).eq('date',todayStr()).limit(10);
       if(data&&data.length){
-        const row=data[0];
-        openRec={id:row.id,empId:row.emp_id,date:row.date,clockIn:row.clock_in,
-          clockOut:row.clock_out,location:row.location,locationId:row.location_id,
-          durationMinutes:row.duration_minutes,notes:row.notes};
-        _la=_la.filter(r=>String(r.id)!==String(openRec.id));
-        _la.push(openRec);
-        S.set('attendance',_la);
+        const row=data.find(r=>!r.clock_out);
+        if(row){
+          openRec={id:row.id,empId:row.emp_id,date:row.date,clockIn:row.clock_in,
+            clockOut:row.clock_out,location:row.location,locationId:row.location_id,
+            durationMinutes:row.duration_minutes,notes:row.notes};
+          _la=_la.filter(r=>String(r.id)!==String(openRec.id));
+          _la.push(openRec);
+          S.set('attendance',_la);
+        }
       }
     }catch(e){ console.warn('Kiosk PIN submit attendance check failed:',e); }
   }
@@ -19571,8 +19574,32 @@ async function kioskClockIn(emp,loc){
       dbSaveAttendance(savedRec).catch(()=>{});
     }).catch(()=>{});
   }).catch(e=>{
-    console.error('Clock-in save failed:',e);
-    toast('Clock-in saved locally. Will sync when connection restored.','info');
+    console.error('Clock-in save failed — trying without GPS columns:',e);
+    // Retry without lat/lng in case columns don't exist yet
+    const recNoGPS = {id:rec.id,empId:rec.empId,clockIn:rec.clockIn,clockOut:null,
+      date:rec.date,durationMinutes:null,location:rec.location,locationId:rec.locationId,notes:rec.notes};
+    const local=S.get('attendance',[]);
+    const li=local.findIndex(r=>String(r.id)===String(rec.id));
+    if(li>=0){local[li]=recNoGPS;S.set('attendance',local);}
+    if(sbReady()){
+      const row={emp_id:recNoGPS.empId,clock_in:recNoGPS.clockIn,clock_out:null,
+        date:recNoGPS.date,location:recNoGPS.location||'',location_id:recNoGPS.locationId||null,notes:recNoGPS.notes||''};
+      _sb.from('attendance').insert(row).select().then(({data,error})=>{
+        if(error){ console.error('Kiosk clock-in final save error:',error); toast('Clock-in saved locally only.','info'); }
+        else{
+          const row0=Array.isArray(data)?data[0]:data;
+          if(row0&&row0.id){
+            recNoGPS.id=row0.id;
+            const la=S.get('attendance',[]);
+            const idx=la.findIndex(r=>String(r.id)===String(rec.id));
+            if(idx>=0){la[idx]=recNoGPS;S.set('attendance',la);}
+            if(!_attendance)_attendance=[];
+            const ai=_attendance.findIndex(r=>String(r.id)===String(rec.id));
+            if(ai>=0)_attendance[ai]=recNoGPS; else _attendance.push(recNoGPS);
+          }
+        }
+      });
+    }
   });
 }
 
