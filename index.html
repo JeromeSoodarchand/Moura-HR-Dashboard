@@ -11017,7 +11017,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     <div style="text-align:center;margin-bottom:20px">
       <img id="login-logo-img" src="" alt="" style="max-width:160px;height:auto;display:none;margin:0 auto 8px;border-radius:8px">
       <div style="font-size:22px;font-weight:700;color:var(--text);margin-bottom:4px;letter-spacing:-.01em" id="org-name-login"></div>
-      <div style="font-size:12px;color:var(--muted-gold);letter-spacing:.06em;font-style:italic" id="login-tagline"></div>
+      <div style="font-size:12px;color:var(--muted-gold);letter-spacing:.06em;font-style:italic" id="login-tagline">Giving Comfort · Taking Care</div>
     </div>
     <!-- PIN LOGIN (default for employees) -->
     <div id="pin-login-section">
@@ -12721,7 +12721,7 @@ const ROLE_PERMS={
 function showLoginScreen(){
   document.getElementById('login-screen').style.display='flex';
   const _cs = getSettings();
-  const org = S.get('org','') || (_cs.orgName !== 'My Company' ? _cs.orgName : '') || '';
+  const org = _cs.orgName || S.get('org','') || '';
   const _oel=document.getElementById('org-name-login');
   if(_oel)_oel.textContent=org;
   const _tl=document.getElementById('login-tagline');
@@ -12828,6 +12828,11 @@ async function boot(){
       applyPermissions();applyAttEditorPerm();
       await applyStoredBranding();initInactivityTracking();
   assignMissingEmpNos().catch(()=>{});
+      // If previous session was kiosk mode, restore kiosk screen
+      if(SS.get('kioskMode', false)){
+        openKioskForKioskUser(CU);
+        return;
+      }
       // Route same as login — but if HOD was on HR platform, go there directly
       const _rEmp = CU.empId ? gE(CU.empId) : null;
       const _rCM  = _rEmp?.clockMode||'kiosk';
@@ -12863,14 +12868,6 @@ async function boot(){
             const el=document.getElementById('org-name-login');
             if(el)el.textContent=orgRow.value;
           }
-          const tagRow=data.find(r=>r.key==='tagline');
-          const tlEl=document.getElementById('login-tagline');
-          if(tlEl) tlEl.textContent=(tagRow&&tagRow.value)||'';
-          // Also persist full settings to localStorage so next load is instant
-          const saved=S.get('companySettings',{});
-          const patch={};
-          data.forEach(r=>{try{patch[r.key]=JSON.parse(r.value);}catch{patch[r.key]=r.value;}});
-          S.set('companySettings',Object.assign({},saved,patch));
         }
       });
     }
@@ -12891,11 +12888,6 @@ async function boot(){
         if(settings){
           const orgRow=settings.find(r=>r.key==='orgName');
           if(orgRow&&orgRow.value) S.set('org',orgRow.value);
-          // Persist full settings so showLoginScreen() reads correct values
-          const saved=S.get('companySettings',{});
-          const patch={};
-          settings.forEach(r=>{try{patch[r.key]=JSON.parse(r.value);}catch{patch[r.key]=r.value;}});
-          S.set('companySettings',Object.assign({},saved,patch));
         }
         showLoginScreen();
         return;
@@ -12969,7 +12961,7 @@ async function doSetup(){
   const email=document.getElementById('setup-email').value.trim();
   const pass=document.getElementById('setup-pass').value;
   const pass2=document.getElementById('setup-pass2').value;
-  const org=document.getElementById('setup-org').value.trim()||'';
+  const org=document.getElementById('setup-org').value.trim()||'My Company';
   const err=document.getElementById('setup-err');
   if(!name||!username||!email||!pass){err.textContent='All required fields must be filled.';err.style.display='block';return;}
   if(pass!==pass2){err.textContent='Passwords do not match.';err.style.display='block';return;}
@@ -13078,7 +13070,7 @@ async function doLogin(){
   addAudit(user.name,'Logged in');
   document.getElementById('login-screen').style.display='none';
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
-  const org=S.get('org','');
+  const org=S.get('org','My Company');
   const _nel=document.getElementById('org-name-nav');
   if(_nel)_nel.textContent=org;
   applyPermissions();
@@ -15424,7 +15416,7 @@ function getSettings(){
     {key:'compassionate',label:'Compassionate Leave',color:'#D85A30',bg:'#FAECE7',maxDays:3,paid:true, protected:false}
   ];
   const _def={
-    orgName:'',tagline:'Giving Comfort · Taking Care',
+    orgName:'My Company',tagline:'Giving Comfort · Taking Care',
     primaryColor:'#D69328',secondaryColor:'#1E1445',logoB64:null,
     siteTitle:'SolentraHR — HR Management Platform',dateFormat:'en-GB',
     currency:'MUR',industry:'Hospitality',regNumber:'',address:'',
@@ -21161,16 +21153,18 @@ async function kioskConfirmAction(confirmed){
 // ════════════════════════════════════════════════════════════════════════════
 
 async function openKioskForKioskUser(user){
-  // Load locations and employees in the background
+  // Load locations and employees — await both before rendering so the list is populated
+  const _loads = [];
   if(!_attLocations||!_attLocations.length){
-    try{ _attLocations = await dbGetLocations(); }catch(e){}
+    _loads.push(dbGetLocations().then(locs=>{ if(locs&&locs.length) _attLocations=locs; }).catch(()=>{}));
   }
   if(!_cache.emps.length){
-    try{ _cache.emps = await dbGetEmployees(); }catch(e){}
+    _loads.push(dbGetEmployees().then(emps=>{ if(emps&&emps.length){ _cache.emps=emps; saveEmps(emps); } }).catch(()=>{}));
   } else {
     // Refresh in background to get latest PINs
-    dbGetEmployees().then(emps=>{ if(emps.length) _cache.emps=emps; saveEmps(emps); }).catch(()=>{});
+    dbGetEmployees().then(emps=>{ if(emps&&emps.length){ _cache.emps=emps; saveEmps(emps); } }).catch(()=>{});
   }
+  if(_loads.length) await Promise.all(_loads);
 
   // Show the full kiosk screen — hide everything else
   const app = document.getElementById('app');
@@ -21182,8 +21176,9 @@ async function openKioskForKioskUser(user){
     document.body.style.overflow = 'hidden';
   }
 
-  // Store kiosk user — used to prevent exit without this account's password
+  // Store kiosk user and mark session as kiosk mode so refresh restores correctly
   window._kioskAccountUser = user;
+  SS.set('kioskMode', true);
 
   // Start the clock and render live board
   kioskReset();
@@ -21211,6 +21206,7 @@ function exitKiosk(){
     stopKioskClock();
     CU = null;
     SS.set('session', null);
+    SS.set('kioskMode', false);
     location.reload();
   } else {
     // Original exit behaviour for admin-opened kiosk
