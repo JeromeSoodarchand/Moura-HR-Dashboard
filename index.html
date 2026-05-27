@@ -414,7 +414,9 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
   .mobile-logout-btn{display:flex}
 }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"function renderUserAuditSummary(){
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+function renderUserAuditSummary(){
   const el = document.getElementById('account-audit-summary');
   if(!el) return;
   const emps = getEmps().filter(e=>e.status!=='offboarded');
@@ -476,9 +478,8 @@ async function auditCreateAll(){
   toast(created + ' account(s) created. Set PINs via the list below.','success');
   renderUserMgmt();
 }
-
-
-
+</script>
+<style>
 :root{
   /* Brand colours */
   --navy:#1E1445;--navy-dark:#120D2E;--navy-mid:#2C2070;--navy-light:#EBE9F5;--navy-deep:#0A0820;
@@ -873,7 +874,6 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 @media(max-width:500px){.metrics,.ig{grid-template-columns:1fr}}
 
 </style>
-<!-- supabase-js SDK replaced with direct fetch client --></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 (function webpackUniversalModuleDefinition(root, factory) {
@@ -11017,7 +11017,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     <div style="text-align:center;margin-bottom:20px">
       <img id="login-logo-img" src="" alt="" style="max-width:160px;height:auto;display:none;margin:0 auto 8px;border-radius:8px">
       <div style="font-size:22px;font-weight:700;color:var(--text);margin-bottom:4px;letter-spacing:-.01em" id="org-name-login"></div>
-      <div style="font-size:12px;color:var(--muted-gold);letter-spacing:.06em;font-style:italic" id="login-tagline">Giving Comfort · Taking Care</div>
+      <div style="font-size:12px;color:var(--muted-gold);letter-spacing:.06em;font-style:italic" id="login-tagline"></div>
     </div>
     <!-- PIN LOGIN (default for employees) -->
     <div id="pin-login-section">
@@ -12721,7 +12721,7 @@ const ROLE_PERMS={
 function showLoginScreen(){
   document.getElementById('login-screen').style.display='flex';
   const _cs = getSettings();
-  const org = _cs.orgName || S.get('org','') || '';
+  const org = S.get('org','') || (_cs.orgName !== 'My Company' ? _cs.orgName : '') || '';
   const _oel=document.getElementById('org-name-login');
   if(_oel)_oel.textContent=org;
   const _tl=document.getElementById('login-tagline');
@@ -12868,6 +12868,13 @@ async function boot(){
             const el=document.getElementById('org-name-login');
             if(el)el.textContent=orgRow.value;
           }
+          const tagRow=data.find(r=>r.key==='tagline');
+          const tlEl=document.getElementById('login-tagline');
+          if(tlEl) tlEl.textContent=(tagRow&&tagRow.value)||'';
+          const saved=S.get('companySettings',{});
+          const patch={};
+          data.forEach(r=>{try{patch[r.key]=JSON.parse(r.value);}catch{patch[r.key]=r.value;}});
+          S.set('companySettings',Object.assign({},saved,patch));
         }
       });
     }
@@ -12961,7 +12968,7 @@ async function doSetup(){
   const email=document.getElementById('setup-email').value.trim();
   const pass=document.getElementById('setup-pass').value;
   const pass2=document.getElementById('setup-pass2').value;
-  const org=document.getElementById('setup-org').value.trim()||'My Company';
+  const org=document.getElementById('setup-org').value.trim()||'';
   const err=document.getElementById('setup-err');
   if(!name||!username||!email||!pass){err.textContent='All required fields must be filled.';err.style.display='block';return;}
   if(pass!==pass2){err.textContent='Passwords do not match.';err.style.display='block';return;}
@@ -13070,7 +13077,7 @@ async function doLogin(){
   addAudit(user.name,'Logged in');
   document.getElementById('login-screen').style.display='none';
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
-  const org=S.get('org','My Company');
+  const org=S.get('org','');
   const _nel=document.getElementById('org-name-nav');
   if(_nel)_nel.textContent=org;
   applyPermissions();
@@ -15416,7 +15423,7 @@ function getSettings(){
     {key:'compassionate',label:'Compassionate Leave',color:'#D85A30',bg:'#FAECE7',maxDays:3,paid:true, protected:false}
   ];
   const _def={
-    orgName:'My Company',tagline:'Giving Comfort · Taking Care',
+    orgName:'',tagline:'Giving Comfort · Taking Care',
     primaryColor:'#D69328',secondaryColor:'#1E1445',logoB64:null,
     siteTitle:'SolentraHR — HR Management Platform',dateFormat:'en-GB',
     currency:'MUR',industry:'Hospitality',regNumber:'',address:'',
@@ -19165,7 +19172,7 @@ function openKiosk(){
 function renderKioskEmpList(filter){
   const el = document.getElementById('kiosk-emp-list');
   if(!el) return;
-  // Kiosk always shows ALL active employees regardless of logged-in user's scope
+  // Kiosk always shows ALL active employees regardless of logged-in user scope
   const emps = getEmps().filter(e=>e.status!=='offboarded');
   const filtered = filter
     ? emps.filter(e=>e.name.toLowerCase().includes(filter.toLowerCase()))
