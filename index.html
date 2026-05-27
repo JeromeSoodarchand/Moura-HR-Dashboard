@@ -16733,15 +16733,26 @@ let _qrScanner = null;
 
 async function dbGetAttendance(dateFrom, dateTo){
   ensureSB();
-  const local = _attendance || [];
-  if(!sbReady()) return local;
+  const local = S.get('attendance', []);
+  if(!sbReady()){
+    // Filter local by date range
+    return local.filter(r=>(!dateFrom||r.date>=dateFrom)&&(!dateTo||r.date<=dateTo));
+  }
   try{
     let q = _sb.from('attendance').select('*').order('clock_in', {ascending:false});
     if(dateFrom) q = q.gte('date', dateFrom);
     if(dateTo)   q = q.lte('date', dateTo);
     const {data, error} = await q;
     if(error){ console.error('dbGetAttendance:', error); return local; }
-    return data.map(rowToAtt);
+    const sbRecs = data.map(rowToAtt);
+    // Merge with local-only records in the same date range
+    const sbIds = new Set(sbRecs.map(r=>String(r.id)));
+    const localInRange = local.filter(r=>
+      !sbIds.has(String(r.id)) &&
+      (!dateFrom||r.date>=dateFrom) &&
+      (!dateTo||r.date<=dateTo)
+    );
+    return [...sbRecs, ...localInRange];
   } catch(e){ console.error('dbGetAttendance exception:',e); return local; }
 }
 
@@ -16899,7 +16910,13 @@ function getEmployeeActiveRecord(empId){
 }
 
 async function renderAttendance(){
-  [_attendance, _attLocations] = await Promise.all([dbGetAttendance(todayStr(),todayStr()),dbGetLocations()]);
+  const [sbRecs, locs] = await Promise.all([dbGetAttendance(todayStr(),todayStr()),dbGetLocations()]);
+  _attLocations = locs;
+  // Merge Supabase records with local-only records not yet synced
+  const local = S.get('attendance',[]);
+  const sbIds = new Set(sbRecs.map(r=>String(r.id)));
+  const localOnly = local.filter(r=>!sbIds.has(String(r.id)));
+  _attendance = [...sbRecs, ...localOnly];
   renderAttLiveBoard();
   renderAttMetrics();
   renderAttReportFilters();
