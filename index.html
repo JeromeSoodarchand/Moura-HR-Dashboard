@@ -12833,7 +12833,7 @@ async function boot(){
           if(csRows&&csRows.length){
             const cs=getSettings();
             csRows.forEach(r=>{ if(r.key&&r.value!==null) cs[r.key]=r.value; });
-            S.set('settings',cs);
+            S.set('companySettings',cs);
           }
         }catch(e){}
       }
@@ -22791,7 +22791,16 @@ function renderUserAuditSummary(){
   }
   el.innerHTML = html;
 }
+</script>
 
+<!-- KIOSK / PIN SCREEN -->
+<div id="kiosk-screen" style="display:none;position:fixed;inset:0;z-index:8000;background:linear-gradient(160deg,#0A0620 0%,#1E1445 60%,#2D1B6B 100%);display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;font-family:inherit">
+
+</script>
+
+<!-- KIOSK / PIN SCREEN -->
+<div id="kiosk-screen" style="display:none;position:fixed;inset:0;z-index:8000;background:linear-gradient(160deg,#0A0620 0%,#1E1445 60%,#2D1B6B 100%);display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;font-family:inherit">
+</script>
 
 <!-- KIOSK / PIN SCREEN -->
 <div id="kiosk-screen" style="display:none;position:fixed;inset:0;z-index:8000;background:linear-gradient(160deg,#0A0620 0%,#1E1445 60%,#2D1B6B 100%);display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;font-family:inherit">
