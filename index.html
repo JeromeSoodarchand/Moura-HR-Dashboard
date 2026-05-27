@@ -19537,13 +19537,24 @@ function kioskShowLocationPicker(emp){
   result.className='kiosk-result';
   result.style.background='rgba(255,255,255,0.06)';
   result.style.border='1px solid rgba(255,255,255,0.1)';
+  // Store pending emp for location buttons to reference by index
+  window._kioskLocPickerEmp = emp;
   result.innerHTML='<div style="color:#fff;margin-bottom:10px;font-size:14px">Hi '+emp.name+'! Select your location:</div>'+
     '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center">'+
-    _attLocations.map(loc=>`<button onclick="kioskClockIn(${JSON.stringify(emp)},${JSON.stringify(loc)}).then(()=>setTimeout(()=>{kioskReset();renderKioskLive();},3000))"
-      style="padding:8px 16px;background:rgba(214,147,40,0.2);border:1px solid rgba(214,147,40,0.4);color:#fff;border-radius:10px;cursor:pointer;font-size:13px;font-family:inherit">
-      ${loc.name}
-    </button>`).join('')+
+    _attLocations.map((loc,i)=>'<button onclick="kioskPickLocation('+i+')" '+
+      'style="padding:8px 16px;background:rgba(214,147,40,0.2);border:1px solid rgba(214,147,40,0.4);color:#fff;border-radius:10px;cursor:pointer;font-size:13px;font-family:inherit">'+
+      loc.name+
+    '</button>').join('')+
     '</div>';
+}
+
+async function kioskPickLocation(locIndex){
+  const emp = window._kioskLocPickerEmp;
+  const loc = _attLocations[locIndex];
+  if(!emp||!loc) return;
+  window._kioskLocPickerEmp = null;
+  await kioskClockIn(emp, loc);
+  setTimeout(()=>{kioskReset();renderKioskLive();},3000);
 }
 
 function kioskShowResult(msg,type){
