@@ -12450,12 +12450,12 @@ async function dbGetUsers(){
   const users = data.map(r=>({
     id:r.id,name:r.name,username:r.username,
     email:r.email||'',phone:r.phone||'',
-    role:r.role,active:r.active,
+    role:r.role,active:[true,'true','1',1].includes(r.active),
     passwordHash:r.password_hash,
-    setupToken:r.setup_token||null,setupDone:r.setup_done||false,
+    setupToken:r.setup_token||null,setupDone:r.setup_done?[true,'true','1',1].includes(r.setup_done):false,
     empId:r.emp_id||null,createdAt:r.created_at,
-    seniorHOD:r.senior_hod||false,
-    crossLeaveVisibility:r.cross_leave_visibility||false
+    seniorHOD:r.senior_hod?[true,'true','1',1].includes(r.senior_hod):false,
+    crossLeaveVisibility:r.cross_leave_visibility?[true,'true','1',1].includes(r.cross_leave_visibility):false
   }));
   // Always sync to cache and localStorage
   // But preserve super admin local entry (jerome848) — never overwrite with Supabase version
@@ -12585,7 +12585,7 @@ function rowToEmp(r){
   return{id:r.id,empNo:r.emp_no||null,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
     salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:typeof r.salary_history==='string'?JSON.parse(r.salary_history||'[]'):(r.salary_history||[])}:null,
     checklist:typeof r.checklist==='string'?JSON.parse(r.checklist||'{}'):(r.checklist||{}),offChecklist:typeof r.off_checklist==='string'?JSON.parse(r.off_checklist||'{}'):(r.off_checklist||{}),lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
-    photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:r.att_editor||false,isHOD:r.is_hod||false,isSeniorHOD:r.is_senior_hod||false};
+    photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:[true,'true','1',1].includes(r.att_editor),isHOD:[true,'true','1',1].includes(r.is_hod),isSeniorHOD:[true,'true','1',1].includes(r.is_senior_hod)};
 }
 function empToRow(e){
   const row={
