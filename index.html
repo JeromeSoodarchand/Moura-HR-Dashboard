@@ -11237,91 +11237,110 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         </div>
       </div>
 
-      <!-- Live board -->
-      <div class="card" style="margin-bottom:14px">
-        <div class="ch">
-          <span class="ct">&#128339; Live &mdash; Who is on site right now</span>
-          <span class="ts tm" id="att-live-count"></span>
-        </div>
-        <div class="cb" id="att-live-board" style="padding:12px"></div>
+      <!-- Top-level tab bar -->
+      <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:16px">
+        <button id="att-main-tab-daily"    class="tbb active" onclick="setAttMainTab('daily',this)"    style="font-size:13px;padding:10px 20px">📋 Attendance</button>
+        <button id="att-main-tab-live"     class="tbb"        onclick="setAttMainTab('live',this)"     style="font-size:13px;padding:10px 20px">🟢 Live</button>
+        <button id="att-main-tab-overtime" class="tbb"        onclick="setAttMainTab('overtime',this)" style="font-size:13px;padding:10px 20px">⏰ Overtime</button>
+        <button id="att-main-tab-anomaly"  class="tbb"        onclick="setAttMainTab('anomaly',this)"  style="font-size:13px;padding:10px 20px">⚠️ Anomalies</button>
       </div>
 
-      <!-- Today summary metrics -->
-      <div class="att-grid" id="att-metrics"></div>
+      <!-- TAB: Attendance (daily records) -->
+      <div id="att-panel-daily">
+        <!-- Today summary metrics -->
+        <div class="att-grid" id="att-metrics" style="margin-bottom:14px"></div>
 
-      <!-- Anomaly report -->
-      <div class="card" style="margin-bottom:14px">
-        <div class="ch">
-          <span class="ct" style="color:var(--amber)">&#9888; Attendance Anomalies</span>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="date" class="si" id="anom-date" style="width:150px">
-            <button class="btn" style="border-color:var(--amber);color:var(--amber)" onclick="runAnomalyCheck()">Check</button>
+        <!-- Report filters + table -->
+        <div class="card">
+          <div class="ch">
+            <span class="ct">Records</span>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <input type="date" class="si" id="att-date-from" style="width:130px">
+              <span class="tm txs">to</span>
+              <input type="date" class="si" id="att-date-to" style="width:130px">
+              <select class="si" id="att-dept-filter" style="width:130px" onchange="renderAttendanceReport()">
+                <option value="">All departments</option>
+              </select>
+              <button class="btn btn-primary" onclick="renderAttendanceReport()">Filter</button>
+              <button class="btn" onclick="exportAttendanceCSV()">&#x2B07; CSV</button>
+            </div>
+          </div>
+          <!-- Sub-tab bar -->
+          <div style="display:flex;gap:0;border-bottom:1px solid var(--border)">
+            <button id="att-tab-all"      class="tbb active" onclick="setAttTab('all',this)"      style="font-size:12px;padding:7px 14px">All records</button>
+            <button id="att-tab-employee" class="tbb"        onclick="setAttTab('employee',this)" style="font-size:12px;padding:7px 14px">By employee</button>
+            <button id="att-tab-anomaly"  class="tbb"        onclick="setAttTab('anomaly',this)"  style="font-size:12px;padding:7px 14px">Anomalies only</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:650px">
+              <thead><tr style="background:var(--bg2)">
+                <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2);white-space:nowrap">Employee</th>
+                <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Date</th>
+                <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Clock in</th>
+                <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Clock out</th>
+                <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Duration</th>
+                <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Location</th>
+                <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Notes</th>
+                <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)"></th>
+              </tr></thead>
+              <tbody id="att-tbody"></tbody>
+            </table>
           </div>
         </div>
-        <div id="anomaly-body">
-          <div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Select a date and click Check to scan for anomalies.</div>
+      </div>
+
+      <!-- TAB: Live -->
+      <div id="att-panel-live" style="display:none">
+        <div class="card" style="margin-bottom:14px">
+          <div class="ch">
+            <span class="ct">&#128339; Live &mdash; Who is on site right now</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="ts tm" id="att-live-count"></span>
+              <button class="btn btn-xs" onclick="setAttMainTab('live',document.getElementById('att-main-tab-live'))">↻ Refresh</button>
+            </div>
+          </div>
+          <div class="cb" id="att-live-board" style="padding:12px"></div>
         </div>
       </div>
 
-      <!-- Overtime report -->
-      <div class="card" style="margin-bottom:14px">
-        <div class="ch">
-          <span class="ct" style="color:var(--navy)">⏰ Overtime Report</span>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input type="date" class="si" id="ot-date-from" style="width:140px">
-            <span class="tm txs">to</span>
-            <input type="date" class="si" id="ot-date-to" style="width:140px">
-            <select class="si" id="ot-dept-filter" style="width:130px">
-              <option value="">All departments</option>
-            </select>
-            <button class="btn btn-primary" onclick="runOvertimeReport()">Calculate</button>
-            <button class="btn" onclick="exportOvertimeCSV()">⬇ Export</button>
+      <!-- TAB: Overtime -->
+      <div id="att-panel-overtime" style="display:none">
+        <div class="card">
+          <div class="ch">
+            <span class="ct" style="color:var(--navy)">⏰ Overtime Report</span>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input type="date" class="si" id="ot-date-from" style="width:140px">
+              <span class="tm txs">to</span>
+              <input type="date" class="si" id="ot-date-to" style="width:140px">
+              <select class="si" id="ot-dept-filter" style="width:130px">
+                <option value="">All departments</option>
+              </select>
+              <button class="btn btn-primary" onclick="runOvertimeReport()">Calculate</button>
+              <button class="btn" onclick="exportOvertimeCSV()">⬇ Export</button>
+            </div>
+          </div>
+          <div id="ot-report-body">
+            <div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Select a date range and click Calculate.</div>
           </div>
         </div>
-        <div id="ot-report-body">
-          <div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Select a date range and click Calculate.</div>
-        </div>
       </div>
 
-
-
-      <!-- Report filters -->
-      <div class="card">
-        <div class="ch">
-          <span class="ct">Records</span>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <input type="date" class="si" id="att-date-from" style="width:130px">
-            <span class="tm txs">to</span>
-            <input type="date" class="si" id="att-date-to" style="width:130px">
-            <select class="si" id="att-dept-filter" style="width:130px" onchange="renderAttendanceReport()">
-              <option value="">All departments</option>
-            </select>
-            <button class="btn btn-primary" onclick="renderAttendanceReport()">Filter</button>
-            <button class="btn" onclick="exportAttendanceCSV()">&#x2B07; CSV</button>
+      <!-- TAB: Anomalies -->
+      <div id="att-panel-anomaly" style="display:none">
+        <div class="card">
+          <div class="ch">
+            <span class="ct" style="color:var(--amber)">&#9888; Attendance Anomalies</span>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="date" class="si" id="anom-date" style="width:150px">
+              <button class="btn" style="border-color:var(--amber);color:var(--amber)" onclick="runAnomalyCheck()">Check</button>
+            </div>
+          </div>
+          <div id="anomaly-body">
+            <div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Select a date and click Check to scan for anomalies.</div>
           </div>
         </div>
-        <!-- Sub-tab bar -->
-        <div style="display:flex;gap:0;border-bottom:1px solid var(--border)">
-          <button id="att-tab-all"      class="tbb active" onclick="setAttTab('all',this)"      style="font-size:12px;padding:7px 14px">All records</button>
-          <button id="att-tab-employee" class="tbb"        onclick="setAttTab('employee',this)" style="font-size:12px;padding:7px 14px">By employee</button>
-          <button id="att-tab-anomaly"  class="tbb"        onclick="setAttTab('anomaly',this)"  style="font-size:12px;padding:7px 14px">Anomalies only</button>
-        </div>
-        <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:650px">
-            <thead><tr style="background:var(--bg2)">
-              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2);white-space:nowrap">Employee</th>
-              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Date</th>
-              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Clock in</th>
-              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Clock out</th>
-              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Duration</th>
-              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Location</th>
-              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Notes</th>
-              <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)"></th>
-            </tr></thead>
-            <tbody id="att-tbody"></tbody>
-          </table>
-        </div>
       </div>
+
     </div>
 
     <!-- EVENTS -->
@@ -17073,6 +17092,24 @@ async function renderAttendanceReport(){
       </td>
     </tr>`;
   }).join('');
+}
+
+function setAttMainTab(tab, el){
+  ['daily','live','overtime','anomaly'].forEach(t=>{
+    document.getElementById('att-panel-'+t).style.display = t===tab ? '' : 'none';
+    const btn = document.getElementById('att-main-tab-'+t);
+    if(btn) btn.classList.toggle('active', t===tab);
+  });
+  // Fetch fresh data when switching tabs that need it
+  if(tab==='live'){
+    const board = document.getElementById('att-live-board');
+    if(board) board.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Loading...</div>';
+    dbGetAttendance(todayStr(),todayStr()).then(recs=>{
+      _attendance = recs;
+      renderAttLiveBoard();
+      renderAttMetrics();
+    }).catch(()=>renderAttLiveBoard());
+  }
 }
 
 function setAttTab(tab, el){
