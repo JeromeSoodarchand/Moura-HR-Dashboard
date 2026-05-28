@@ -17044,17 +17044,37 @@ async function dbGetAttendance(dateFrom, dateTo){
     if(dateTo)   q = q.lte('date', dateTo);
     if(_COMPANY_ID && companyEmpIds.size > 0){
       q = q.in('emp_id', [...companyEmpIds]);
+    } else if(_COMPANY_ID){
+      // Fallback: no employees loaded yet — filter by company_id column instead
+      q = q.eq('company_id', _COMPANY_ID);
     }
     const {data, error} = await q;
     if(error){ console.error('dbGetAttendance:', error); return local; }
-    const sbRecs = data.map(rowToAtt);
+    let sbRecs = data.map(rowToAtt);
+
+    // Second pass: also fetch by company_id column to catch employees whose
+    // company_id in the employees table is wrong but was stamped correctly on attendance
+    if(_COMPANY_ID && companyEmpIds.size > 0){
+      try{
+        let q2 = _sb.from('attendance').select('*').order('clock_in',{ascending:false}).eq('company_id',_COMPANY_ID);
+        if(dateFrom) q2 = q2.gte('date', dateFrom);
+        if(dateTo)   q2 = q2.lte('date', dateTo);
+        const {data:d2} = await q2;
+        if(d2 && d2.length){
+          const existingIds = new Set(sbRecs.map(r=>String(r.id)));
+          const extra = d2.map(rowToAtt).filter(r=>!existingIds.has(String(r.id)));
+          sbRecs = [...sbRecs, ...extra];
+        }
+      } catch(e2){ /* ignore second pass errors */ }
+    }
+
     // Merge with local-only records in the same date range AND same company
     const sbIds = new Set(sbRecs.map(r=>String(r.id)));
     const localInRange = local.filter(r=>
       !sbIds.has(String(r.id)) &&
       (!dateFrom||r.date>=dateFrom) &&
       (!dateTo||r.date<=dateTo) &&
-      companyEmpIds.has(String(r.empId))
+      (companyEmpIds.size===0 || companyEmpIds.has(String(r.empId)))
     );
     return [...sbRecs, ...localInRange];
   } catch(e){ console.error('dbGetAttendance exception:',e); return local; }
@@ -17240,10 +17260,14 @@ function renderAttLiveBoard(){
   const board = document.getElementById('att-live-board');
   if(!board) return;
 
+  // Find any attendance records for people NOT in the employee list (company_id mismatch)
+  const empIds = new Set(emps.map(e=>String(e.id)));
+  const orphanRecs = clockedIn.filter(r=>!empIds.has(String(r.empId)));
+
   // Group by department, sorted alphabetically
   const depts = [...new Set(emps.map(e=>e.dept||'No department'))].sort();
 
-  board.innerHTML = depts.map(dept=>{
+  let html = depts.map(dept=>{
     const deptEmps = emps.filter(e=>(e.dept||'No department')===dept);
     const deptOnSite = deptEmps.filter(e=>!!getEmployeeActiveRecord(e.id)).length;
     return '<div style="margin-bottom:18px">'+
@@ -17271,6 +17295,32 @@ function renderAttLiveBoard(){
       '</div>'+
     '</div>';
   }).join('');
+
+  // Show orphan records (clocked in but employee has wrong company_id in DB)
+  if(orphanRecs.length){
+    html += '<div style="margin-bottom:18px">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">'+
+        '<span style="font-size:12px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.05em">⚠ Company mismatch — fix needed</span>'+
+      '</div>'+
+      '<div class="att-live">'+
+        orphanRecs.map(rec=>{
+          const c = aColor(String(rec.empId));
+          const since = fmtTime(rec.clockIn);
+          const elapsed = calcDuration(rec.clockIn,new Date().toISOString());
+          return '<div class="att-emp-card clocked-in">'+
+            '<div class="att-status-dot in"></div>'+
+            '<div class="avatar" style="background:'+c+'22;color:'+c+';width:28px;height:28px;font-size:10px;flex-shrink:0">?</div>'+
+            '<div class="att-emp-info">'+
+              '<div class="att-emp-name">Employee #'+rec.empId+'</div>'+
+              '<div class="att-emp-time">In since '+since+' — use 🔧 Fix company assignments</div>'+
+              (elapsed?'<div class="att-emp-hours">'+fmtDuration(elapsed)+'</div>':'')+
+            '</div></div>';
+        }).join('')+
+      '</div>'+
+    '</div>';
+  }
+
+  board.innerHTML = html;
 }
 
 function renderAttMetrics(){
