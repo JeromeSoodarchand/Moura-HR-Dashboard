@@ -11048,7 +11048,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     <!-- PASSWORD LOGIN (admin / fallback) -->
     <div id="pass-login-section" style="display:none">
       <div class="lf"><label>Company</label>
-        <select id="login-company" class="fi" style="width:100%">
+        <select id="login-company" class="fi" style="width:100%" onchange="updateLoginBranding(this.value)">
           <option value="">— Select your company —</option>
           <option value="1">Corevest Shared Services</option>
           <option value="2">MTI Funeral Scheme Manager Ltd</option>
@@ -12632,7 +12632,9 @@ async function dbAddAudit(actor,action){
 async function dbGetSetting(key){
   if(!sbReady()) return null;
   try{
-    const {data}=await _sb.from('company_settings').select('value').eq('key',key).limit(1);
+    let q = _sb.from('company_settings').select('value').eq('key',key);
+    if(_COMPANY_ID) q = q.eq('company_id', _COMPANY_ID);
+    const {data}=await q.order('id',{ascending:false}).limit(1);
     const _gsRow=Array.isArray(data)?data[0]:data; return _gsRow?.value||null;
   } catch(e){ console.warn('dbGetSetting error:',e); return null; }
 }
@@ -12927,7 +12929,7 @@ async function boot(){
     showLoginScreen();
     // Background sync: if Supabase connected, also load org name
     if(sbReady()){
-      _sb.from('company_settings').select('key,value').then(({data})=>{
+      _sb.from('company_settings').select('key,value').eq('company_id', _COMPANY_ID||1).then(({data})=>{
         if(data){
           const orgRow=data.find(r=>r.key==='orgName');
           if(orgRow&&orgRow.value){
@@ -13073,6 +13075,42 @@ function simpleHash(str){
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
+async function updateLoginBranding(companyId){
+  if(!companyId) return;
+  // Update the org name on login screen immediately from the company name
+  const companyNames = {
+    '1':'Corevest Shared Services','2':'MTI Funeral Scheme Manager Ltd',
+    '3':'Moura Operations Co Ltd','4':'Eiffel Property',
+    '5':'Stone and Granite','6':'Island Funeral Supplies','7':'Materico'
+  };
+  const nameEl = document.getElementById('org-name-login');
+  const taglineEl = document.getElementById('login-tagline');
+  if(nameEl) nameEl.textContent = companyNames[companyId]||'';
+  if(taglineEl) taglineEl.textContent = '';
+  // Load company-specific settings from Supabase
+  if(sbReady()){
+    try{
+      const {data} = await _sb.from('company_settings')
+        .select('key,value').eq('company_id', parseInt(companyId));
+      if(data && data.length){
+        const orgRow = data.find(r=>r.key==='orgName');
+        const tagRow = data.find(r=>r.key==='tagline');
+        const logoRow = data.find(r=>r.key==='logoDataUrl');
+        if(orgRow&&orgRow.value&&nameEl) nameEl.textContent = orgRow.value;
+        if(tagRow&&taglineEl) taglineEl.textContent = tagRow.value||'';
+        // Update logo if available
+        const logoImg = document.getElementById('login-logo-img');
+        if(logoImg && logoRow && logoRow.value){
+          logoImg.src = logoRow.value;
+          logoImg.style.display='block';
+        } else if(logoImg){
+          logoImg.style.display='none';
+        }
+      }
+    }catch(e){}
+  }
+}
+
 async function doLogin(){
   const u=document.getElementById('lu').value.trim().toLowerCase();
   const p=document.getElementById('lp').value;
