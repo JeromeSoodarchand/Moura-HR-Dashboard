@@ -11012,7 +11012,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
 </div>
 
 <!-- ── LOGIN SCREEN ── -->
-<div id="login-screen">
+<div id="login-screen" style="display:none">
   <div class="login-card">
     <div style="text-align:center;margin-bottom:20px">
       <img id="login-logo-img" src="" alt="" style="max-width:160px;height:auto;display:none;margin:0 auto 8px;border-radius:8px">
@@ -12870,6 +12870,19 @@ async function assignMissingEmpNos(){
 }
 
 async function boot(){
+  // Pre-boot: if session exists, show loader immediately so login screen never flickers
+  const _preSession = sessionStorage.getItem('pdhr_session');
+  if(_preSession){
+    try{
+      const _ps = JSON.parse(_preSession);
+      if(_ps && _ps.userId){
+        // Valid session found — show loader, hide login until restored
+        const loaderEl = document.getElementById('global-loader');
+        if(loaderEl){ loaderEl.style.display='flex'; loaderEl.querySelector&&(loaderEl.querySelector('.loader-text')&&(loaderEl.querySelector('.loader-text').textContent='Restoring session…')); }
+      }
+    }catch(e){}
+  }
+
   // Step 1 — init Supabase from hardcoded credentials (always available)
   ensureSB();
   // Mark as connected if we have a client
