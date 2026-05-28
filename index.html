@@ -11019,9 +11019,30 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
       <div style="font-size:22px;font-weight:700;color:var(--text);margin-bottom:4px;letter-spacing:-.01em" id="org-name-login"></div>
       <div style="font-size:12px;color:var(--muted-gold);letter-spacing:.06em;font-style:italic" id="login-tagline"></div>
     </div>
-    <!-- PIN LOGIN (default for employees) -->
-    <div id="pin-login-section">
-      <div style="font-size:13px;color:var(--text3);text-align:center;margin-bottom:10px">Enter your PIN to sign in</div>
+
+    <!-- PASSWORD LOGIN (default — HR platform access) -->
+    <div id="pass-login-section">
+      <div class="lf"><label>Company</label>
+        <select id="login-company" class="fi" style="width:100%" onchange="updateLoginBranding(this.value)">
+          <option value="">— Select your company —</option>
+          <option value="1">Corevest Shared Services</option>
+          <option value="2">MTI Funeral Scheme Manager Ltd</option>
+          <option value="3">Moura Operations Co Ltd</option>
+          <option value="4">Eiffel Property</option>
+          <option value="5">Stone and Granite</option>
+          <option value="6">Island Funeral Supplies</option>
+          <option value="7">Materico</option>
+        </select>
+      </div>
+      <div class="lf"><label>Username</label><input id="lu" placeholder="Username" autocomplete="off" oninput="document.getElementById('lerr').style.display='none'"></div>
+      <div class="lf"><label>Password</label><input type="password" id="lp" placeholder="Password" oninput="document.getElementById('lerr').style.display='none'" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="login-err" id="lerr" style="display:none">Incorrect username or password.</div>
+      <button class="login-btn" onclick="doLogin()">Sign in</button>
+    </div>
+
+    <!-- PIN LOGIN (employee clock-in only) -->
+    <div id="pin-login-section" style="display:none">
+      <div style="font-size:13px;color:var(--text3);text-align:center;margin-bottom:10px">Enter your PIN to clock in</div>
       <div style="display:flex;justify-content:center;gap:14px;margin-bottom:14px">
         <div id="ld0" style="width:16px;height:16px;border-radius:50%;border:2px solid var(--border2);transition:background .15s"></div>
         <div id="ld1" style="width:16px;height:16px;border-radius:50%;border:2px solid var(--border2);transition:background .15s"></div>
@@ -11045,34 +11066,14 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
       <div class="login-err" id="lerr-pin" style="display:none">Incorrect PIN. Try again.</div>
     </div>
 
-    <!-- PASSWORD LOGIN (admin / fallback) -->
-    <div id="pass-login-section" style="display:none">
-      <div class="lf"><label>Company</label>
-        <select id="login-company" class="fi" style="width:100%" onchange="updateLoginBranding(this.value)">
-          <option value="">— Select your company —</option>
-          <option value="1">Corevest Shared Services</option>
-          <option value="2">MTI Funeral Scheme Manager Ltd</option>
-          <option value="3">Moura Operations Co Ltd</option>
-          <option value="4">Eiffel Property</option>
-          <option value="5">Stone and Granite</option>
-          <option value="6">Island Funeral Supplies</option>
-          <option value="7">Materico</option>
-        </select>
-      </div>
-      <div class="lf"><label>Username</label><input id="lu" placeholder="Username" autocomplete="off" oninput="document.getElementById('lerr').style.display='none'"></div>
-      <div class="lf"><label>Password</label><input type="password" id="lp" placeholder="Password" oninput="document.getElementById('lerr').style.display='none'"></div>
-      <div class="login-err" id="lerr">Incorrect username or password.</div>
-      <button class="login-btn" onclick="doLogin()">Sign in</button>
-    </div>
-
     <div style="text-align:center;margin-top:10px">
       <button id="toggle-login-mode" onclick="toggleLoginMode()" style="background:none;border:none;color:var(--text3);font-size:11.5px;cursor:pointer;font-family:inherit;text-decoration:underline">
-        Admin / Password login
+        Employee clock-in (PIN)
       </button>
-    </div>  
-  <div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
-    <span style="font-size:11px;color:var(--text3)">Powered by </span><span style="font-size:11.5px;font-weight:700;color:var(--navy)">SolentraHR</span>
-  </div>
+    </div>
+    <div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+      <span style="font-size:11px;color:var(--text3)">Powered by </span><span style="font-size:11.5px;font-weight:700;color:var(--navy)">SolentraHR</span>
+    </div>
   </div>
 </div>
 
@@ -12014,7 +12015,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
 <script>
 // ─── S//// ─── S// ─── SUPABAS// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
-let _COMPANY_ID = 1; // Current company — set on login
+let _COMPANY_ID = null; // Set on login — null means not authenticated yet
 const _APP_SECRET = 'MHR_9A_wRcm-HPdnuZCbJ4NXMZJxjuTYceubJUlXqyqefYA';
 const _SB_URL = 'https://mstyeqlabtjvkbnoutit.supabase.co';
 const _SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zdHllcWxhYnRqdmtibm91dGl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3ODg1MzMsImV4cCI6MjA5NTM2NDUzM30.VrAFckdchNF9EHSE_dcqPZUyqOBHr__MzgnGNYmirpk';
@@ -12411,7 +12412,9 @@ async function dbGetEvents(){
   ensureSB();
   if(!sbReady()) return [];
   try{
-    const {data,error}=await _sb.from('events').select('*').order('date',{ascending:false});
+    let q = _sb.from('events').select('*').order('date',{ascending:false});
+    if(_COMPANY_ID) q = q.eq('company_id', _COMPANY_ID);
+    const {data,error}=await q;
     if(error){console.error('dbGetEvents error:',error);return getData('events');}
     return data.map(rowToEvt);
   } catch(err){ console.error('dbGetEvents exception:',err);return getData('events'); }
@@ -12547,6 +12550,7 @@ async function dbSaveUser(user){
     emp_id:                 user.empId||null,
     senior_hod:             user.seniorHOD||false,
     cross_leave_visibility: user.crossLeaveVisibility||false,
+    company_id:             user.companyId||_COMPANY_ID||1,
   };
   Object.keys(row).forEach(k=>{ if(row[k]===undefined||row[k]===null) delete row[k]; });
 
@@ -12624,7 +12628,7 @@ async function dbFindUser(username){
 async function dbAddAudit(actor,action){
   addAudit(actor,action); // always local
   if(!sbReady()) return;
-  try{ await _sb.from('audit_log').insert({user_name:actor,action:action}); }
+  try{ await _sb.from('audit_log').insert({user_name:actor,action:action,company_id:_COMPANY_ID||1}); }
   catch(e){ console.warn('Audit log error:',e); }
 }
 
@@ -12641,7 +12645,13 @@ async function dbGetSetting(key){
 
 async function dbSetSetting(key,value){
   if(!sbReady()) return;
-  try{ await _sb.from('company_settings').upsert({key,value,updated_at:new Date().toISOString()},{onConflict:'key'}); }
+  try{
+    await _sb.from('company_settings').insert({
+      key, value,
+      company_id: _COMPANY_ID||1,
+      updated_at: new Date().toISOString()
+    });
+  }
   catch(e){ console.warn('Setting save error:',e); }
 }
 
@@ -12697,7 +12707,8 @@ function empToRow(e){
 function rowToEvt(r){ return{id:r.id,empId:r.emp_id,type:r.type,desc:r.description,date:r.event_date,loggedBy:r.logged_by,notified:r.notified}; }
 function evtToRow(e){
   const row={emp_id:e.empId,type:e.type||'milestone',description:e.desc||'',
-    event_date:e.date||null,logged_by:e.loggedBy||'',notified:e.notified===true};
+    event_date:e.date||null,logged_by:e.loggedBy||'',notified:e.notified===true,
+    company_id:e.companyId||_COMPANY_ID||1};
   Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
   return row;
 }
@@ -13055,7 +13066,7 @@ async function doSetup(){
   }
   // Save user to DB or local
   if(sbReady()){
-    _sb.from('hr_users').insert({name:adminUser.name,username:adminUser.username,email:adminUser.email||'',role:'admin',active:true,password_hash:adminUser.passwordHash}).then(()=>{});
+    _sb.from('hr_users').insert({name:adminUser.name,username:adminUser.username,email:adminUser.email||'',role:'admin',active:true,password_hash:adminUser.passwordHash,company_id:_COMPANY_ID||1}).then(()=>{});
   } else {
     S.set('users',[adminUser]);
   }
@@ -14070,6 +14081,114 @@ async function renderUserMgmt(){
   renderAuditLog();
   renderUserAuditSummary();
 }
+// ── GRANT HR ACCESS ──────────────────────────────────────────────────────────
+let _ghrEmpId = null;
+
+function openGrantHRAccess(empId){
+  _ghrEmpId = empId;
+  const emp = gE(empId);
+  if(!emp) return;
+  const existing = getUsers().find(u=>u.empId&&String(u.empId)===String(empId));
+  const title = document.getElementById('ghr-title');
+  const subtitle = document.getElementById('ghr-subtitle');
+  const saveBtn = document.getElementById('ghr-save-btn');
+  if(title) title.textContent = existing ? 'Edit HR Access' : 'Grant HR Access';
+  if(subtitle) subtitle.textContent = emp.name;
+  if(saveBtn) saveBtn.textContent = existing ? 'Save Changes' : 'Grant Access';
+  // Pre-fill if editing existing
+  document.getElementById('ghr-role').value = existing ? existing.role : (emp.isHOD ? 'manager' : 'viewer');
+  document.getElementById('ghr-username').value = existing ? existing.username : (emp.name.split(' ')[0].toLowerCase()+'.'+((emp.name.split(' ')[1]||'').toLowerCase())).replace(/[^a-z.]/g,'');
+  document.getElementById('ghr-password').value = '';
+  document.getElementById('ghr-password2').value = '';
+  document.getElementById('ghr-err').style.display = 'none';
+  // If editing, password is optional
+  const passLabel = document.querySelector('#grant-hr-modal .lf:nth-child(3) label');
+  if(passLabel) passLabel.textContent = existing ? 'New Password (leave blank to keep)' : 'Password';
+  document.getElementById('grant-hr-modal').style.display = 'flex';
+  closeModal(); // Close employee profile modal
+}
+
+function closeGrantHRAccess(){
+  document.getElementById('grant-hr-modal').style.display = 'none';
+  _ghrEmpId = null;
+}
+
+async function saveGrantHRAccess(){
+  const emp = gE(_ghrEmpId);
+  if(!emp) return;
+  const role = document.getElementById('ghr-role').value;
+  const username = document.getElementById('ghr-username').value.trim().toLowerCase();
+  const password = document.getElementById('ghr-password').value;
+  const password2 = document.getElementById('ghr-password2').value;
+  const errEl = document.getElementById('ghr-err');
+  errEl.style.display = 'none';
+
+  if(!username){ errEl.textContent='Username is required.'; errEl.style.display='block'; return; }
+
+  const existing = getUsers().find(u=>u.empId&&String(u.empId)===String(_ghrEmpId));
+
+  // Validate password
+  if(!existing && !password){ errEl.textContent='Password is required.'; errEl.style.display='block'; return; }
+  if(password){
+    if(password.length < 6){ errEl.textContent='Password must be at least 6 characters.'; errEl.style.display='block'; return; }
+    if(password !== password2){ errEl.textContent='Passwords do not match.'; errEl.style.display='block'; return; }
+  }
+
+  // Check username not taken by another user
+  const conflict = getUsers().find(u=>u.username===username && (!existing || String(u.id)!==String(existing.id)));
+  if(conflict){ errEl.textContent='Username "'+username+'" is already taken.'; errEl.style.display='block'; return; }
+
+  showLoader('Saving...');
+  try{
+    if(existing){
+      // Update existing user
+      existing.role = role;
+      existing.username = username;
+      if(password) existing.passwordHash = simpleHash(password);
+      existing.companyId = _COMPANY_ID;
+      await dbSaveUser(existing);
+      const idx = _userCache.findIndex(u=>String(u.id)===String(existing.id));
+      if(idx>=0) _userCache[idx]=existing; else _userCache.push(existing);
+      S.set('users', _userCache);
+      dbAddAudit(CU.name, 'Updated HR access for: '+emp.name+' ('+role+')');
+      toast('HR access updated for '+emp.name,'success');
+    } else {
+      // Create new user linked to this employee
+      const newUser = {
+        id: Date.now(),
+        name: emp.name,
+        username, role,
+        email: emp.email||'',
+        phone: emp.phone||'',
+        active: true,
+        passwordHash: simpleHash(password),
+        pinHash: null,
+        empId: String(emp.id),
+        setupDone: true,
+        companyId: _COMPANY_ID
+      };
+      await dbSaveUser(newUser);
+      if(!_userCache) _userCache = [];
+      _userCache.push(newUser);
+      S.set('users', _userCache);
+      // Link user to employee
+      emp.userId = String(newUser.id);
+      await dbSaveEmployee(emp);
+      const ei = _cache.emps.findIndex(e=>String(e.id)===String(emp.id));
+      if(ei>=0) _cache.emps[ei]=emp;
+      dbAddAudit(CU.name, 'Granted HR access to: '+emp.name+' ('+role+')');
+      toast('HR access granted to '+emp.name,'success');
+    }
+    hideLoader();
+    closeGrantHRAccess();
+    renderUserMgmt();
+  } catch(e){
+    hideLoader();
+    errEl.textContent = 'Save failed: '+(e.message||e);
+    errEl.style.display = 'block';
+  }
+}
+
 function openCreateKioskModal(){
   // Check if kiosk account already exists
   const existing = getUsers().find(u=>u.role==='kiosk'&&u.active!==false);
@@ -14193,6 +14312,7 @@ function viewEmp(id){
       <div style="display:flex;gap:6px;flex-direction:column;align-items:flex-end">
         <button class="btn btn-sm pdf-btn" onclick="generateEmployeePDF(${id})">⬇ PDF Report</button>
         ${canEdit()?`<button class="btn btn-sm btn-primary" onclick="closeModal();openModal('editEmployee',${id})">Edit</button>`:''}
+        ${canEdit()?`<button class="btn btn-sm" style="background:var(--navy);color:#fff;border-color:var(--navy)" onclick="openGrantHRAccess(${id})">🔑 HR Access</button>`:''}
       </div>
     </div>
     <div class="ig">
@@ -14203,9 +14323,9 @@ function viewEmp(id){
       <div class="ig-item"><div class="ig-label">Email</div><div class="ig-value" style="font-size:12px;color:var(--blue)">${emp.email}</div></div>
       <div class="ig-item"><div class="ig-label">HR Account</div><div class="ig-value">${(()=>{
         const u=getUsers().find(u=>u.empId&&String(u.empId)===String(emp.id));
-        if(!u) return '<span style="color:var(--text3)">No account</span>';
+        if(!u) return `<span style="color:var(--text3)">No account</span>${canEdit()?` &nbsp;<button class="btn btn-xs" style="color:var(--navy);border-color:var(--navy)" onclick="openGrantHRAccess(${id})">Grant Access</button>`:''}`;
         const roleLabel=u.role[0].toUpperCase()+u.role.slice(1);
-        return `<span style="color:var(--green)">&#10003; Active</span> &middot; <span style="font-size:11.5px;color:var(--text2)">${roleLabel}</span> &middot; <span style="font-size:11px;color:var(--text3)">${u.username}</span>`;
+        return `<span style="color:var(--green)">&#10003; Active</span> &middot; <span style="font-size:11.5px;color:var(--text2)">${roleLabel}</span> &middot; <span style="font-size:11px;color:var(--text3)">${u.username}</span>${canEdit()?` &nbsp;<button class="btn btn-xs" onclick="openGrantHRAccess(${id})">Edit</button>`:''}`;
       })()}</div></div>
       ${emp.lastDay?`<div class="ig-item"><div class="ig-label">Last Day</div><div class="ig-value">${fDate(emp.lastDay)}</div></div>`:''}
       ${emp.reason?`<div class="ig-item"><div class="ig-label">Reason</div><div class="ig-value">${emp.reason}</div></div>`:''}
@@ -16851,15 +16971,18 @@ async function dbGetAttendance(dateFrom, dateTo){
     let q = _sb.from('attendance').select('*').order('clock_in', {ascending:false});
     if(dateFrom) q = q.gte('date', dateFrom);
     if(dateTo)   q = q.lte('date', dateTo);
+    if(_COMPANY_ID) q = q.eq('company_id', _COMPANY_ID);
     const {data, error} = await q;
     if(error){ console.error('dbGetAttendance:', error); return local; }
     const sbRecs = data.map(rowToAtt);
-    // Merge with local-only records in the same date range
+    // Merge with local-only records in the same date range AND same company
+    const companyEmpIds = new Set(getEmps().map(e=>String(e.id)));
     const sbIds = new Set(sbRecs.map(r=>String(r.id)));
     const localInRange = local.filter(r=>
       !sbIds.has(String(r.id)) &&
       (!dateFrom||r.date>=dateFrom) &&
-      (!dateTo||r.date<=dateTo)
+      (!dateTo||r.date<=dateTo) &&
+      companyEmpIds.has(String(r.empId))
     );
     return [...sbRecs, ...localInRange];
   } catch(e){ console.error('dbGetAttendance exception:',e); return local; }
@@ -16904,9 +17027,11 @@ async function dbGetLocations(){
   const local = S.get('attLocations', []);
   if(!sbReady()) return local.length ? local : [{id:1,name:'Main Office',qrCode:'LOC-MAIN-001',address:''}];
   try{
-    const {data,error} = await _sb.from('att_locations').select('*');
+    let q = _sb.from('att_locations').select('*');
+    if(_COMPANY_ID) q = q.eq('company_id', _COMPANY_ID);
+    const {data,error} = await q;
     if(error){ return local.length ? local : [{id:1,name:'Main Office',qrCode:'LOC-MAIN-001',address:''}]; }
-    const locs = data.map(r => ({id:r.id,name:r.name,qrCode:r.qr_code,address:r.address||''}));
+    const locs = data.map(r => ({id:r.id,name:r.name,qrCode:r.qr_code,address:r.address||'',companyId:r.company_id||_COMPANY_ID}));
     S.set('attLocations', locs);
     return locs;
   } catch(e){ return local.length ? local : [{id:1,name:'Main Office',qrCode:'LOC-MAIN-001',address:''}]; }
@@ -16920,7 +17045,7 @@ async function dbSaveLocation(loc){
   _attLocations = local;
   if(!sbReady()) return loc;
   try{
-    const row = {name:loc.name, qr_code:loc.qrCode, address:loc.address||''};
+    const row = {name:loc.name, qr_code:loc.qrCode, address:loc.address||'', company_id:loc.companyId||_COMPANY_ID||1};
     if(loc.id && String(loc.id).length <= 12){
       // Update existing
       const {error} = await _sb.from('att_locations').update(row).eq('id',loc.id);
@@ -18442,7 +18567,9 @@ async function dbGetLeaveRequests(){
   const local = _leaveRequests || S.get('leaveRequests', []);
   if(!sbReady()) return local;
   try{
-    const {data,error} = await _sb.from('leave_requests').select('*').order('id',{ascending:false});
+    let q = _sb.from('leave_requests').select('*').order('id',{ascending:false});
+    if(_COMPANY_ID) q = q.eq('company_id', _COMPANY_ID);
+    const {data,error} = await q;
     if(error){ console.error('dbGetLeaveRequests:', error); return local; }
     const reqs = data.map(r=>({
       id:r.id, empId:r.emp_id, type:r.type, fromDate:r.from_date, toDate:r.to_date,
@@ -18481,7 +18608,8 @@ async function dbSaveLeaveRequest(req){
       hr_approved_at:req.hrApprovedAt||null,
       requester_is_hod:req.requesterIsHOD||false,
       reviewed_by:req.reviewedBy||null, review_note:req.reviewNote||null,
-      updated_at:new Date().toISOString()
+      updated_at:new Date().toISOString(),
+      company_id:req.companyId||_COMPANY_ID||1
     };
     Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
     if(req.id && String(req.id).length<=12){
@@ -18502,10 +18630,16 @@ async function dbGetLeaveBalances(){
   const local = _leaveBalances || S.get('leaveBalances', {});
   if(!sbReady()) return local;
   try{
+    // Filter by employees belonging to current company
+    const companyEmpIds = getEmps().map(e=>String(e.id));
     const {data,error} = await _sb.from('leave_balances').select('*');
     if(error){ console.error('dbGetLeaveBalances:', error); return local; }
     const out = {};
-    data.forEach(r=>{ out[r.emp_id]={annual:r.annual||20,sick:r.sick||15,casual:r.casual||10}; });
+    data.forEach(r=>{
+      if(companyEmpIds.includes(String(r.emp_id))){
+        out[r.emp_id]={annual:r.annual||20,sick:r.sick||15,casual:r.casual||10};
+      }
+    });
     S.set('leaveBalances', out);
     return out;
   } catch(e){ console.error('dbGetLeaveBalances:',e); return local; }
@@ -19471,23 +19605,9 @@ async function loginPinSubmit(){
     } catch(e){ console.warn('Initial load error:',e); }
   }
 
-  // Route by role — but check clockMode first for HOD/QR employees
-  const _routeEmp = user.empId ? gE(user.empId) : getEmps().find(e=>
-    (user.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===user.phone.replace(/[^0-9]/g,''))||
-    (user.email&&e.email&&e.email.toLowerCase()===user.email.toLowerCase())
-  );
-  const _routeClockMode = _routeEmp?.clockMode||'kiosk';
-  const _needsClockScreen = _routeClockMode==='qr'||_routeClockMode==='hod';
-
-  if(_needsClockScreen){
-    // QR or HOD mode: always show clock-in screen first (HR Platform button appears for hod)
-    showEmployeeClockInScreen(user);
-  } else if(user.role==='admin'||user.role==='hr'||user.role==='manager'){
-    renderDashboard();
-    setTimeout(()=>showManagerLoginChoice(user), 400);
-  } else {
-    showEmployeeClockInScreen(user);
-  }
+  // PIN login always goes to clock-in screen only — not HR platform
+  // HR platform access requires username + password
+  showEmployeeClockInScreen(user);
 }
 
 function toggleLoginMode(){
@@ -19495,12 +19615,12 @@ function toggleLoginMode(){
   const passSection = document.getElementById('pass-login-section');
   const btn         = document.getElementById('toggle-login-mode');
   if(!pinSection||!passSection) return;
-  const showingPin = pinSection.style.display!=='none';
-  pinSection.style.display  = showingPin ? 'none' : '';
-  passSection.style.display = showingPin ? '' : 'none';
-  if(btn) btn.textContent = showingPin
-    ? 'Sign in with PIN instead'
-    : 'Sign in with username & password';
+  const showingPass = passSection.style.display!=='none';
+  passSection.style.display = showingPass ? 'none' : '';
+  pinSection.style.display  = showingPass ? '' : 'none';
+  if(btn) btn.textContent = showingPass
+    ? '← Back to HR login'
+    : 'Employee clock-in (PIN)';
   _loginPin=''; updateLoginDots();
 }
 
@@ -23345,6 +23465,45 @@ function renderUserAuditSummary(){
 </div>
 
 
+
+<!-- GRANT HR ACCESS MODAL -->
+<div id="grant-hr-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);align-items:center;justify-content:center">
+  <div class="login-card" style="width:400px;border-top:4px solid var(--navy)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div>
+        <div style="font-size:16px;font-weight:600;color:var(--navy)" id="ghr-title">Grant HR Access</div>
+        <div style="font-size:12px;color:var(--text3)" id="ghr-subtitle">Set up HR platform login</div>
+      </div>
+      <button onclick="closeGrantHRAccess()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)">✕</button>
+    </div>
+    <div class="lf">
+      <label>Role</label>
+      <select id="ghr-role" class="fi">
+        <option value="viewer">Viewer — read only</option>
+        <option value="manager">Manager — manage their team</option>
+        <option value="hr">HR — full HR access</option>
+        <option value="admin">Admin — full access</option>
+      </select>
+    </div>
+    <div class="lf">
+      <label>Username</label>
+      <input id="ghr-username" class="fi" placeholder="e.g. john.doe">
+    </div>
+    <div class="lf">
+      <label>Password</label>
+      <input type="password" id="ghr-password" class="fi" placeholder="Min. 6 characters">
+    </div>
+    <div class="lf">
+      <label>Confirm Password</label>
+      <input type="password" id="ghr-password2" class="fi" placeholder="Repeat password">
+    </div>
+    <div id="ghr-err" style="display:none;font-size:12px;color:var(--red);padding:8px 10px;background:var(--red-light);border-radius:var(--radius);margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn" style="flex:1" onclick="closeGrantHRAccess()">Cancel</button>
+      <button class="login-btn" style="flex:2;margin-top:0" id="ghr-save-btn" onclick="saveGrantHRAccess()">Grant Access</button>
+    </div>
+  </div>
+</div>
 
 <!-- KIOSK ACCOUNT CREATION MODAL -->
 <div id="kiosk-create-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);align-items:center;justify-content:center">
