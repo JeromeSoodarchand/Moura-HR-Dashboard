@@ -11343,6 +11343,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
               <button class="btn" onclick="exportOvertimeCSV()">⬇ Export</button>
             </div>
           </div>
+          <div id="ot-summary" style="display:none;padding:10px 16px 0"></div>
           <div id="ot-report-body">
             <div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Select a date range and click Calculate.</div>
           </div>
@@ -21163,7 +21164,7 @@ async function runOvertimeReport(){
   const deptF  = document.getElementById('ot-dept-filter')?.value||'';
   if(!from||!to){ toast('Select a date range.','error'); return; }
 
-  const body = document.getElementById('ot-body');
+  const body = document.getElementById('ot-report-body');
   if(body) body.innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:13px">Loading...</div>';
 
   // Always reload employees first so we have correct IDs
@@ -21239,7 +21240,7 @@ async function runOvertimeReport(){
 }
 
 function renderOTTable(rows, settings, from, to, unmatched){
-  const body    = document.getElementById('ot-body');
+  const body    = document.getElementById('ot-report-body');
   const summary = document.getElementById('ot-summary');
   if(!body) return;
 
