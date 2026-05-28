@@ -11973,6 +11973,20 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
                   <div style="font-size:11px;color:var(--text3);margin-top:3px">Emergency/disaster rate</div>
                 </div>
               </div>
+              <div class="fsec" style="margin-top:16px">Public Holidays &amp; Employer Leave Days</div>
+              <div style="font-size:12px;color:var(--text3);margin-bottom:10px">
+                Mark custom public holidays (affects overtime rate) or grant employer local leave days (Mauritius law: 11 days per year, company-wide).
+              </div>
+              <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+                <input class="fi" id="custom-holiday-date" type="date" style="width:160px">
+                <input class="fi" id="custom-holiday-name" type="text" placeholder="Holiday name (e.g. Company Day)" style="flex:1;min-width:160px">
+                <select class="fs" id="custom-holiday-type" style="width:180px">
+                  <option value="public_holiday">Public Holiday (OT at holiday rate)</option>
+                  <option value="employer_leave">Employer Local Leave (from 11-day quota)</option>
+                </select>
+                <button class="btn btn-primary" onclick="addCustomHoliday()" style="white-space:nowrap">+ Add</button>
+              </div>
+              <div id="custom-holidays-list" style="max-height:220px;overflow-y:auto"></div>
             </div>
           </div>
         </div>
@@ -15868,7 +15882,8 @@ function getSettings(){
     {key:'maternity',label:'Maternity Leave',     color:'#D4537E',bg:'#FDEEF4',maxDays:84,  paid:true, protected:false},
     {key:'paternity',label:'Paternity Leave',     color:'#7F77DD',bg:'#EEEDFE',maxDays:5,   paid:true, protected:false},
     {key:'unpaid',   label:'Unpaid Leave',        color:'#888780',bg:'#F1EFE8',maxDays:null,paid:false,protected:false},
-    {key:'compassionate',label:'Compassionate Leave',color:'#D85A30',bg:'#FAECE7',maxDays:3,paid:true, protected:false}
+    {key:'compassionate',label:'Compassionate Leave',color:'#D85A30',bg:'#FAECE7',maxDays:3,paid:true, protected:false},
+    {key:'employer_local', label:'Employer Local Leave', color:'#1E1445',bg:'#EEEDFE',maxDays:11, paid:true, protected:true}
   ];
   const _def={
     orgName:'',tagline:'Giving Comfort · Taking Care',
@@ -15957,6 +15972,7 @@ function renderSettings(){
     const cb = document.getElementById('work-day-'+d);
     if(cb) cb.checked = workDays.includes(d);
   });
+  renderCustomHolidaysList();
 }
 
 function applyAttEditorPerm(){
@@ -18903,7 +18919,7 @@ function countWorkingDays(from, to){
   while(cur<=end){
     const dow=cur.getDay();
     const ds=cur.toISOString().slice(0,10);
-    if(dow!==0&&dow!==6&&!MAURITIUS_HOLIDAYS_2025.includes(ds)) count++;
+    if(dow!==0&&dow!==6&&!isDayHoliday(ds)&&!isDayEmployerLeave(ds)) count++;
     cur.setDate(cur.getDate()+1);
   }
   return count;
@@ -20407,7 +20423,7 @@ async function runAnomalyCheck(){
   const emps     = getScopedEmps().filter(e=>e.status!=='offboarded');
   const isToday  = date === todayStr();
   const isWeekend= [0,6].includes(new Date(date+'T00:00:00').getDay());
-  const isHoliday= MAURITIUS_HOLIDAYS_2025.includes(date);
+  const isHoliday= isDayHoliday(date);
   const anomalies = [];
 
   emps.forEach(emp=>{
@@ -20889,7 +20905,7 @@ function calcOvertimeForRecord(rec, wh){
   if(!rec.durationMinutes) return {normalMins:0, otMins:0, type:'normal'};
   const date    = rec.date || rec.clockIn?.slice(0,10);
   const dow     = new Date(date+'T00:00:00').getDay(); // 0=Sun
-  const isHol   = MAURITIUS_HOLIDAYS_2025.includes(date);
+  const isHol   = isDayHoliday(date);
   const isWkend = !wh.workDays.includes(dow);
   const normalMins = wh.workHours * 60;
   const workedMins = rec.durationMinutes;
@@ -20946,8 +20962,114 @@ function isDayWeekend(dateStr){
   // Saturday = weekday rate; Sunday = holiday/weekend rate
   return d===0; // only Sunday triggers holiday rate
 }
+function getCustomHolidays(){
+  return getSettings().customHolidays || [];
+}
+
 function isDayHoliday(dateStr){
-  return (MAURITIUS_HOLIDAYS_2025||[]).includes(dateStr);
+  if((MAURITIUS_HOLIDAYS_2025||[]).includes(dateStr)) return true;
+  return getCustomHolidays().some(h=>h.date===dateStr && h.type==='public_holiday');
+}
+
+function isDayEmployerLeave(dateStr){
+  return getCustomHolidays().some(h=>h.date===dateStr && h.type==='employer_leave');
+}
+
+function isHolidayOrEmployerLeave(dateStr){
+  return isDayHoliday(dateStr) || isDayEmployerLeave(dateStr);
+}
+
+function addCustomHoliday(){
+  const date = document.getElementById('custom-holiday-date')?.value;
+  const name = (document.getElementById('custom-holiday-name')?.value||'').trim();
+  const type = document.getElementById('custom-holiday-type')?.value||'public_holiday';
+  if(!date){ toast('Select a date.','error'); return; }
+  if(!name){ toast('Enter a name for this day.','error'); return; }
+  const cs = getSettings();
+  if(!cs.customHolidays) cs.customHolidays = [];
+  if(cs.customHolidays.some(h=>h.date===date)){
+    toast('A holiday is already set for this date.','error'); return;
+  }
+  // Count employer leave days this year
+  if(type==='employer_leave'){
+    const year = date.slice(0,4);
+    const used = cs.customHolidays.filter(h=>h.type==='employer_leave'&&h.date.startsWith(year)).length;
+    if(used>=11){ toast('Employer local leave limit reached (11 days for '+year+').','error'); return; }
+  }
+  cs.customHolidays.push({date, name, type, addedBy:CU?.name||'HR', addedAt:new Date().toISOString()});
+  cs.customHolidays.sort((a,b)=>a.date.localeCompare(b.date));
+  S.set('companySettings', cs);
+  if(sbReady()) dbSetSetting('customHolidays', JSON.stringify(cs.customHolidays)).catch(()=>{});
+  // If employer_leave — auto-create approved leave requests for all active employees
+  if(type==='employer_leave'){
+    _grantEmployerLeaveDay(date, name);
+  }
+  renderCustomHolidaysList();
+  document.getElementById('custom-holiday-date').value='';
+  document.getElementById('custom-holiday-name').value='';
+  toast((type==='employer_leave'?'Employer leave day':'Public holiday')+' added: '+name,'success');
+}
+
+async function _grantEmployerLeaveDay(date, name){
+  const emps = getEmps().filter(e=>e.status==='active'||e.status==='onboarding');
+  for(const emp of emps){
+    const req = {
+      id: Date.now()+Math.random(),
+      empId: emp.id,
+      type: 'employer_local',
+      fromDate: date, toDate: date, days: 1,
+      reason: 'Employer local leave: '+name,
+      status: 'approved', hodStatus: 'approved', hrStatus: 'approved',
+      reviewedBy: CU?.name||'HR',
+      hrApprovedBy: CU?.name||'HR',
+      hrApprovedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      submittedByHR: true
+    };
+    await dbSaveLeaveRequest(req).catch(()=>{});
+  }
+  toast('Employer leave granted to all active employees for '+date,'success');
+}
+
+function removeCustomHoliday(date){
+  if(!confirm('Remove this holiday/leave day?')) return;
+  const cs = getSettings();
+  cs.customHolidays = (cs.customHolidays||[]).filter(h=>h.date!==date);
+  S.set('companySettings', cs);
+  if(sbReady()) dbSetSetting('customHolidays', JSON.stringify(cs.customHolidays)).catch(()=>{});
+  renderCustomHolidaysList();
+  toast('Removed.','info');
+}
+
+function renderCustomHolidaysList(){
+  const el = document.getElementById('custom-holidays-list');
+  if(!el) return;
+  const holidays = getCustomHolidays();
+  if(!holidays.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0">No custom holidays added yet.</div>';
+    return;
+  }
+  // Group by year
+  const byYear = {};
+  holidays.forEach(h=>{ const y=h.date.slice(0,4); if(!byYear[y]) byYear[y]=[]; byYear[y].push(h); });
+  el.innerHTML = Object.entries(byYear).sort((a,b)=>b[0]-a[0]).map(([year,days])=>{
+    const empCount = days.filter(h=>h.type==='employer_leave').length;
+    return '<div style="margin-bottom:12px">'+
+      '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">'+
+        year+(empCount?'  <span style="color:var(--amber)">'+empCount+'/11 employer leave days used</span>':'')+
+      '</div>'+
+      days.map(h=>{
+        const isPH = h.type==='public_holiday';
+        return '<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--bg2);border-radius:7px;margin-bottom:4px;border-left:3px solid '+(isPH?'var(--red)':'var(--gold)')+'">' +
+          '<span style="font-size:12px;font-weight:600;color:var(--text);min-width:90px">'+h.date+'</span>'+
+          '<span style="font-size:12px;flex:1">'+h.name+'</span>'+
+          '<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:'+(isPH?'var(--red-light)':'var(--amber-light)')+';color:'+(isPH?'var(--red-deep)':'var(--amber-deep)')+'">'+
+            (isPH?'Public Holiday':'Employer Leave')+'</span>'+
+          '<button onclick="removeCustomHoliday(\"'+h.date+'\")" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:15px;padding:2px 6px" title="Remove">×</button>'+
+        '</div>';
+      }).join('')+
+    '</div>';
+  }).join('');
 }
 
 function calcOTMins(rec, settings){
@@ -21003,6 +21125,21 @@ async function runOvertimeReport(){
   const settings = getOTSettings();
   const emps = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF));
 
+  // Debug: show what we found
+  console.log('[OT] date range:', from, 'to', to);
+  console.log('[OT] attendance records fetched:', recs.length, recs.map(r=>({empId:r.empId,date:r.date,ci:r.clockIn,co:r.clockOut,dur:r.durationMinutes})));
+  console.log('[OT] employees loaded:', emps.length, emps.map(e=>({id:e.id,name:e.name,userId:e.userId})));
+  console.log('[OT] settings:', settings);
+  if(body){
+    const _dbgRecIds = [...new Set(recs.map(r=>String(r.empId)))].join(', ');
+    const _dbgEmpIds = emps.map(e=>e.id+' ('+e.name+')').join(', ');
+    body.innerHTML += '<div style="padding:8px 16px;background:#f0f4ff;font-size:11px;font-family:monospace;border-radius:6px;margin:8px;white-space:pre-wrap;border:1px solid #c0d0ff">'
+      +'Records fetched: '+recs.length+' | Employees: '+emps.length+' | workHours: '+settings.workHours+' ('+settings.workStart+'-'+settings.workEnd+')'
+      +'\nAtt empIds: '+_dbgRecIds
+      +'\nEmp ids: '+_dbgEmpIds
+      +'</div>';
+  }
+
   // Build per-employee summary
   // Match attendance records by emp.id OR emp.userId (HR users who clocked in with user ID)
   const rows = emps.map(emp=>{
@@ -21022,12 +21159,18 @@ async function runOvertimeReport(){
       }
     });
 
-    // Hourly rate from salary (annual ÷ 52 weeks ÷ 5 days ÷ workHours)
-    const annualSalary = emp.salary?.amount||0;
-    const currency     = emp.salary?.currency||'MUR';
-    const hourlyRate   = annualSalary>0 ? annualSalary/(52*5*settings.workHours) : 0;
+    // Rate calculation:
+    // Monthly salary × 12 = annual
+    // Annual ÷ 52 weeks ÷ workDays per week = daily rate
+    // Daily ÷ workHours = hourly rate
+    const salary       = emp.salary;
+    const annualSalary = salary ? (salary.frequency==='Monthly' ? (salary.amount||0)*12 : (salary.amount||0)) : 0;
+    const currency     = salary?.currency || 'MUR';
+    const workDaysPerWeek = (settings.workDays||[1,2,3,4,5]).length || 5;
+    const dailyRate    = annualSalary > 0 ? annualSalary / (52 * workDaysPerWeek) : 0;
+    const hourlyRate   = dailyRate > 0 ? dailyRate / settings.workHours : 0;
 
-    return { emp, totalRegMins, totalOTMins, hourlyRate, currency, dayBreakdown, annualSalary };
+    return { emp, totalRegMins, totalOTMins, hourlyRate, dailyRate, currency, dayBreakdown, annualSalary };
   }).filter(e=>e.totalOTMins>0 || e.totalRegMins>0);
 
   // Check for unmatched attendance records (empId not found in any employee)
@@ -21076,76 +21219,90 @@ function renderOTTable(rows, settings, from, to, unmatched){
     return;
   }
 
+  const cur = rows[0]?.currency || 'MUR';
   body.innerHTML =
     '<div style="overflow-x:auto"><table style="width:100%;font-size:13px;border-collapse:collapse">'+
     '<thead><tr style="background:var(--bg2)">'+
       '<th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Employee</th>'+
-      '<th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Dept</th>'+
       '<th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Regular</th>'+
       '<th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">OT Hours</th>'+
+      '<th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Daily Rate</th>'+
       '<th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Hourly Rate</th>'+
-      '<th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">OT Pay (est.)</th>'+
+      '<th style="text-align:center;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Multiplier</th>'+
+      '<th style="text-align:right;padding:10px 12px;font-size:12px;font-weight:600;color:var(--green-deep)">OT Amount</th>'+
       '<th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">OT Days</th>'+
-      '<th style="text-align:left;padding:10px 12px;font-size:12px;font-weight:600;color:var(--text2)">Override Rate</th>'+
     '</tr></thead>'+
     '<tbody>'+
     rows.map((row,idx)=>{
       const c = aColor(row.emp.name);
       const otH = row.totalOTMins/60;
-      const rate = row.hourlyRate;
-      // Default OT pay = hours × rate × multiplier (weekday rate as default)
-      const otPay = otH * rate * settings.otWeekday;
+      const hourlyRate = row.hourlyRate;
+      const dailyRate  = row.dailyRate;
+      const mult = settings.otWeekday;
+      const otPay = otH * hourlyRate * mult;
+      // Store defaults for recalc
+      row.overrideRate = hourlyRate;
+      row.overrideMult = mult;
+      row.calculatedPay = otPay;
       const otDaysSummary = Object.entries(row.dayBreakdown).sort((a,b)=>a[0].localeCompare(b[0])).map(([d,info])=>
-        '<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:10.5px;margin:1px;background:'+(info.type==='holiday'?'var(--red-light)':info.type==='weekend'?'var(--amber-light)':'var(--blue-light)')+';color:'+(info.type==='holiday'?'var(--red-deep)':info.type==='weekend'?'var(--amber-deep)':'var(--blue-deep)')+'" title="'+info.type+'">'+
-          fDate(d)+' +'+fmtDuration(info.otMins)+'</span>'
+        '<div style="font-size:11px;margin:1px 0">'+
+        '<span style="display:inline-block;padding:1px 6px;border-radius:4px;background:'+(info.type==='holiday'?'var(--red-light)':info.type==='weekend'?'var(--amber-light)':'var(--blue-light)')+';color:'+(info.type==='holiday'?'var(--red-deep)':info.type==='weekend'?'var(--amber-deep)':'var(--blue-deep)')+'">'+
+          fDate(d)+'</span> <span style="color:var(--amber);font-weight:600">+'+fmtDuration(info.otMins)+'</span></div>'
       ).join('');
       return '<tr style="border-bottom:1px solid var(--border)">'+
-        '<td style="padding:10px 12px"><div class="emp-cell">'+
-          '<div class="avatar" style="background:'+c+'22;color:'+c+';width:26px;height:26px;font-size:10px">'+inits(row.emp.name)+'</div>'+
-          '<div style="font-weight:500">'+row.emp.name+'</div>'+
-        '</div></td>'+
-        '<td style="padding:10px 12px;color:var(--text3);font-size:12px">'+( row.emp.dept||'—')+'</td>'+
-        '<td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--text2)">'+fmtDuration(row.totalRegMins)+'</td>'+
-        '<td style="padding:10px 12px;text-align:right;font-weight:600;color:'+(row.totalOTMins>0?'var(--amber)':'var(--text3)')+'">'+
-          (row.totalOTMins>0?fmtDuration(row.totalOTMins):'—')+
-        '</td>'+
-        '<td style="padding:10px 12px;text-align:right;font-size:12px">'+
-          '<input id="ot-rate-'+idx+'" type="number" step="0.01" value="'+(rate>0?rate.toFixed(2):'')+'" placeholder="Enter rate" '+
-          'style="width:90px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:right" '+
-          'onchange="recalcOTRow('+idx+')">'+
-          '<div style="font-size:10px;color:var(--text3);margin-top:2px">'+( row.currency)+'/hr</div>'+
-        '</td>'+
-        '<td id="ot-pay-'+idx+'" style="padding:10px 12px;text-align:right;font-weight:600;color:var(--green)">'+
-          (otPay>0?fCur(otPay,row.currency):'—')+
-        '</td>'+
-        '<td style="padding:10px 12px;font-size:11px;max-width:200px">'+otDaysSummary+'</td>'+
         '<td style="padding:10px 12px">'+
-          '<div style="display:flex;align-items:center;gap:4px">'+
-          '<span style="font-size:11px;color:var(--text3)">×</span>'+
-          '<input id="ot-mult-'+idx+'" type="number" step="0.25" value="'+settings.otWeekday+'" '+
-          'style="width:60px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:center" '+
-          'onchange="recalcOTRow('+idx+')">'+
+          '<div style="display:flex;align-items:center;gap:8px">'+
+            '<div class="avatar" style="background:'+c+'22;color:'+c+';width:28px;height:28px;font-size:10px;flex-shrink:0">'+inits(row.emp.name)+'</div>'+
+            '<div>'+
+              '<div style="font-weight:600">'+row.emp.name+'</div>'+
+              '<div style="font-size:11px;color:var(--text3)">'+( row.emp.dept||'—')+(row.annualSalary>0?' · '+(row.emp.salary?.frequency==='Monthly'?fCur(row.emp.salary.amount,row.currency)+'/mo':fCur(row.annualSalary,row.currency)+'/yr'):'')+'</div>'+
+            '</div>'+
           '</div>'+
         '</td>'+
+        '<td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--text2)">'+fmtDuration(row.totalRegMins)+'</td>'+
+        '<td style="padding:10px 12px;text-align:right;font-weight:700;color:'+(row.totalOTMins>0?'var(--amber)':'var(--text3)')+'">'+
+          (row.totalOTMins>0?fmtDuration(row.totalOTMins):'—')+
+        '</td>'+
+        '<td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--text2)">'+
+          (dailyRate>0?fCur(dailyRate,row.currency)+'<div style="font-size:10px;color:var(--text3)">per day</div>':'<span style="color:var(--text3)">No salary</span>')+
+        '</td>'+
+        '<td style="padding:10px 12px;text-align:right">'+
+          '<input id="ot-rate-'+idx+'" type="number" step="1" value="'+(hourlyRate>0?Math.round(hourlyRate):'')+'" '+
+          'style="width:80px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:right;font-weight:600" '+
+          'onchange="recalcOTRow('+idx+')">'+
+          '<div style="font-size:10px;color:var(--text3);margin-top:2px">'+row.currency+'/hr</div>'+
+        '</td>'+
+        '<td style="padding:10px 12px;text-align:center">'+
+          '<input id="ot-mult-'+idx+'" type="number" step="0.25" min="1" value="'+mult.toFixed(2)+'" '+
+          'style="width:60px;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;text-align:center" '+
+          'onchange="recalcOTRow('+idx+')">'+
+          '<div style="font-size:10px;color:var(--text3);margin-top:2px">× rate</div>'+
+        '</td>'+
+        '<td id="ot-pay-'+idx+'" style="padding:10px 12px;text-align:right;font-weight:700;font-size:15px;color:'+(otPay>0?'var(--green-deep)':'var(--text3)')+'">'+
+          (otPay>0?fCur(otPay,row.currency):'—')+
+          (otPay>0&&hourlyRate>0?'<div style="font-size:10px;color:var(--text3);font-weight:400">'+fmtDuration(row.totalOTMins)+' × '+fCur(hourlyRate,row.currency)+'/hr × '+mult+'</div>':'')+
+        '</td>'+
+        '<td style="padding:10px 12px;min-width:140px">'+otDaysSummary+'</td>'+
       '</tr>';
     }).join('')+
     '</tbody></table></div>';
 }
 
 function recalcOTRow(idx){
-  const row     = _otData[idx];
+  const row   = _otData[idx];
   if(!row) return;
-  const rateEl  = document.getElementById('ot-rate-'+idx);
-  const multEl  = document.getElementById('ot-mult-'+idx);
-  const payEl   = document.getElementById('ot-pay-'+idx);
+  const rateEl = document.getElementById('ot-rate-'+idx);
+  const multEl = document.getElementById('ot-mult-'+idx);
+  const payEl  = document.getElementById('ot-pay-'+idx);
   if(!rateEl||!multEl||!payEl) return;
-  const rate    = parseFloat(rateEl.value)||0;
-  const mult    = parseFloat(multEl.value)||1.5;
-  const otH     = row.totalOTMins/60;
-  const otPay   = otH * rate * mult;
-  payEl.textContent = otPay>0 ? fCur(otPay, row.currency) : '—';
-  payEl.style.color = otPay>0?'var(--green)':'var(--text3)';
-  // Store for export
+  const rate  = parseFloat(rateEl.value)||0;
+  const mult  = parseFloat(multEl.value)||1.5;
+  const otH   = row.totalOTMins/60;
+  const otPay = otH * rate * mult;
+  payEl.innerHTML = otPay>0
+    ? '<span style="font-weight:700;font-size:15px;color:var(--green-deep)">'+fCur(otPay,row.currency)+'</span>'+
+      '<div style="font-size:10px;color:var(--text3);font-weight:400">'+fmtDuration(row.totalOTMins)+' × '+fCur(rate,row.currency)+'/hr × '+mult+'</div>'
+    : '<span style="color:var(--text3)">—</span>';
   row.overrideRate = rate;
   row.overrideMult = mult;
   row.calculatedPay = otPay;
@@ -21343,7 +21500,7 @@ function getAllWorkingDays(from, to){
   const days=[], cur=new Date(from+'T00:00:00'), end=new Date(to+'T00:00:00');
   while(cur<=end){
     const dow=cur.getDay(), ds=cur.toISOString().slice(0,10);
-    if(dow!==0&&dow!==6&&!(MAURITIUS_HOLIDAYS_2025||[]).includes(ds)) days.push(ds);
+    if(dow!==0&&dow!==6&&!isDayHoliday(ds)&&!isDayEmployerLeave(ds)) days.push(ds);
     cur.setDate(cur.getDate()+1);
   }
   return days;
@@ -21730,7 +21887,7 @@ async function confirmAndRunPayroll(){
       let days=0,cur=new Date(req.fromDate+'T00:00:00');
       const end=new Date(req.toDate+'T00:00:00'),ps=new Date(from+'T00:00:00'),pe=new Date(to+'T00:00:00');
       while(cur<=end){ if(cur>=ps&&cur<=pe){const dow=cur.getDay(),ds=cur.toISOString().slice(0,10);
-        if(dow!==0&&dow!==6&&!(MAURITIUS_HOLIDAYS_2025||[]).includes(ds))days++;}cur.setDate(cur.getDate()+1);}
+        if(dow!==0&&dow!==6&&!isDayHoliday(ds)&&!isDayEmployerLeave(ds))days++;}cur.setDate(cur.getDate()+1);}
       if(days>0)leaveNote+=(leaveNote?', ':'')+days+'d '+req.type;
     });
     const reviewRow=_attReviewData.find(r=>String(r.emp.id)===String(emp.id));
@@ -21860,7 +22017,7 @@ function countWorkingDaysInRange(from, to){
   while(cur<=end){
     const dow=cur.getDay();
     const ds=cur.toISOString().slice(0,10);
-    if(dow!==0&&dow!==6&&!(MAURITIUS_HOLIDAYS_2025||[]).includes(ds)) count++;
+    if(dow!==0&&dow!==6&&!isDayHoliday(ds)&&!isDayEmployerLeave(ds)) count++;
     cur.setDate(cur.getDate()+1);
   }
   return count;
@@ -21936,7 +22093,7 @@ async function runPayroll(){
           if(cur>=periodStart&&cur<=periodEnd){
             const dow=cur.getDay();
             const ds=cur.toISOString().slice(0,10);
-            if(dow!==0&&dow!==6&&!(MAURITIUS_HOLIDAYS_2025||[]).includes(ds)) days++;
+            if(dow!==0&&dow!==6&&!isDayHoliday(ds)&&!isDayEmployerLeave(ds)) days++;
           }
           cur.setDate(cur.getDate()+1);
         }
