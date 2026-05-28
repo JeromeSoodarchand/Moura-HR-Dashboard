@@ -21204,10 +21204,32 @@ async function runOvertimeReport(){
     const matchIds = new Set([String(emp.id)]);
     if(emp.userId) matchIds.add(String(emp.userId));
     const empRecs = recs.filter(r=>matchIds.has(String(r.empId)));
+
+    // Deduplicate: if multiple records exist for the same date, merge into one
+    // Use earliest clockIn and latest clockOut per day
+    const byDate = {};
+    empRecs.forEach(rec=>{
+      const d = rec.date || (rec.clockIn||'').slice(0,10);
+      if(!d) return;
+      if(!byDate[d]){
+        byDate[d] = {...rec};
+      } else {
+        // Take earliest clock-in
+        if(rec.clockIn && (!byDate[d].clockIn || rec.clockIn < byDate[d].clockIn))
+          byDate[d].clockIn = rec.clockIn;
+        // Take latest clock-out
+        if(rec.clockOut && (!byDate[d].clockOut || rec.clockOut > byDate[d].clockOut))
+          byDate[d].clockOut = rec.clockOut;
+        // Keep location from whichever has one
+        if(!byDate[d].location && rec.location) byDate[d].location = rec.location;
+      }
+    });
+    const dedupedRecs = Object.values(byDate);
+
     let totalRegMins=0, totalOTMins=0;
     const dayBreakdown = {};
 
-    empRecs.forEach(rec=>{
+    dedupedRecs.forEach(rec=>{
       const {otMins,regularMins,type} = calcOTMins(rec, settings);
       totalRegMins += regularMins;
       totalOTMins  += otMins;
