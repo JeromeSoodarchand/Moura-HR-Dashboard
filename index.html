@@ -21129,9 +21129,9 @@ function renderCustomHolidaysList(){
   }).join('');
 }
 function calcOTMins(rec, settings){
-  // Calculate worked minutes — from durationMinutes, or derive from clockIn/clockOut
-  let worked = rec.durationMinutes;
-  if(!worked && rec.clockIn){
+  // Always derive from clockIn/clockOut — durationMinutes in DB may be stale or wrong
+  let worked = 0;
+  if(rec.clockIn){
     const endTime = rec.clockOut ? new Date(rec.clockOut) : new Date();
     worked = Math.round((endTime - new Date(rec.clockIn)) / 60000);
   }
@@ -21261,6 +21261,7 @@ function renderOTTable(rows, settings, from, to, unmatched){
       '<span>Employees with OT: <strong>'+otRows.length+'</strong></span>'+
       '<span>Total OT hours: <strong>'+fmtDuration(totalOTMins)+'</strong></span>'+
       (totalCost>0?'<span>Est. OT cost: <strong>'+fCur(totalCost)+'</strong></span>':'')+
+      '<span style="color:var(--text3)">Threshold: '+settings.workStart+' – '+settings.workEnd+' ('+settings.workHours.toFixed(1)+'h)</span>'+
       '</div>';
   }
 
