@@ -19378,6 +19378,11 @@ async function loginPinSubmit(){
   }
   const pinHash = simpleHash(_loginPin);
 
+  // Set company from selector before loading data
+  const loginCompanyEl = document.getElementById('login-company');
+  const selectedCompanyId = loginCompanyEl && loginCompanyEl.value ? parseInt(loginCompanyEl.value) : _COMPANY_ID||1;
+  _COMPANY_ID = selectedCompanyId;
+
   // Ensure Supabase is connected (uses embedded creds as fallback)
   ensureSB();
   if(sbReady()) await _sbSetSecret();
@@ -19386,7 +19391,7 @@ async function loginPinSubmit(){
   }
   if(!_cache.emps.length) _cache.emps=S.get('employees',[]);
   // Ensure user cache is populated (needed for user↔employee linking)
-  if(!_userCache.length){
+  if(!_userCache||!_userCache.length){
     try{
       const users = await dbGetUsers();
       _userCache = users;
@@ -19448,7 +19453,8 @@ async function loginPinSubmit(){
   // Log in — ensure empId is always linked
   if(emp && !user.empId) user.empId = emp.id;
   CU = user;
-  SS.set('session',{userId:user.id, username:user.username||emp.phone, loginAt:new Date().toISOString()});
+  CU.companyId = _COMPANY_ID;
+  SS.set('session',{userId:user.id, username:user.username||emp.phone, companyId:_COMPANY_ID, loginAt:new Date().toISOString()});
   addAudit(user.name,'Logged in via PIN');
   document.getElementById('login-screen').style.display='none';
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
