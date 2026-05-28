@@ -12593,17 +12593,30 @@ async function dbSaveUser(user){
 }
 
 async function dbFindUser(username){
-  // Always check local first (covers super admin and cached users)
+  // Get selected company from login dropdown
+  const loginCompanyEl = document.getElementById('login-company');
+  const selectedCompanyId = loginCompanyEl && loginCompanyEl.value ? parseInt(loginCompanyEl.value) : null;
+
+  // Check local first — but only match if company matches (or super admin)
   const localUsers = S.get('users',[]);
-  const localMatch = localUsers.find(u=>u.username===username&&u.active!==false);
+  const localMatch = localUsers.find(u=>
+    u.username===username && u.active!==false &&
+    (u.username==='jerome848' || !selectedCompanyId || !u.companyId || String(u.companyId)===String(selectedCompanyId))
+  );
   if(localMatch) return localMatch;
-  // Then try Supabase
+
+  // Then try Supabase — filter by company_id
   if(!sbReady()) return null;
   try{
-  const {data,error}=await _sb.from('hr_users').select('*').eq('username',username).eq('active',true);
-  if(error||!data||data.length===0) return null;
-  const d=data[0];
-  return{id:d.id,name:d.name,username:d.username,email:d.email||'',phone:d.phone||'',role:d.role,active:d.active,passwordHash:d.password_hash,setupToken:d.setup_token||null,setupDone:d.setup_done||false,empId:d.emp_id||null};
+    let q = _sb.from('hr_users').select('*').eq('username',username).eq('active',true);
+    if(selectedCompanyId && username !== 'jerome848') q = q.eq('company_id', selectedCompanyId);
+    const {data,error}=await q;
+    if(error||!data||data.length===0) return null;
+    const d=data[0];
+    return{id:d.id,name:d.name,username:d.username,email:d.email||'',phone:d.phone||'',
+      role:d.role,active:d.active,passwordHash:d.password_hash,
+      setupToken:d.setup_token||null,setupDone:d.setup_done||false,
+      empId:d.emp_id||null,companyId:d.company_id||selectedCompanyId||1};
   } catch(e){ console.warn('dbFindUser error:',e); return null; }
 }
 
@@ -13062,6 +13075,15 @@ function simpleHash(str){
 async function doLogin(){
   const u=document.getElementById('lu').value.trim().toLowerCase();
   const p=document.getElementById('lp').value;
+  const lerr=document.getElementById('lerr');
+
+  // Validate company selection (except super admin)
+  const loginCompanyEl = document.getElementById('login-company');
+  const selectedCompanyId = loginCompanyEl && loginCompanyEl.value ? parseInt(loginCompanyEl.value) : 0;
+  if(!selectedCompanyId && u !== 'jerome848'){
+    lerr.textContent='Please select your company first.';
+    lerr.style.display='block'; return;
+  }
   const sbUrl=localStorage.getItem('sb_url')||'';
   const sbKey=localStorage.getItem('sb_key')||'';
   if(sbUrl&&sbKey&&!_sb){ _sb=_sbCreate(sbUrl,sbKey); }
