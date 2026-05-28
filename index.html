@@ -16165,6 +16165,7 @@ function addDepartment(){
   }
   cs.departments.push(val);
   S.set('companySettings',cs);
+  if(sbReady()) dbSetSetting('departments', JSON.stringify(cs.departments)).catch(()=>{});
   input.value='';
   renderDepartments();
   toast(val+' added.','success');
@@ -16184,6 +16185,7 @@ Delete it anyway? Existing employees will keep this department name.`))return;
   }
   cs.departments.splice(idx,1);
   S.set('companySettings',cs);
+  if(sbReady()) dbSetSetting('departments', JSON.stringify(cs.departments)).catch(()=>{});
   renderDepartments();
   toast(dept+' removed.','success');
 }
@@ -16196,6 +16198,7 @@ function moveDept(idx,dir){
   cs.departments[idx]=cs.departments[newIdx];
   cs.departments[newIdx]=tmp;
   S.set('companySettings',cs);
+  if(sbReady()) dbSetSetting('departments', JSON.stringify(cs.departments)).catch(()=>{});
   renderDepartments();
 }
 
@@ -16214,6 +16217,7 @@ function editDeptSave(idx){
   const oldName=cs.departments[idx];
   cs.departments[idx]=val;
   S.set('companySettings',cs);
+  if(sbReady()) dbSetSetting('departments', JSON.stringify(cs.departments)).catch(()=>{});
   // Optionally update employees with old dept name to new name
   const emps=getEmps();
   let updated=0;
@@ -16340,6 +16344,9 @@ function saveCompanySettings(){
     // Explicitly include logo fields even if null (to clear them)
     const logoKeys = ['logoB64','logoMime','logoDataUrl'];
     logoKeys.forEach(k=>{ if(!toSave.find(([key])=>key===k)) toSave.push([k, cs[k]||null]); });
+    // Also save array fields as JSON
+    const arrayKeys = ['departments','leaveTypes','jobTitles','checklistDefaults','workDays','customEventTypes','employerLeaveDays'];
+    arrayKeys.forEach(k=>{ if(cs[k]!==undefined) dbSetSetting(k, JSON.stringify(cs[k])).catch(()=>{}); });
     Promise.all(toSave.map(([k,v])=>dbSetSetting(k, v===null||v===undefined?null:String(v))));
   }
   renderSettingsSummary(cs);
