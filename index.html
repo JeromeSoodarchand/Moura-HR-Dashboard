@@ -12287,7 +12287,7 @@ const getEmps=()=>_cache.emps.length?_cache.emps:[];
 const getEvts=()=>_cache.evts.length?_cache.evts:getData('events');
 const getTrProgs=()=>_cache.progs.length?_cache.progs:getData('trainingPrograms');
 const getTrAsgn=()=>_cache.asgn.length?_cache.asgn:getData('trainingAssignments');
-const getUsers=()=>_userCache.length?_userCache:S.get('users',[]);
+const getUsers=()=>(_userCache&&_userCache.length)?_userCache:S.get('users',[]);
 const getAudit=()=>S.get('audit',[]);
 
 const saveEmps=v=>saveData('employees',v);
@@ -12648,7 +12648,8 @@ function rowToEmp(r){
   return{id:r.id,empNo:r.emp_no||null,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
     salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:typeof r.salary_history==='string'?JSON.parse(r.salary_history||'[]'):(r.salary_history||[])}:null,
     checklist:typeof r.checklist==='string'?JSON.parse(r.checklist||'{}'):(r.checklist||{}),offChecklist:typeof r.off_checklist==='string'?JSON.parse(r.off_checklist||'{}'):(r.off_checklist||{}),lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
-    photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:[true,'true','1',1].includes(r.att_editor),isHOD:[true,'true','1',1].includes(r.is_hod),isSeniorHOD:[true,'true','1',1].includes(r.is_senior_hod)};
+    photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:[true,'true','1',1].includes(r.att_editor),isHOD:[true,'true','1',1].includes(r.is_hod),isSeniorHOD:[true,'true','1',1].includes(r.is_senior_hod),
+    companyId:r.company_id||1};
 }
 function empToRow(e){
   const row={
@@ -17204,7 +17205,7 @@ async function switchCompany(companyId){
   // Clear caches
   _cache = {emps:[],evts:[],asgn:[],progs:[]};
   _attendance = [];
-  _userCache = null;
+  _userCache = [];
   showLoader('Switching company...');
   try{
     const [fe,fev,fa,fp] = await Promise.all([
