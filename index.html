@@ -21163,22 +21163,37 @@ async function runOvertimeReport(){
   const deptF  = document.getElementById('ot-dept-filter')?.value||'';
   if(!from||!to){ toast('Select a date range.','error'); return; }
 
-  // Populate dept filter
-  const deptSel = document.getElementById('ot-dept-filter');
-  if(deptSel && deptSel.options.length<=1){
-    const depts = [...new Set(getScopedEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
-    depts.forEach(d=>{ const o=document.createElement('option'); o.value=d; o.textContent=d; deptSel.appendChild(o); });
-  }
-
   const body = document.getElementById('ot-body');
-  if(body) body.innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:13px">Calculating...</div>';
+  if(body) body.innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:13px">Loading...</div>';
+
+  // Always reload employees first so we have correct IDs
+  try{ _cache.emps = await dbGetEmployees(); } catch(e){}
+
+  const settings = getOTSettings();
+  let emps = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF));
 
   // Fetch attendance
   let recs = [];
   try{ recs = await dbGetAttendance(from, to); } catch(e){ recs = S.get('attendance',[]).filter(r=>r.date>=from&&r.date<=to); }
 
-  const settings = getOTSettings();
-  const emps = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF));
+  // Show diagnostic in panel
+  const allAttEmpIds = [...new Set(recs.map(r=>String(r.empId)))];
+  const allEmpIds = emps.map(e=>String(e.id));
+  if(body) body.innerHTML = '<div style="padding:10px 14px;background:#f0f4ff;border:1px solid #c0d0ff;border-radius:8px;font-size:12px;font-family:monospace;margin-bottom:12px;white-space:pre-wrap">'
+    +'Date: '+from+' to '+to+'\n'
+    +'Attendance records: '+recs.length+'\n'
+    +'Employees loaded: '+emps.length+'\n'
+    +'Work hours: '+settings.workHours+'h ('+settings.workStart+' - '+settings.workEnd+')\n'
+    +'Att empIds: '+allAttEmpIds.join(', ')+'\n'
+    +'Emp ids:    '+allEmpIds.join(', ')
+    +'</div>';
+
+  // Populate dept filter
+  const deptSel = document.getElementById('ot-dept-filter');
+  if(deptSel && deptSel.options.length<=1){
+    const depts = [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
+    depts.forEach(d=>{ const o=document.createElement('option'); o.value=d; o.textContent=d; deptSel.appendChild(o); });
+  }
 
 
 
