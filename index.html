@@ -16342,6 +16342,8 @@ function renderSettingsSummary(cs){
 
 // Apply saved branding on every login
 async function applyStoredBranding(){
+  // Load global public holidays (shared across all companies, company_id=0)
+  loadGlobalPublicHolidays().catch(()=>{});
   // Always try to load fresh from Supabase first — filtered by current company
   if(sbReady() && _COMPANY_ID){
     try{
@@ -16354,6 +16356,8 @@ async function applyStoredBranding(){
             catch(e){ cs[r.key]=r.value; }
           }
         });
+        // Also reload global public holidays while we have a connection
+        loadGlobalPublicHolidays().catch(()=>{});
         S.set('companySettings',cs);
         applyBrandingToUI(cs);
         return;
@@ -17631,7 +17635,6 @@ function setAttMainTab(tab, el){
     const board = document.getElementById('att-live-board');
     if(board) board.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Loading...</div>';
     dbGetAttendance(todayStr(),todayStr()).then(recs=>{
-      // Merge Supabase records with local-only records (13-digit IDs not yet in DB)
       const local = S.get('attendance',[]).filter(r=>r.date===todayStr());
       const sbIds = new Set(recs.map(r=>String(r.id)));
       const localOnly = local.filter(r=>!sbIds.has(String(r.id)));
@@ -17639,10 +17642,13 @@ function setAttMainTab(tab, el){
       renderAttLiveBoard();
       renderAttMetrics();
     }).catch(()=>{
-      // Fall back to local only
       _attendance = S.get('attendance',[]);
       renderAttLiveBoard();
     });
+  }
+  if(tab==='overtime'){
+    initOTDateRange();
+    runOvertimeReport();
   }
 }
 
@@ -20962,52 +20968,94 @@ function isDayWeekend(dateStr){
   // Saturday = weekday rate; Sunday = holiday/weekend rate
   return d===0; // only Sunday triggers holiday rate
 }
-function getCustomHolidays(){
-  return getSettings().customHolidays || [];
+// ── PUBLIC HOLIDAYS (global, all companies) ──────────────────────────────────
+// Stored under company_id=0 in Supabase so all companies share them
+let _globalPublicHolidays = null; // cached
+
+function getGlobalPublicHolidays(){
+  if(_globalPublicHolidays !== null) return _globalPublicHolidays;
+  try { _globalPublicHolidays = JSON.parse(localStorage.getItem('globalPublicHolidays')||'[]'); }
+  catch(e){ _globalPublicHolidays = []; }
+  return _globalPublicHolidays;
 }
 
+async function loadGlobalPublicHolidays(){
+  if(!sbReady()) return;
+  try{
+    const {data} = await _sb.from('company_settings').select('value').eq('key','globalPublicHolidays').eq('company_id',0).limit(1);
+    const row = Array.isArray(data)?data[0]:data;
+    if(row?.value){
+      _globalPublicHolidays = JSON.parse(row.value);
+      localStorage.setItem('globalPublicHolidays', row.value);
+    }
+  } catch(e){}
+}
+
+async function saveGlobalPublicHolidays(list){
+  _globalPublicHolidays = list;
+  localStorage.setItem('globalPublicHolidays', JSON.stringify(list));
+  if(!sbReady()) return;
+  try{
+    await _sb.from('company_settings').delete().eq('key','globalPublicHolidays').eq('company_id',0);
+    if(list.length){
+      await _sb.from('company_settings').insert({key:'globalPublicHolidays', value:JSON.stringify(list), company_id:0, updated_at:new Date().toISOString()});
+    }
+  } catch(e){ console.warn('saveGlobalPublicHolidays error:',e); }
+}
+
+// ── EMPLOYER LOCAL LEAVES (per company) ───────────────────────────────────────
+function getEmployerLeaveDays(){
+  return getSettings().employerLeaveDays || [];
+}
+
+// ── UNIFIED ACCESSORS ─────────────────────────────────────────────────────────
 function isDayHoliday(dateStr){
   if((MAURITIUS_HOLIDAYS_2025||[]).includes(dateStr)) return true;
-  return getCustomHolidays().some(h=>h.date===dateStr && h.type==='public_holiday');
+  return getGlobalPublicHolidays().some(h=>h.date===dateStr);
 }
 
 function isDayEmployerLeave(dateStr){
-  return getCustomHolidays().some(h=>h.date===dateStr && h.type==='employer_leave');
+  return getEmployerLeaveDays().some(h=>h.date===dateStr);
 }
 
 function isHolidayOrEmployerLeave(dateStr){
   return isDayHoliday(dateStr) || isDayEmployerLeave(dateStr);
 }
 
+// ── ADD ────────────────────────────────────────────────────────────────────────
 function addCustomHoliday(){
   const date = document.getElementById('custom-holiday-date')?.value;
   const name = (document.getElementById('custom-holiday-name')?.value||'').trim();
   const type = document.getElementById('custom-holiday-type')?.value||'public_holiday';
   if(!date){ toast('Select a date.','error'); return; }
   if(!name){ toast('Enter a name for this day.','error'); return; }
-  const cs = getSettings();
-  if(!cs.customHolidays) cs.customHolidays = [];
-  if(cs.customHolidays.some(h=>h.date===date)){
-    toast('A holiday is already set for this date.','error'); return;
-  }
-  // Count employer leave days this year
-  if(type==='employer_leave'){
+
+  if(type==='public_holiday'){
+    const list = getGlobalPublicHolidays();
+    if(list.some(h=>h.date===date)){ toast('A public holiday is already set for this date.','error'); return; }
+    list.push({date, name, addedBy:CU?.name||'HR', addedAt:new Date().toISOString()});
+    list.sort((a,b)=>a.date.localeCompare(b.date));
+    saveGlobalPublicHolidays(list);
+    toast('Public holiday added: '+name+' (applies to all companies)','success');
+  } else {
+    // Employer leave — per company
+    const cs = getSettings();
+    if(!cs.employerLeaveDays) cs.employerLeaveDays = [];
+    if(cs.employerLeaveDays.some(h=>h.date===date)){ toast('An employer leave day is already set for this date.','error'); return; }
     const year = date.slice(0,4);
-    const used = cs.customHolidays.filter(h=>h.type==='employer_leave'&&h.date.startsWith(year)).length;
+    const used = cs.employerLeaveDays.filter(h=>h.date.startsWith(year)).length;
     if(used>=11){ toast('Employer local leave limit reached (11 days for '+year+').','error'); return; }
-  }
-  cs.customHolidays.push({date, name, type, addedBy:CU?.name||'HR', addedAt:new Date().toISOString()});
-  cs.customHolidays.sort((a,b)=>a.date.localeCompare(b.date));
-  S.set('companySettings', cs);
-  if(sbReady()) dbSetSetting('customHolidays', JSON.stringify(cs.customHolidays)).catch(()=>{});
-  // If employer_leave — auto-create approved leave requests for all active employees
-  if(type==='employer_leave'){
+    cs.employerLeaveDays.push({date, name, addedBy:CU?.name||'HR', addedAt:new Date().toISOString()});
+    cs.employerLeaveDays.sort((a,b)=>a.date.localeCompare(b.date));
+    S.set('companySettings', cs);
+    if(sbReady()) dbSetSetting('employerLeaveDays', JSON.stringify(cs.employerLeaveDays)).catch(()=>{});
     _grantEmployerLeaveDay(date, name);
+    toast('Employer leave day added: '+name+' (this company only)','success');
   }
+
   renderCustomHolidaysList();
   document.getElementById('custom-holiday-date').value='';
   document.getElementById('custom-holiday-name').value='';
-  toast((type==='employer_leave'?'Employer leave day':'Public holiday')+' added: '+name,'success');
 }
 
 async function _grantEmployerLeaveDay(date, name){
@@ -21028,15 +21076,19 @@ async function _grantEmployerLeaveDay(date, name){
     };
     await dbSaveLeaveRequest(req).catch(()=>{});
   }
-  toast('Employer leave granted to all active employees for '+date,'success');
 }
 
-function removeCustomHoliday(date){
-  if(!confirm('Remove this holiday/leave day?')) return;
-  const cs = getSettings();
-  cs.customHolidays = (cs.customHolidays||[]).filter(h=>h.date!==date);
-  S.set('companySettings', cs);
-  if(sbReady()) dbSetSetting('customHolidays', JSON.stringify(cs.customHolidays)).catch(()=>{});
+function removeCustomHoliday(date, type){
+  if(!confirm('Remove this day?')) return;
+  if(type==='public_holiday'){
+    const list = getGlobalPublicHolidays().filter(h=>h.date!==date);
+    saveGlobalPublicHolidays(list);
+  } else {
+    const cs = getSettings();
+    cs.employerLeaveDays = (cs.employerLeaveDays||[]).filter(h=>h.date!==date);
+    S.set('companySettings', cs);
+    if(sbReady()) dbSetSetting('employerLeaveDays', JSON.stringify(cs.employerLeaveDays)).catch(()=>{});
+  }
   renderCustomHolidaysList();
   toast('Removed.','info');
 }
@@ -21044,34 +21096,37 @@ function removeCustomHoliday(date){
 function renderCustomHolidaysList(){
   const el = document.getElementById('custom-holidays-list');
   if(!el) return;
-  const holidays = getCustomHolidays();
-  if(!holidays.length){
-    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0">No custom holidays added yet.</div>';
+  const pubHols = getGlobalPublicHolidays().map(h=>({...h,type:'public_holiday'}));
+  const empLeave = getEmployerLeaveDays().map(h=>({...h,type:'employer_leave'}));
+  const all = [...pubHols, ...empLeave].sort((a,b)=>a.date.localeCompare(b.date));
+  if(!all.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0">No custom days added yet.</div>';
     return;
   }
-  // Group by year
   const byYear = {};
-  holidays.forEach(h=>{ const y=h.date.slice(0,4); if(!byYear[y]) byYear[y]=[]; byYear[y].push(h); });
+  all.forEach(h=>{ const y=h.date.slice(0,4); if(!byYear[y]) byYear[y]=[]; byYear[y].push(h); });
   el.innerHTML = Object.entries(byYear).sort((a,b)=>b[0]-a[0]).map(([year,days])=>{
     const empCount = days.filter(h=>h.type==='employer_leave').length;
-    return '<div style="margin-bottom:12px">'+
+    return '<div style="margin-bottom:14px">'+
       '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">'+
-        year+(empCount?'  <span style="color:var(--amber)">'+empCount+'/11 employer leave days used</span>':'')+
+        year+(empCount?' &nbsp;<span style="color:var(--amber)">'+empCount+'/11 employer leave days used</span>':'')+
       '</div>'+
       days.map(h=>{
         const isPH = h.type==='public_holiday';
-        return '<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--bg2);border-radius:7px;margin-bottom:4px;border-left:3px solid '+(isPH?'var(--red)':'var(--gold)')+'">' +
+        const typeLabel = isPH ? 'Public Holiday — all companies' : 'Employer Leave — this company';
+        const borderColor = isPH ? 'var(--red)' : 'var(--gold)';
+        const bgColor = isPH ? 'var(--red-light)' : 'var(--amber-light)';
+        const txtColor = isPH ? 'var(--red-deep)' : 'var(--amber-deep)';
+        return '<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--bg2);border-radius:7px;margin-bottom:4px;border-left:3px solid '+borderColor+'">'+
           '<span style="font-size:12px;font-weight:600;color:var(--text);min-width:90px">'+h.date+'</span>'+
           '<span style="font-size:12px;flex:1">'+h.name+'</span>'+
-          '<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:'+(isPH?'var(--red-light)':'var(--amber-light)')+';color:'+(isPH?'var(--red-deep)':'var(--amber-deep)')+'">'+
-            (isPH?'Public Holiday':'Employer Leave')+'</span>'+
-          '<button onclick="removeCustomHoliday(\"'+h.date+'\")" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:15px;padding:2px 6px" title="Remove">×</button>'+
+          '<span style="font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap;background:'+bgColor+';color:'+txtColor+'">'+typeLabel+'</span>'+
+          '<button onclick="removeCustomHoliday(\\"'+h.date+'\\",\\"'+h.type+'\\")" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:15px;padding:2px 6px" title="Remove">×</button>'+
         '</div>';
       }).join('')+
     '</div>';
   }).join('');
 }
-
 function calcOTMins(rec, settings){
   // Calculate worked minutes — from durationMinutes, or derive from clockIn/clockOut
   let worked = rec.durationMinutes;
@@ -21125,20 +21180,7 @@ async function runOvertimeReport(){
   const settings = getOTSettings();
   const emps = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF));
 
-  // Debug: show what we found
-  console.log('[OT] date range:', from, 'to', to);
-  console.log('[OT] attendance records fetched:', recs.length, recs.map(r=>({empId:r.empId,date:r.date,ci:r.clockIn,co:r.clockOut,dur:r.durationMinutes})));
-  console.log('[OT] employees loaded:', emps.length, emps.map(e=>({id:e.id,name:e.name,userId:e.userId})));
-  console.log('[OT] settings:', settings);
-  if(body){
-    const _dbgRecIds = [...new Set(recs.map(r=>String(r.empId)))].join(', ');
-    const _dbgEmpIds = emps.map(e=>e.id+' ('+e.name+')').join(', ');
-    body.innerHTML += '<div style="padding:8px 16px;background:#f0f4ff;font-size:11px;font-family:monospace;border-radius:6px;margin:8px;white-space:pre-wrap;border:1px solid #c0d0ff">'
-      +'Records fetched: '+recs.length+' | Employees: '+emps.length+' | workHours: '+settings.workHours+' ('+settings.workStart+'-'+settings.workEnd+')'
-      +'\nAtt empIds: '+_dbgRecIds
-      +'\nEmp ids: '+_dbgEmpIds
-      +'</div>';
-  }
+
 
   // Build per-employee summary
   // Match attendance records by emp.id OR emp.userId (HR users who clocked in with user ID)
