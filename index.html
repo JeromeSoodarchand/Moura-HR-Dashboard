@@ -12924,15 +12924,20 @@ async function boot(){
           role:_suRow.role,active:_suRow.active,
           passwordHash:_suRow.password_hash,
           empId:_suRow.emp_id||null,
-          setupDone:_suRow.setup_done||false
+          setupDone:_suRow.setup_done||false,
+          companyId:_suRow.company_id||_savedSession.companyId||1
         };
       }catch(e){}
     }
     if(_sessionUser && _sessionUser.active!==false){
       CU = _sessionUser;
+      // Always use the session's companyId — it was explicitly set when the user selected their company at login
       _COMPANY_ID = _savedSession.companyId || _sessionUser.companyId || 1;
       CU.companyId = _COMPANY_ID;
-      // Load fresh data then restore the platform
+      // Set company switcher UI to match
+      const sw = document.getElementById('company-switcher');
+      if(sw) sw.value = String(_COMPANY_ID);
+      // Load fresh data with company filter applied
       initSupabase();
       if(sbReady()){
         try{
@@ -13239,6 +13244,9 @@ async function doLogin(){
   if(_nel)_nel.textContent=org;
   applyPermissions();
   initInactivityTracking();
+  // Set company switcher to reflect logged-in company
+  const _sw = document.getElementById('company-switcher');
+  if(_sw) _sw.value = String(_COMPANY_ID);
 
   // ── Role-based post-login routing ─────────────────────────────────────────
   if(user.role==='kiosk'){
