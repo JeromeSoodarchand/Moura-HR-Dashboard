@@ -11071,9 +11071,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         Employee clock-in (PIN)
       </button>
     </div>
-    <div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
-      <span style="font-size:11px;color:var(--text3)">Powered by </span><span style="font-size:11.5px;font-weight:700;color:var(--navy)">SolentraHR</span>
-    </div>
+    <div style="margin-top:16px"></div>
   </div>
 </div>
 
@@ -11153,6 +11151,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
           <option value="6">Island Funeral Supplies</option>
           <option value="7">Materico</option>
         </select>
+        <button onclick="reassignLoadedEmpsToCurrentCompany()" style="margin-top:5px;width:100%;font-size:10px;padding:3px 6px;background:var(--gold);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:inherit">🔧 Fix company assignments</button>
       </div>
       <div class="sb-user">
         <div class="sb-user-av" id="sb-user-av">JM</div>
@@ -12829,9 +12828,9 @@ function showLoginScreen(){
 
   // Show SolentraHR neutral branding — no company shown until selected
   const _oel=document.getElementById('org-name-login');
-  if(_oel) _oel.textContent='SolentraHR';
+  if(_oel) _oel.textContent='';
   const _tl=document.getElementById('login-tagline');
-  if(_tl) _tl.textContent='Select your company to continue';
+  if(_tl) _tl.textContent='';
   // Show SolentraHR logo, hide company logo
   const _solentraLogo = document.getElementById('solentra-logo-login');
   if(_solentraLogo) _solentraLogo.style.display = 'block';
@@ -17037,15 +17036,19 @@ async function dbGetAttendance(dateFrom, dateTo){
     return local.filter(r=>(!dateFrom||r.date>=dateFrom)&&(!dateTo||r.date<=dateTo));
   }
   try{
+    // Get the emp IDs for this company so we filter by employee, not company_id column
+    // (attendance rows saved before company_id column was added would be missed otherwise)
+    const companyEmpIds = new Set(getEmps().map(e=>String(e.id)));
     let q = _sb.from('attendance').select('*').order('clock_in', {ascending:false});
     if(dateFrom) q = q.gte('date', dateFrom);
     if(dateTo)   q = q.lte('date', dateTo);
-    if(_COMPANY_ID) q = q.eq('company_id', _COMPANY_ID);
+    if(_COMPANY_ID && companyEmpIds.size > 0){
+      q = q.in('emp_id', [...companyEmpIds]);
+    }
     const {data, error} = await q;
     if(error){ console.error('dbGetAttendance:', error); return local; }
     const sbRecs = data.map(rowToAtt);
     // Merge with local-only records in the same date range AND same company
-    const companyEmpIds = new Set(getEmps().map(e=>String(e.id)));
     const sbIds = new Set(sbRecs.map(r=>String(r.id)));
     const localInRange = local.filter(r=>
       !sbIds.has(String(r.id)) &&
@@ -17214,6 +17217,8 @@ function getEmployeeActiveRecord(empId){
 }
 
 async function renderAttendance(){
+  // Always reload employees first so companyEmpIds is populated for attendance filtering
+  _cache.emps = await dbGetEmployees();
   const [sbRecs, locs] = await Promise.all([dbGetAttendance(todayStr(),todayStr()),dbGetLocations()]);
   _attLocations = locs;
   // Merge Supabase records with local-only records not yet synced
@@ -17426,6 +17431,35 @@ async function renderAttendanceReport(){
   }).join('');
 }
 
+async function reassignLoadedEmpsToCurrentCompany(){
+  if(!sbReady()){ toast('Supabase not connected','error'); return; }
+  if(!_COMPANY_ID){ toast('No company selected','error'); return; }
+  // Fetch ALL employees from Supabase regardless of company_id
+  const {data, error} = await _sb.from('employees').select('id,name,company_id');
+  if(error){ toast('Error fetching employees: '+error.message,'error'); return; }
+  // Get current company's HR users to identify who belongs here
+  const {data: users} = await _sb.from('hr_users').select('name,company_id').eq('company_id', _COMPANY_ID);
+  const userNames = new Set((users||[]).map(u=>(u.name||'').toLowerCase()));
+  // Find employees whose name matches an HR user in this company but have wrong company_id
+  const toFix = data.filter(e=>
+    e.company_id !== _COMPANY_ID &&
+    userNames.has((e.name||'').toLowerCase())
+  );
+  // Also find employees already in this company (for info)
+  const alreadyHere = data.filter(e=>e.company_id===_COMPANY_ID);
+  if(toFix.length===0){
+    toast('No mismatched employees found for this company ('+alreadyHere.length+' already correct)','success');
+    return;
+  }
+  const names = toFix.map(e=>e.name).join(', ');
+  if(!confirm('Fix company assignment for: '+names+'?\n\nThis will set their company_id to '+_COMPANY_ID+'.')) return;
+  for(const e of toFix){
+    await _sb.from('employees').update({company_id: _COMPANY_ID}).eq('id', e.id);
+  }
+  toast('Fixed '+toFix.length+' employee(s). Reloading…','success');
+  setTimeout(()=>location.reload(), 1200);
+}
+
 async function switchCompany(companyId){
   if(!companyId) return;
   _COMPANY_ID = parseInt(companyId);
@@ -17487,6 +17521,20 @@ function openAttendanceModal(type){
   if(!modal||!content) return;
   modal.style.display='flex';
   if(type==='scanQR'){
+    // Show loading while we fetch fresh data from Supabase
+    content.innerHTML='<div style="padding:32px;text-align:center;color:var(--text3);font-size:14px">Loading...</div>';
+    // Always fetch fresh today attendance so clock-in state is accurate
+    dbGetAttendance(todayStr(),todayStr()).then(freshRecs=>{
+      _attendance = freshRecs;
+      _openAttendanceModalInner(modal, content);
+    }).catch(()=>{ _openAttendanceModalInner(modal, content); });
+    return;
+  }
+  if(type==='manageLocations'){ renderManageLocations(content); }
+}
+function _openAttendanceModalInner(modal, content){
+  if(true){
+    const type='scanQR';
     const emp=getEmps().find(e=>
       (CU.email&&e.email&&e.email===CU.email)||
       (CU.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===CU.phone.replace(/[^0-9]/g,''))||
@@ -17549,8 +17597,6 @@ function openAttendanceModal(type){
         _attLocations.map(loc=>'<div class="qr-location-card" onclick="processClockAction('+JSON.stringify(loc.id)+','+JSON.stringify(loc.name)+','+isClockedIn+','+(emp?JSON.stringify(emp.id):'null')+')"><div style="font-size:18px;margin-bottom:4px">&#127970;</div><div style="font-size:12.5px;font-weight:500">'+loc.name+'</div>'+(loc.address?'<div class="txs tm">'+loc.address+'</div>':'')+' </div>').join('')+
       '</div></div></div>';
     startQRScanner(isClockedIn, emp);
-  } else if(type==='manageLocations'){
-    renderManageLocations(content);
   }
 }
 
