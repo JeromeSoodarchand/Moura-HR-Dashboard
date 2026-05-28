@@ -20951,13 +20951,13 @@ function isDayHoliday(dateStr){
 }
 
 function calcOTMins(rec, settings){
-  // If no clockOut, use current time to calculate (employee still on site)
+  // Calculate worked minutes — from durationMinutes, or derive from clockIn/clockOut
   let worked = rec.durationMinutes;
-  if(!rec.clockOut){
-    if(!rec.clockIn) return {otMins:0, regularMins:0, type:'weekday'};
-    worked = Math.round((new Date() - new Date(rec.clockIn)) / 60000);
+  if(!worked && rec.clockIn){
+    const endTime = rec.clockOut ? new Date(rec.clockOut) : new Date();
+    worked = Math.round((endTime - new Date(rec.clockIn)) / 60000);
   }
-  if(!worked) return {otMins:0, regularMins:0, type:'weekday'};
+  if(!worked || worked <= 0) return {otMins:0, regularMins:0, type:'weekday'};
   // Use employee's own schedule if they are self-clocking, else company settings
   const emp = gE(rec.empId);
   let normalMins = settings.workHours * 60;
@@ -21004,34 +21004,41 @@ async function runOvertimeReport(){
   const emps = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF));
 
   // Build per-employee summary
+  // Match attendance records by emp.id OR emp.userId (HR users who clocked in with user ID)
   const rows = emps.map(emp=>{
-    const empRecs = recs.filter(r=>String(r.empId)===String(emp.id));
+    const matchIds = new Set([String(emp.id)]);
+    if(emp.userId) matchIds.add(String(emp.userId));
+    const empRecs = recs.filter(r=>matchIds.has(String(r.empId)));
     let totalRegMins=0, totalOTMins=0;
     const dayBreakdown = {};
 
     empRecs.forEach(rec=>{
-      // Include open records (still on site) using current time
       const {otMins,regularMins,type} = calcOTMins(rec, settings);
       totalRegMins += regularMins;
       totalOTMins  += otMins;
       if(otMins>0){
-        dayBreakdown[rec.date] = { otMins, type, location:rec.location||'' };
+        if(!dayBreakdown[rec.date]) dayBreakdown[rec.date] = {otMins:0, type, location:rec.location||''};
+        dayBreakdown[rec.date].otMins += otMins;
       }
     });
 
     // Hourly rate from salary (annual ÷ 52 weeks ÷ 5 days ÷ workHours)
     const annualSalary = emp.salary?.amount||0;
-    const currency     = emp.salary?.currency||'USD';
+    const currency     = emp.salary?.currency||'MUR';
     const hourlyRate   = annualSalary>0 ? annualSalary/(52*5*settings.workHours) : 0;
 
     return { emp, totalRegMins, totalOTMins, hourlyRate, currency, dayBreakdown, annualSalary };
-  }).filter(e=>e.totalOTMins>0 || e.totalRegMins>0); // only show employees with records
+  }).filter(e=>e.totalOTMins>0 || e.totalRegMins>0);
+
+  // Check for unmatched attendance records (empId not found in any employee)
+  const allMatchIds = new Set(emps.flatMap(e=>[String(e.id), e.userId?String(e.userId):''].filter(Boolean)));
+  const unmatched = recs.filter(r=>r.clockOut && !allMatchIds.has(String(r.empId)));
 
   _otData = rows;
-  renderOTTable(rows, settings, from, to);
+  renderOTTable(rows, settings, from, to, unmatched);
 }
 
-function renderOTTable(rows, settings, from, to){
+function renderOTTable(rows, settings, from, to, unmatched){
   const body    = document.getElementById('ot-body');
   const summary = document.getElementById('ot-summary');
   if(!body) return;
@@ -21057,7 +21064,15 @@ function renderOTTable(rows, settings, from, to){
   }
 
   if(!rows.length){
-    body.innerHTML='<div style="padding:24px;text-align:center;color:var(--text3)">No attendance records found for this period.</div>';
+    let noDataHtml = '<div style="padding:24px;text-align:center;color:var(--text3)">No attendance records found for this period.</div>';
+    if(unmatched && unmatched.length){
+      noDataHtml += '<div style="margin:12px 16px;padding:12px 14px;background:#fff8e7;border:1px solid #f0d080;border-radius:8px;font-size:13px">'+
+        '<strong>⚠ '+unmatched.length+' attendance record(s) found but could not be matched to an employee.</strong><br>'+
+        '<span style="color:var(--text3);font-size:12px">Employee IDs in attendance: '+[...new Set(unmatched.map(r=>r.empId))].join(', ')+'<br>'+
+        'This usually means the clock-in was saved with a different ID than the employee record. Check the employee record. Check user ID in Supabase.</span>'+
+      '</div>';
+    }
+    body.innerHTML = noDataHtml;
     return;
   }
 
