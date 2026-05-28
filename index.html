@@ -12799,9 +12799,13 @@ const ROLE_PERMS={
 function showLoginScreen(){
   document.getElementById('login-screen').style.display='flex';
 
-  // Show neutral branding until company is selected
+  // Clear any cached company branding from previous session
+  S.set('companySettings',{});
+  S.set('org','');
+
+  // Show SolentraHR neutral branding — no company shown until selected
   const _oel=document.getElementById('org-name-login');
-  if(_oel) _oel.textContent='HR Management Platform';
+  if(_oel) _oel.textContent='SolentraHR';
   const _tl=document.getElementById('login-tagline');
   if(_tl) _tl.textContent='Select your company to continue';
   const _loginImg=document.getElementById('login-logo-img');
@@ -12829,22 +12833,7 @@ function showLoginScreen(){
   if(lerrEl) lerrEl.style.display='none';
 
   _loginPin = ''; updateLoginDots();
-
-  // Background sync — only load if _COMPANY_ID is already set (session restore)
-  if(sbReady() && _COMPANY_ID){
-    _sb.from('company_settings').select('key,value').eq('company_id', _COMPANY_ID).then(({data})=>{
-      if(data){
-        const orgRow=data.find(r=>r.key==='orgName');
-        const tagRow=data.find(r=>r.key==='tagline');
-        const logoRow=data.find(r=>r.key==='logoDataUrl');
-        if(orgRow&&orgRow.value&&_oel) _oel.textContent=orgRow.value;
-        if(tagRow&&_tl) _tl.textContent=tagRow.value||'';
-        if(logoRow&&logoRow.value&&_loginImg){ _loginImg.src=logoRow.value; _loginImg.style.display='block'; }
-        const sw = document.getElementById('company-switcher');
-        if(sw) sw.value = String(_COMPANY_ID);
-      }
-    }).catch(()=>{});
-  }
+  // Branding is only loaded via updateLoginBranding() when user selects a company
 }
 
 function showSetupScreen(){
@@ -13542,12 +13531,15 @@ async function loginClockIn(empId, locationId, locationName){
 
 function doLogout(){
   clearInactivityTimers();
-  // NOTE: We do NOT auto clock-out on voluntary logout.
-  // Employees remain clocked in when they log out — their status is preserved
-  // and shown correctly when they log back in.
-  // Auto clock-out only happens on session TIMEOUT (15 min inactivity).
   addAudit(CU?.name||'User','Logged out');
-  CU=null;SS.set('session',null);SS.set('hrPlatform',null);
+  CU=null;
+  _COMPANY_ID=null;
+  SS.set('session',null);
+  SS.set('hrPlatform',null);
+  SS.set('kioskMode',false);
+  // Clear company-specific cached settings so next login shows correct branding
+  S.set('companySettings',{});
+  S.set('org','');
   location.reload();
 }
 
@@ -16098,38 +16090,26 @@ function saveCompanySettings(){
 }
 
 function applyBrandingToUI(cs){
-  // Update nav logo
+  // IMPORTANT: Never update login screen elements here.
+  // Login screen branding is controlled exclusively by updateLoginBranding()
+  // which only fires when a user explicitly selects a company.
   const navImg  = document.getElementById('nav-logo-img');
   const navIcon = document.getElementById('nav-logo-icon');
   const navName = document.getElementById('nav-org-name');
   if(navName) navName.textContent = cs.orgName || '';
-  const _loginOrgEl = document.getElementById('org-name-login');
-  if(_loginOrgEl) _loginOrgEl.textContent = cs.orgName || '';
-  const _loginTagEl = document.getElementById('login-tagline');
-  if(_loginTagEl && cs.tagline) _loginTagEl.textContent = cs.tagline;
   const _setupOrgEl = document.getElementById('setup-org-name');
   if(_setupOrgEl && cs.orgName) _setupOrgEl.textContent = cs.orgName;
-  if(cs.logoB64){
-    if(navImg){
-    const _nsrc=cs.logoDataUrl||(cs.logoB64?'data:'+(cs.logoMime||'image/png')+';base64,'+cs.logoB64:'');
-    if(_nsrc){ navImg.src=_nsrc; navImg.style.display='block'; if(navIcon) navIcon.style.display='none'; }
-    else { navImg.src=''; navImg.style.display='none'; if(navIcon) navIcon.style.display='flex'; }
-  }
-    if(navIcon) navIcon.style.display='none'; // hide fallback icon when logo present
+  const _nsrc=cs.logoDataUrl||(cs.logoB64?'data:'+(cs.logoMime||'image/png')+';base64,'+cs.logoB64:'');
+  if(_nsrc){
+    if(navImg){ navImg.src=_nsrc; navImg.style.display='block'; }
+    if(navIcon) navIcon.style.display='none';
   } else {
-    if(navImg)  navImg.style.display='none';
+    if(navImg){ navImg.src=''; navImg.style.display='none'; }
     if(navIcon) navIcon.style.display='flex';
   }
-  // Update login logo
-  const loginImg=document.getElementById('login-logo-img');
-  if(loginImg){
-    const _lsrc=cs.logoDataUrl||(cs.logoB64?'data:'+(cs.logoMime||'image/png')+';base64,'+cs.logoB64:'');
-    if(_lsrc){ loginImg.src=_lsrc; loginImg.style.display='block'; }
-    else { loginImg.src=''; loginImg.style.display='none'; }
-  }
-  // Update login tagline
-  const loginTag=document.getElementById('login-tagline');
-  if(loginTag)loginTag.textContent=cs.tagline||'';
+  // Update sidebar org name
+  const sbName=document.getElementById('org-name-nav');
+  if(sbName) sbName.textContent=cs.orgName||'';
   // Update CSS colour variables
   if(cs.primaryColor&&/^#[0-9a-fA-F]{6}$/.test(cs.primaryColor)){
     document.documentElement.style.setProperty('--gold',cs.primaryColor);
@@ -16196,10 +16176,10 @@ function renderSettingsSummary(cs){
 
 // Apply saved branding on every login
 async function applyStoredBranding(){
-  // Always try to load fresh from Supabase first
-  if(sbReady()){
+  // Always try to load fresh from Supabase first — filtered by current company
+  if(sbReady() && _COMPANY_ID){
     try{
-      const {data:csRows}=await _sb.from('company_settings').select('key,value');
+      const {data:csRows}=await _sb.from('company_settings').select('key,value').eq('company_id',_COMPANY_ID);
       if(csRows&&csRows.length){
         const cs=getSettings();
         csRows.forEach(r=>{ if(r.key&&r.value!==null) cs[r.key]=r.value; });
@@ -16209,7 +16189,7 @@ async function applyStoredBranding(){
       }
     }catch(e){}
   }
-  // Fallback to localStorage
+  // Fallback to localStorage only if we have matching company data
   const cs=getSettings();
   applyBrandingToUI(cs);
 }
