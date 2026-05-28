@@ -12951,26 +12951,7 @@ async function boot(){
   // Step 3 — if local users exist (super admin seeded), always go to login
   if(localUsers.length > 0){
     showLoginScreen();
-    // Background sync: if Supabase connected, also load org name
-    if(sbReady()){
-      _sb.from('company_settings').select('key,value').eq('company_id', _COMPANY_ID||1).then(({data})=>{
-        if(data){
-          const orgRow=data.find(r=>r.key==='orgName');
-          if(orgRow&&orgRow.value){
-            S.set('org',orgRow.value);
-            const el=document.getElementById('org-name-login');
-            if(el)el.textContent=orgRow.value;
-          }
-          const tagRow=data.find(r=>r.key==='tagline');
-          const tlEl=document.getElementById('login-tagline');
-          if(tlEl) tlEl.textContent=(tagRow&&tagRow.value)||'';
-          const saved=S.get('companySettings',{});
-          const patch={};
-          data.forEach(r=>{try{patch[r.key]=JSON.parse(r.value);}catch{patch[r.key]=r.value;}});
-          S.set('companySettings',Object.assign({},saved,patch));
-        }
-      });
-    }
+    // No background branding load here — branding only loads when user selects company
     return;
   }
 
@@ -12982,13 +12963,7 @@ async function boot(){
       const {data:dbUsers, error}=await _sb.from('hr_users').select('*').eq('active',true).limit(1);
       hideLoader();
       if(!error && dbUsers && dbUsers.length > 0){
-        // Users exist in DB — this is an existing system on a new device
-        // Load org name from settings
-        const {data:settings}=await _sb.from('company_settings').select('key,value');
-        if(settings){
-          const orgRow=settings.find(r=>r.key==='orgName');
-          if(orgRow&&orgRow.value) S.set('org',orgRow.value);
-        }
+        // Users exist in DB — show login, branding loads when company is selected
         showLoginScreen();
         return;
       }
