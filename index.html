@@ -12601,27 +12601,36 @@ async function dbFindUser(username){
   const loginCompanyEl = document.getElementById('login-company');
   const selectedCompanyId = loginCompanyEl && loginCompanyEl.value ? parseInt(loginCompanyEl.value) : null;
 
-  // Check local first — but only match if company matches (or super admin)
-  const localUsers = S.get('users',[]);
-  const localMatch = localUsers.find(u=>
-    u.username===username && u.active!==false &&
-    (u.username==='jerome848' || !selectedCompanyId || !u.companyId || String(u.companyId)===String(selectedCompanyId))
-  );
-  if(localMatch) return localMatch;
+  // Super admin check — local only, no company filter
+  if(username === 'jerome848'){
+    const localUsers = S.get('users',[]);
+    const sa = localUsers.find(u=>u.username==='jerome848');
+    if(sa) return sa;
+  }
 
-  // Then try Supabase — filter by company_id
-  if(!sbReady()) return null;
-  try{
-    let q = _sb.from('hr_users').select('*').eq('username',username).eq('active',true);
-    if(selectedCompanyId && username !== 'jerome848') q = q.eq('company_id', selectedCompanyId);
-    const {data,error}=await q;
-    if(error||!data||data.length===0) return null;
-    const d=data[0];
-    return{id:d.id,name:d.name,username:d.username,email:d.email||'',phone:d.phone||'',
-      role:d.role,active:d.active,passwordHash:d.password_hash,
-      setupToken:d.setup_token||null,setupDone:d.setup_done||false,
-      empId:d.emp_id||null,companyId:d.company_id||selectedCompanyId||1};
-  } catch(e){ console.warn('dbFindUser error:',e); return null; }
+  // Always query Supabase with company filter — never trust local cache for login
+  if(sbReady()){
+    try{
+      let q = _sb.from('hr_users').select('*').eq('username',username).eq('active',true);
+      if(selectedCompanyId) q = q.eq('company_id', selectedCompanyId);
+      const {data,error}=await q;
+      if(!error && data && data.length){
+        const d=data[0];
+        return{id:d.id,name:d.name,username:d.username,email:d.email||'',phone:d.phone||'',
+          role:d.role,active:d.active,passwordHash:d.password_hash,
+          setupToken:d.setup_token||null,setupDone:d.setup_done||false,
+          empId:d.emp_id||null,companyId:d.company_id||selectedCompanyId||1};
+      }
+      return null;
+    } catch(e){ console.warn('dbFindUser error:',e); }
+  }
+
+  // Offline fallback — local cache with company filter
+  const localUsers = S.get('users',[]);
+  return localUsers.find(u=>
+    u.username===username && u.active!==false &&
+    (!selectedCompanyId || !u.companyId || String(u.companyId)===String(selectedCompanyId))
+  ) || null;
 }
 
 // ── AUDIT ──
@@ -13211,6 +13220,18 @@ async function doLogin(){
   CU.companyId = _loginCompanyId;
   SS.set('session',{userId:user.id, username:user.username, companyId:_loginCompanyId, loginAt:new Date().toISOString()});
   addAudit(user.name,'Logged in');
+
+  // Clear ALL caches so previous company data doesn't bleed through
+  _cache = {emps:[],evts:[],asgn:[],progs:[]};
+  _userCache = [];
+  _attendance = [];
+  _leaveRequests = null;
+  _leaveBalances = null;
+  _attLocations = [];
+  S.set('employees',[]);
+  S.set('users',[]);
+  S.set('companySettings',{});
+  S.set('org','');
   document.getElementById('login-screen').style.display='none';
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
   const org=S.get('org','');
@@ -17376,36 +17397,23 @@ async function switchCompany(companyId){
   if(!companyId) return;
   _COMPANY_ID = parseInt(companyId);
   if(CU) CU.companyId = _COMPANY_ID;
-  // Update session
+  // Update session with new company
   const sess = SS.get('session',{});
   sess.companyId = _COMPANY_ID;
   SS.set('session', sess);
-  // Clear caches
+  // Clear all caches so fresh data loads for new company
   _cache = {emps:[],evts:[],asgn:[],progs:[]};
   _attendance = [];
   _userCache = [];
-  showLoader('Switching company...');
-  try{
-    const [fe,fev,fa,fp] = await Promise.all([
-      dbGetEmployees(),dbGetEvents(),dbGetAssignments(),dbGetPrograms()
-    ]);
-    _cache={emps:fe,evts:fev,asgn:fa,progs:fp};
-    // Load company settings
-    if(sbReady()){
-      const {data} = await _sb.from('company_settings').select('key,value').eq('company_id',_COMPANY_ID);
-      if(data&&data.length){
-        const patch={};
-        data.forEach(r=>{try{patch[r.key]=JSON.parse(r.value);}catch{patch[r.key]=r.value;}});
-        S.set('companySettings',patch);
-        if(patch.orgName) S.set('org',patch.orgName);
-        await applyStoredBranding();
-      }
-    }
-  }catch(e){ console.error('switchCompany error:',e); }
-  hideLoader();
-  // Re-render current page
-  renderDashboard();
-  toast('Switched to company '+companyId,'info');
+  _leaveRequests = null;
+  _leaveBalances = null;
+  _attLocations = [];
+  S.set('employees',[]);
+  S.set('users',[]);
+  S.set('companySettings',{});
+  S.set('org','');
+  // Full reload gives cleanest data isolation
+  location.reload();
 }
 
 function setAttMainTab(tab, el){
