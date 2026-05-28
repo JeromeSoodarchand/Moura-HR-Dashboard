@@ -13169,12 +13169,18 @@ async function doLogin(){
     }
     // Super admin authenticated locally
     CU = _superAdmin;
-    SS.set('session',{userId:_superAdmin.id, username:_superAdmin.username, loginAt:new Date().toISOString()});
+    const _saCompanyEl = document.getElementById('login-company');
+    const _saCompanyId = (_saCompanyEl && _saCompanyEl.value) ? parseInt(_saCompanyEl.value) : 1;
+    _COMPANY_ID = _saCompanyId;
+    CU.companyId = _COMPANY_ID;
+    SS.set('session',{userId:_superAdmin.id, username:_superAdmin.username, companyId:_COMPANY_ID, loginAt:new Date().toISOString()});
     addAudit(_superAdmin.name,'Logged in (super admin)');
     document.getElementById('lerr').style.display='none';
     document.getElementById('login-screen').style.display='none';
     const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
     applyPermissions();applyStoredBranding();initInactivityTracking();
+    const _saSw = document.getElementById('company-switcher');
+    if(_saSw){ _saSw.value = String(_COMPANY_ID); }
     renderDashboard();
     return;
   }
@@ -20096,7 +20102,8 @@ async function confirmPinLogin(empId, pin){
       phone:emp.phone||'',email:emp.email||'',role:'viewer',active:true,empId:emp.id};
 
   CU=user;
-  SS.set('session',{userId:user.id,username:user.username,loginAt:new Date().toISOString()});
+  CU.companyId = _COMPANY_ID;
+  SS.set('session',{userId:user.id,username:user.username,companyId:_COMPANY_ID,loginAt:new Date().toISOString()});
   addAudit(user.name,'Logged in via PIN (disambiguated)');
   document.getElementById('login-screen').style.display='none';
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
