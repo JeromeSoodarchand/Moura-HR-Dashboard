@@ -15939,6 +15939,24 @@ function renderSettings(){
   const sc2=document.getElementById('settings-secondary-color');
   pc.oninput=()=>{document.getElementById('settings-primary-hex').value=pc.value;updateColorPreview(pc.value,document.getElementById('settings-secondary-color').value);};
   sc2.oninput=()=>{document.getElementById('settings-secondary-hex').value=sc2.value;updateColorPreview(document.getElementById('settings-primary-color').value,sc2.value);};
+  // Populate working hours fields from saved settings
+  const wsEl = document.getElementById('settings-work-start');
+  const weEl = document.getElementById('settings-work-end');
+  const whEl = document.getElementById('settings-work-hours');
+  const owEl = document.getElementById('settings-ot-weekday');
+  const owdEl = document.getElementById('settings-ot-weekend');
+  const ohdEl = document.getElementById('settings-ot-holiday');
+  if(wsEl) wsEl.value = cs.workStart || '08:00';
+  if(weEl) weEl.value = cs.workEnd   || '17:00';
+  if(whEl) whEl.value = cs.workHours || 8;
+  if(owEl) owEl.value = cs.otWeekday || 1.5;
+  if(owdEl) owdEl.value = cs.otWeekend || 2.0;
+  if(ohdEl) ohdEl.value = cs.otHoliday || 2.5;
+  const workDays = cs.workDays || [1,2,3,4,5];
+  [0,1,2,3,4,5,6].forEach(d=>{
+    const cb = document.getElementById('work-day-'+d);
+    if(cb) cb.checked = workDays.includes(d);
+  });
 }
 
 function applyAttEditorPerm(){
@@ -16314,7 +16332,12 @@ async function applyStoredBranding(){
       const {data:csRows}=await _sb.from('company_settings').select('key,value').eq('company_id',_COMPANY_ID);
       if(csRows&&csRows.length){
         const cs=getSettings();
-        csRows.forEach(r=>{ if(r.key&&r.value!==null) cs[r.key]=r.value; });
+        csRows.forEach(r=>{
+          if(r.key&&r.value!==null){
+            try{ cs[r.key]=JSON.parse(r.value); }
+            catch(e){ cs[r.key]=r.value; }
+          }
+        });
         S.set('companySettings',cs);
         applyBrandingToUI(cs);
         return;
@@ -20848,7 +20871,13 @@ function saveWorkingHoursSettings(){
   cs.otWeekday  = parseFloat(document.getElementById('settings-ot-weekday')?.value) || 1.5;
   cs.otWeekend  = parseFloat(document.getElementById('settings-ot-weekend')?.value) || 2.0;
   cs.otHoliday  = parseFloat(document.getElementById('settings-ot-holiday')?.value) || 2.5;
-  saveSettings(cs);
+  S.set('companySettings', cs);
+  // Also persist to Supabase for each key
+  if(sbReady()){
+    ['workStart','workEnd','workHours','workDays','otWeekday','otWeekend','otHoliday'].forEach(k=>{
+      dbSetSetting(k, JSON.stringify(cs[k])).catch(()=>{});
+    });
+  }
   toast('Working hours saved.','success');
   dbAddAudit(CU.name,'Updated working hours settings');
 }
