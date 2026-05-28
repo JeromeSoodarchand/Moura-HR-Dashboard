@@ -12991,7 +12991,7 @@ async function boot(){
       const _app=document.getElementById('app');
       _app.style.display='flex';_app.style.flexDirection='row';
       applyPermissions();applyAttEditorPerm();
-      await applyStoredBranding();initInactivityTracking();
+      await applyStoredBranding();initInactivityTracking();startAutoClockTimer();
   assignMissingEmpNos().catch(()=>{});
       // Route same as login — but if HOD was on HR platform, go there directly
       const _rEmp = CU.empId ? gE(CU.empId) : null;
@@ -13216,7 +13216,7 @@ async function doLogin(){
     document.getElementById('lerr').style.display='none';
     document.getElementById('login-screen').style.display='none';
     const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
-    applyPermissions();applyStoredBranding();initInactivityTracking();
+    applyPermissions();applyStoredBranding();initInactivityTracking();startAutoClockTimer();
     const _saSw = document.getElementById('company-switcher');
     if(_saSw){ _saSw.value = String(_COMPANY_ID); }
     renderDashboard();
@@ -13288,6 +13288,7 @@ async function doLogin(){
   if(_nel)_nel.textContent=org;
   applyPermissions();
   initInactivityTracking();
+  startAutoClockTimer();
   // Set company switcher to reflect logged-in company
   const _sw = document.getElementById('company-switcher');
   if(_sw) _sw.value = String(_COMPANY_ID);
@@ -13596,6 +13597,7 @@ async function loginClockIn(empId, locationId, locationName){
 }
 
 function doLogout(){
+  stopAutoClockTimer();
   clearInactivityTimers();
   addAudit(CU?.name||'User','Logged out');
   CU=null;
@@ -13708,6 +13710,91 @@ function autoLogout(){
 }
 
 // Track user activity — reset timers on any interaction
+// ─── AUTO CLOCK-IN/OUT FOR SELF-CLOCKING EMPLOYEES ───────────────────────────
+let _autoClockTimer = null;
+
+async function autoClockSelfClockingEmployees(){
+  if(!CU || (CU.role!=='admin' && CU.role!=='hr')) return; // only run for HR/admin
+  if(!sbReady()) return;
+
+  const now     = new Date();
+  const today   = todayStr();
+  const dow     = now.getDay(); // 0=Sun..6=Sat
+  const nowMins = now.getHours()*60 + now.getMinutes();
+  const wh      = getWorkingHoursSettings();
+  const emps    = getEmps().filter(e=>e.clockMode==='simple' && e.status==='active');
+  if(!emps.length) return;
+
+  // Load today's attendance fresh
+  let todayRecs = [];
+  try{ todayRecs = await dbGetAttendance(today, today); } catch(e){ return; }
+
+  for(const emp of emps){
+    // Use employee's own schedule if set, else company default
+    const ws = emp.workStart || wh.workStart || '08:00';
+    const we = emp.workEnd   || wh.workEnd   || '17:00';
+    const wd = emp.workDays  || wh.workDays  || [1,2,3,4,5];
+
+    // Skip if today is not a working day for this employee
+    if(!wd.includes(dow)) continue;
+    // Skip if it's a public holiday or employer leave day
+    if(isDayHoliday(today) || isDayEmployerLeave(today)) continue;
+
+    const [sh,sm] = ws.split(':').map(Number);
+    const [eh,em] = we.split(':').map(Number);
+    const startMins = sh*60+sm;
+    const endMins   = eh*60+em;
+
+    // Find existing record for today
+    const existingRec = todayRecs.find(r=>String(r.empId)===String(emp.id));
+
+    // AUTO CLOCK-IN: if past start time and no record yet
+    if(nowMins >= startMins && !existingRec){
+      const clockInTime = new Date(today+'T'+ws+':00');
+      const rec = {
+        id: Date.now()+Math.random(),
+        empId: emp.id,
+        clockIn: clockInTime.toISOString(),
+        clockOut: null,
+        date: today,
+        durationMinutes: null,
+        location: 'Auto (self-clocking)',
+        locationId: null,
+        lat: null, lng: null,
+        notes: 'Auto clock-in: '+ws
+      };
+      try{
+        await dbSaveAttendance(rec);
+        console.log('[AutoClock] Clocked in:', emp.name, 'at', ws);
+      } catch(e){ console.warn('[AutoClock] Clock-in failed for', emp.name, e); }
+    }
+
+    // AUTO CLOCK-OUT: if past end time and clocked in but no clock-out
+    if(nowMins >= endMins && existingRec && !existingRec.clockOut){
+      const clockOutTime = new Date(today+'T'+we+':00');
+      existingRec.clockOut = clockOutTime.toISOString();
+      existingRec.durationMinutes = Math.round((clockOutTime - new Date(existingRec.clockIn)) / 60000);
+      try{
+        await dbSaveAttendance(existingRec);
+        console.log('[AutoClock] Clocked out:', emp.name, 'at', we);
+      } catch(e){ console.warn('[AutoClock] Clock-out failed for', emp.name, e); }
+    }
+  }
+}
+
+function startAutoClockTimer(){
+  if(_autoClockTimer) clearInterval(_autoClockTimer);
+  // Run immediately then every 5 minutes
+  autoClockSelfClockingEmployees().catch(()=>{});
+  _autoClockTimer = setInterval(()=>{
+    autoClockSelfClockingEmployees().catch(()=>{});
+  }, 5 * 60 * 1000);
+}
+
+function stopAutoClockTimer(){
+  if(_autoClockTimer){ clearInterval(_autoClockTimer); _autoClockTimer = null; }
+}
+
 function initInactivityTracking(){
   const events = ['mousedown','mousemove','keydown','touchstart','scroll','click'];
   events.forEach(ev => document.addEventListener(ev, resetInactivityTimers, {passive:true}));
@@ -17362,6 +17449,8 @@ function getEmployeeActiveRecord(empId){
 async function renderAttendance(){
   // Always reload employees first so companyEmpIds is populated for attendance filtering
   _cache.emps = await dbGetEmployees();
+  // Auto clock-in/out self-clocking employees before loading records
+  await autoClockSelfClockingEmployees().catch(()=>{});
   const [sbRecs, locs] = await Promise.all([dbGetAttendance(todayStr(),todayStr()),dbGetLocations()]);
   _attLocations = locs;
   // Merge Supabase records with local-only records not yet synced
@@ -19860,7 +19949,7 @@ async function loginPinSubmit(){
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
   const org=getSettings().orgName||S.get('org','')||'';
   const nel=document.getElementById('org-name-nav');if(nel)nel.textContent=org;
-  applyPermissions();applyAttEditorPerm();applyStoredBranding();initInactivityTracking();
+  applyPermissions();applyAttEditorPerm();applyStoredBranding();initInactivityTracking();startAutoClockTimer();
   // Always load fresh from Supabase on login — never show stale/demo data
   if(sbReady()){
     try{
@@ -20380,7 +20469,7 @@ async function confirmPinLogin(empId, pin){
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
   const org=getSettings().orgName||S.get('org','')||'';
   const nel=document.getElementById('org-name-nav');if(nel)nel.textContent=org;
-  applyPermissions();applyAttEditorPerm();applyStoredBranding();initInactivityTracking();
+  applyPermissions();applyAttEditorPerm();applyStoredBranding();initInactivityTracking();startAutoClockTimer();
   // Always load fresh from Supabase on login — never show stale/demo data
   if(sbReady()){
     try{
