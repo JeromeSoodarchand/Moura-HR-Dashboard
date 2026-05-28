@@ -12645,12 +12645,17 @@ async function dbGetSetting(key){
 
 async function dbSetSetting(key,value){
   if(!sbReady()) return;
+  const cid = _COMPANY_ID||1;
   try{
-    await _sb.from('company_settings').insert({
-      key, value,
-      company_id: _COMPANY_ID||1,
-      updated_at: new Date().toISOString()
-    });
+    // Delete existing row for this key+company first, then insert fresh
+    await _sb.from('company_settings').delete().eq('key',key).eq('company_id',cid);
+    if(value!==null && value!==undefined && value!=='null'){
+      await _sb.from('company_settings').insert({
+        key, value: String(value),
+        company_id: cid,
+        updated_at: new Date().toISOString()
+      });
+    }
   }
   catch(e){ console.warn('Setting save error:',e); }
 }
@@ -16024,12 +16029,23 @@ function handleLogoUpload(input){
 }
 
 function removeLogo(){
-  const cs=getSettings();cs.logoB64=null;cs.logoMime=null;
+  const cs=getSettings();
+  cs.logoB64=null;
+  cs.logoMime=null;
+  cs.logoDataUrl=null;
   S.set('companySettings',cs);
   const prev=document.getElementById('settings-logo-preview');
   const ph=document.getElementById('settings-logo-placeholder');
-  prev.style.display='none';ph.style.display='block';
+  if(prev) prev.style.display='none';
+  if(ph) ph.style.display='block';
   applyBrandingToUI(cs);
+  // Remove from Supabase
+  if(sbReady()){
+    const cid = _COMPANY_ID||1;
+    ['logoB64','logoMime','logoDataUrl'].forEach(key=>{
+      _sb.from('company_settings').delete().eq('key',key).eq('company_id',cid).then(()=>{});
+    });
+  }
   toast('Logo removed.','success');
 }
 
@@ -16058,7 +16074,14 @@ function saveCompanySettings(){
   applyBrandingToUI(cs);
   dbAddAudit(CU.name,'Updated company settings');
   if(sbReady()){
-    Promise.all(Object.entries(cs).filter(([k,v])=>typeof v!=='object'||v===null).map(([k,v])=>dbSetSetting(k,String(v||''))));
+    // Save all scalar settings
+    const toSave = Object.entries(cs).filter(([k,v])=>
+      typeof v !== 'object' || v === null
+    );
+    // Explicitly include logo fields even if null (to clear them)
+    const logoKeys = ['logoB64','logoMime','logoDataUrl'];
+    logoKeys.forEach(k=>{ if(!toSave.find(([key])=>key===k)) toSave.push([k, cs[k]||null]); });
+    Promise.all(toSave.map(([k,v])=>dbSetSetting(k, v===null||v===undefined?null:String(v))));
   }
   renderSettingsSummary(cs);
   toast('Company settings saved!','success');
