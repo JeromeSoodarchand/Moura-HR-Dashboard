@@ -12683,7 +12683,9 @@ function rowToEmp(r){
     salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:typeof r.salary_history==='string'?JSON.parse(r.salary_history||'[]'):(r.salary_history||[])}:null,
     checklist:typeof r.checklist==='string'?JSON.parse(r.checklist||'{}'):(r.checklist||{}),offChecklist:typeof r.off_checklist==='string'?JSON.parse(r.off_checklist||'{}'):(r.off_checklist||{}),lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
     photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:[true,'true','1',1].includes(r.att_editor),isHOD:[true,'true','1',1].includes(r.is_hod),isSeniorHOD:[true,'true','1',1].includes(r.is_senior_hod),
-    companyId:r.company_id||1};
+    companyId:r.company_id||1,
+    workStart:r.work_start||null, workEnd:r.work_end||null,
+    workDays:typeof r.work_days==='string'?JSON.parse(r.work_days||'null'):(r.work_days||null)};
 }
 function empToRow(e){
   const row={
@@ -12720,6 +12722,9 @@ function empToRow(e){
     is_hod:               String(e.isHOD || false),
     is_senior_hod:        String(e.isSeniorHOD || false),
     updated_at:           new Date().toISOString(),
+    work_start:           e.workStart||null,
+    work_end:             e.workEnd||null,
+    work_days:            e.workDays?JSON.stringify(e.workDays):null,
     company_id:           e.companyId || _COMPANY_ID || 1,
   };
   // Remove any remaining undefined values
@@ -14589,12 +14594,24 @@ function openModal(type,pid,pid2){
   oninput="document.getElementById('fm').value='__other'">
 </div>
       <div class="fg"><label class="fl">Mobile clock-in</label>
-        <select class="fs" id="fclockmode">
+        <select class="fs" id="fclockmode" onchange="_onClockModeChange(this,emp)">
           <option value="kiosk">Kiosk only — must use the entrance tablet</option>
+          <option value="simple">Self-clocking — employee clocks in/out from their own phone (no QR needed)</option>
           <option value="qr">Mobile (QR required) — clock in from phone by scanning a QR code</option>
           <option value="hod">HOD / Manager — QR clock-in on phone + access to HR platform</option>
         </select>
         <div style="font-size:11.5px;color:var(--text3);margin-top:4px">All employees can use the entrance kiosk. This setting also controls whether they can clock in from a phone (app) or QR scan.</div>
+        <div id="fclockmode-schedule" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg2);border-radius:var(--radius);border:1px solid var(--border)">
+          <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:8px">📅 Self-clocking schedule</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div><label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Start time</label><input class="fi" id="fwork-start" type="time" style="padding:6px 8px;font-size:13px"></div>
+            <div><label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">End time</label><input class="fi" id="fwork-end" type="time" style="padding:6px 8px;font-size:13px"></div>
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:6px">Working days</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d,i)=>`<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" id="fwork-day-${i}" style="accent-color:var(--navy)">${d}</label>`).join('')}
+          </div>
+        </div>
       </div>
       <div class="fg"><label class="fl">Kiosk PIN (4 digits)</label>
         <input class="fi" id="femp-pin" type="password" inputmode="numeric" maxlength="4"
@@ -14872,6 +14889,15 @@ function openModal(type,pid,pid2){
         <button class="btn btn-primary" id="import-btn" onclick="executeImport()" style="display:none">Import records</button>
       </div>`;
   }
+  // Init clock mode schedule panel if editEmployee/addEmployee modal
+  setTimeout(()=>{
+    const cm = document.getElementById('fclockmode');
+    const empForModal = typeof pid !== 'undefined' ? gE(pid) : null;
+    if(cm){
+      if(empForModal?.clockMode) cm.value = empForModal.clockMode;
+      _initClockModeSchedule(cm, empForModal);
+    }
+  }, 0);
   document.getElementById('mb').classList.add('open');
 }
 
@@ -14879,6 +14905,43 @@ function closeModal(){document.getElementById('mb').classList.remove('open');}
 function updateRoleDesc(role,elId='role-desc-box'){
   const descs={admin:'Full access: manage users, view all data, offboard employees.',hr:'Can add employees, log events, manage onboarding & offboarding, view salaries, assign training.',manager:'Can view employees and events, log events for their team. Cannot view salaries or manage offboarding.',viewer:'Clock in/out only via employee screen.',kiosk:'Tablet kiosk account — opens clock-in screen immediately. No HR data access.'};
   const el=document.getElementById(elId);if(el)el.textContent=descs[role]||'';
+}
+
+// ─── CLOCK MODE SCHEDULE HELPERS ─────────────────────────────────────────────
+function _onClockModeChange(sel, emp){
+  _initClockModeSchedule(sel, emp);
+}
+
+function _initClockModeSchedule(sel, emp){
+  if(!sel) return;
+  const panel = document.getElementById('fclockmode-schedule');
+  if(!panel) return;
+  const isSimple = sel.value === 'simple';
+  panel.style.display = isSimple ? 'block' : 'none';
+  if(!isSimple) return;
+  // Pre-fill from employee's saved schedule, or fall back to company settings
+  const wh = getWorkingHoursSettings();
+  const ws = emp?.workStart || wh.workStart || '08:00';
+  const we = emp?.workEnd   || wh.workEnd   || '17:00';
+  const wd = emp?.workDays  || wh.workDays  || [1,2,3,4,5];
+  const startEl = document.getElementById('fwork-start');
+  const endEl   = document.getElementById('fwork-end');
+  if(startEl) startEl.value = ws;
+  if(endEl)   endEl.value   = we;
+  [0,1,2,3,4,5,6].forEach(d=>{
+    const cb = document.getElementById('fwork-day-'+d);
+    if(cb) cb.checked = wd.includes(d);
+  });
+}
+
+function _readClockModeSchedule(){
+  // Read schedule from the form fields
+  const clockMode = document.getElementById('fclockmode')?.value||'kiosk';
+  if(clockMode !== 'simple') return {};
+  const workStart = document.getElementById('fwork-start')?.value || '08:00';
+  const workEnd   = document.getElementById('fwork-end')?.value   || '17:00';
+  const workDays  = [0,1,2,3,4,5,6].filter(d=>document.getElementById('fwork-day-'+d)?.checked);
+  return { workStart, workEnd, workDays };
 }
 
 // ─── SUBMIT HANDLERS ──────────────────────────────────────────────────────────
@@ -14922,6 +14985,7 @@ async function submitAdd(){
     isHOD:document.getElementById('fis-hod')?.checked||false,
     isSeniorHOD:document.getElementById('fis-senior-hod')?.checked||false,
     pinHash:(()=>{const p=(document.getElementById('femp-pin')?.value||'').replace(/[^0-9]/g,'');return p.length===4?simpleHash(p):null;})(),
+    ..._readClockModeSchedule(),
   };
   showLoader('Saving…');
   dbSaveEmployee(newEmp).then(async saved=>{
@@ -15056,6 +15120,10 @@ function submitEdit(id){
   // If blank — keep existing pinHash
   const cmEl2=document.getElementById('fclockmode');
   if(cmEl2) emp.clockMode=cmEl2.value||'kiosk';
+  // Save self-clocking schedule if applicable
+  const _sched = _readClockModeSchedule();
+  if(Object.keys(_sched).length){ emp.workStart=_sched.workStart; emp.workEnd=_sched.workEnd; emp.workDays=_sched.workDays; }
+  else { delete emp.workStart; delete emp.workEnd; delete emp.workDays; }
   const attEdEl=document.getElementById('fatt-editor');
   if(attEdEl!==null) emp.attendanceEditor=attEdEl.checked;
   const hodEl=document.getElementById('fis-hod');
@@ -20752,10 +20820,16 @@ async function refreshReviewRowDB(reviewIdx){
 }
 function getWorkingHoursSettings(){
   const cs = getSettings();
+  const workStart = cs.workStart || '08:00';
+  const workEnd   = cs.workEnd   || '17:00';
+  const [sh,sm]   = workStart.split(':').map(Number);
+  const [eh,em]   = workEnd.split(':').map(Number);
+  const derivedHours = ((eh*60+em)-(sh*60+sm))/60;
+  const workHours = derivedHours > 0 ? derivedHours : (cs.workHours||8);
   return {
-    workStart:    cs.workStart    || '08:00',
-    workEnd:      cs.workEnd      || '17:00',
-    workHours:    cs.workHours    || 8,
+    workStart,
+    workEnd,
+    workHours,
     workDays:     cs.workDays     || [1,2,3,4,5], // 0=Sun..6=Sat
     otWeekday:    cs.otWeekday    || 1.5,   // Mon–Sat weekday
     otWeekend:    cs.otWeekend    || 2.0,   // Sun & Public Holidays
@@ -20821,13 +20895,20 @@ function calcOTCost(d){
 
 function getOTSettings(){
   const s = getSettings();
+  const workStart = s.workStart || '08:00';
+  const workEnd   = s.workEnd   || '17:00';
+  // Always derive workHours from workStart/workEnd so they stay in sync
+  const [sh,sm] = workStart.split(':').map(Number);
+  const [eh,em] = workEnd.split(':').map(Number);
+  const derivedHours = ((eh*60+em) - (sh*60+sm)) / 60;
+  const workHours = derivedHours > 0 ? derivedHours : (s.workHours || 8);
   return {
-    workHours:  s.workHours  || 8,
-    workStart:  s.workStart  || '08:00',
-    workEnd:    s.workEnd    || '17:00',
-    otWeekday:  s.otWeekday  || 1.5,   // Weekday incl. Saturday
-    otWeekend:  s.otWeekend  || 2.0,   // Holiday incl. Sunday
-    otHoliday:  s.otHoliday  || 3.0,   // Disaster/unforeseen
+    workHours,
+    workStart,
+    workEnd,
+    otWeekday:  s.otWeekday  || 1.5,
+    otWeekend:  s.otWeekend  || 2.0,
+    otHoliday:  s.otHoliday  || 3.0,
   };
 }
 
@@ -20841,9 +20922,22 @@ function isDayHoliday(dateStr){
 }
 
 function calcOTMins(rec, settings){
-  if(!rec.clockOut || !rec.durationMinutes) return {otMins:0, regularMins:0, type:'weekday'};
-  const normalMins = settings.workHours * 60;
-  const worked     = rec.durationMinutes;
+  // If no clockOut, use current time to calculate (employee still on site)
+  let worked = rec.durationMinutes;
+  if(!rec.clockOut){
+    if(!rec.clockIn) return {otMins:0, regularMins:0, type:'weekday'};
+    worked = Math.round((new Date() - new Date(rec.clockIn)) / 60000);
+  }
+  if(!worked) return {otMins:0, regularMins:0, type:'weekday'};
+  // Use employee's own schedule if they are self-clocking, else company settings
+  const emp = gE(rec.empId);
+  let normalMins = settings.workHours * 60;
+  if(emp?.clockMode==='simple' && emp.workStart && emp.workEnd){
+    const [sh,sm] = emp.workStart.split(':').map(Number);
+    const [eh,em] = emp.workEnd.split(':').map(Number);
+    const empHours = ((eh*60+em)-(sh*60+sm))/60;
+    if(empHours>0) normalMins = empHours * 60;
+  }
   const date       = rec.date;
   let type = 'weekday';
   if(isDayHoliday(date))       type = 'holiday';
@@ -20887,7 +20981,7 @@ async function runOvertimeReport(){
     const dayBreakdown = {};
 
     empRecs.forEach(rec=>{
-      if(!rec.clockOut) return; // skip open records
+      // Include open records (still on site) using current time
       const {otMins,regularMins,type} = calcOTMins(rec, settings);
       totalRegMins += regularMins;
       totalOTMins  += otMins;
