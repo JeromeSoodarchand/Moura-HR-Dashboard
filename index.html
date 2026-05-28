@@ -17435,28 +17435,46 @@ async function reassignLoadedEmpsToCurrentCompany(){
   if(!sbReady()){ toast('Supabase not connected','error'); return; }
   if(!_COMPANY_ID){ toast('No company selected','error'); return; }
   // Fetch ALL employees from Supabase regardless of company_id
-  const {data, error} = await _sb.from('employees').select('id,name,company_id');
+  const {data, error} = await _sb.from('employees').select('id,name,company_id,dept,role');
   if(error){ toast('Error fetching employees: '+error.message,'error'); return; }
-  // Get current company's HR users to identify who belongs here
-  const {data: users} = await _sb.from('hr_users').select('name,company_id').eq('company_id', _COMPANY_ID);
-  const userNames = new Set((users||[]).map(u=>(u.name||'').toLowerCase()));
-  // Find employees whose name matches an HR user in this company but have wrong company_id
-  const toFix = data.filter(e=>
-    e.company_id !== _COMPANY_ID &&
-    userNames.has((e.name||'').toLowerCase())
-  );
-  // Also find employees already in this company (for info)
-  const alreadyHere = data.filter(e=>e.company_id===_COMPANY_ID);
-  if(toFix.length===0){
-    toast('No mismatched employees found for this company ('+alreadyHere.length+' already correct)','success');
-    return;
+  const companyNames = {1:'Corevest',2:'MTI',3:'Moura Ops',4:'Eiffel',5:'Stone & Granite',6:'Island Funeral',7:'Materico'};
+  // Show ALL employees NOT currently assigned to this company — let admin pick
+  const others = data.filter(e=>e.company_id !== _COMPANY_ID).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const here = data.filter(e=>e.company_id === _COMPANY_ID);
+  // Build modal
+  let ov = document.getElementById('_empReassignOv');
+  if(!ov){ ov=document.createElement('div'); ov.id='_empReassignOv';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    document.body.appendChild(ov); }
+  ov.innerHTML = `<div style="background:var(--bg);border-radius:var(--radius-lg);padding:24px;width:420px;max-width:95vw;max-height:85vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:15px;font-weight:700;color:var(--navy)">Assign employees to ${companyNames[_COMPANY_ID]||'Company '+_COMPANY_ID}</div>
+      <button onclick="document.getElementById('_empReassignOv').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)">×</button>
+    </div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:12px">${here.length} already in this company. Tick employees below to add them:</div>
+    ${others.length===0?'<div style="color:var(--text3);font-size:13px;text-align:center;padding:16px">All employees already assigned to this company.</div>':
+      others.map(e=>`<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid var(--border);margin-bottom:6px;background:var(--bg2)">
+        <input type="checkbox" id="rea_${e.id}" value="${e.id}" style="width:16px;height:16px;cursor:pointer">
+        <div>
+          <div style="font-size:13px;font-weight:600">${e.name}</div>
+          <div style="font-size:11px;color:var(--text3)">${e.role||'—'} · ${e.dept||'—'} · currently: ${companyNames[e.company_id]||'Company '+e.company_id}</div>
+        </div>
+      </label>`).join('')
+    }
+    ${others.length>0?`<button onclick="doReassignSelected()" style="margin-top:14px;width:100%;padding:12px;background:var(--navy);color:#fff;border:none;border-radius:var(--radius);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Move selected → ${companyNames[_COMPANY_ID]||'Company '+_COMPANY_ID}</button>`:''}
+  </div>`;
+  ov.style.display='flex';
+}
+
+async function doReassignSelected(){
+  const checkboxes = document.querySelectorAll('#_empReassignOv input[type=checkbox]:checked');
+  if(!checkboxes.length){ toast('No employees selected','error'); return; }
+  const ids = [...checkboxes].map(c=>c.value);
+  for(const id of ids){
+    await _sb.from('employees').update({company_id: _COMPANY_ID}).eq('id', id);
   }
-  const names = toFix.map(e=>e.name).join(', ');
-  if(!confirm('Fix company assignment for: '+names+'?\n\nThis will set their company_id to '+_COMPANY_ID+'.')) return;
-  for(const e of toFix){
-    await _sb.from('employees').update({company_id: _COMPANY_ID}).eq('id', e.id);
-  }
-  toast('Fixed '+toFix.length+' employee(s). Reloading…','success');
+  document.getElementById('_empReassignOv')?.remove();
+  toast('Moved '+ids.length+' employee(s) to this company. Reloading…','success');
   setTimeout(()=>location.reload(), 1200);
 }
 
