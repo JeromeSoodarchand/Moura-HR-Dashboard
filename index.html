@@ -11047,6 +11047,18 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
 
     <!-- PASSWORD LOGIN (admin / fallback) -->
     <div id="pass-login-section" style="display:none">
+      <div class="lf"><label>Company</label>
+        <select id="login-company" class="fi" style="width:100%">
+          <option value="">— Select your company —</option>
+          <option value="1">Corevest Shared Services</option>
+          <option value="2">MTI Funeral Scheme Manager Ltd</option>
+          <option value="3">Moura Operations Co Ltd</option>
+          <option value="4">Eiffel Property</option>
+          <option value="5">Stone and Granite</option>
+          <option value="6">Island Funeral Supplies</option>
+          <option value="7">Materico</option>
+        </select>
+      </div>
       <div class="lf"><label>Username</label><input id="lu" placeholder="Username" autocomplete="off" oninput="document.getElementById('lerr').style.display='none'"></div>
       <div class="lf"><label>Password</label><input type="password" id="lp" placeholder="Password" oninput="document.getElementById('lerr').style.display='none'"></div>
       <div class="login-err" id="lerr">Incorrect username or password.</div>
@@ -11128,6 +11140,19 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     </button>
 
     <div class="sb-bottom">
+      <!-- Company switcher — only visible to super admin (jerome848) -->
+      <div id="company-switcher-wrap" style="display:none;padding:8px 12px;border-top:1px solid var(--border);margin-bottom:4px">
+        <div style="font-size:10px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Company</div>
+        <select id="company-switcher" style="width:100%;font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer" onchange="switchCompany(this.value)">
+          <option value="1">Corevest Shared Services</option>
+          <option value="2">MTI Funeral Scheme Manager Ltd</option>
+          <option value="3">Moura Operations Co Ltd</option>
+          <option value="4">Eiffel Property</option>
+          <option value="5">Stone and Granite</option>
+          <option value="6">Island Funeral Supplies</option>
+          <option value="7">Materico</option>
+        </select>
+      </div>
       <div class="sb-user">
         <div class="sb-user-av" id="sb-user-av">JM</div>
         <div class="sb-user-info">
@@ -11989,6 +12014,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
 <script>
 // ─── S//// ─── S// ─── SUPABAS// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 let _sb = null;
+let _COMPANY_ID = 1; // Current company — set on login
 const _APP_SECRET = 'MHR_9A_wRcm-HPdnuZCbJ4NXMZJxjuTYceubJUlXqyqefYA';
 const _SB_URL = 'https://mstyeqlabtjvkbnoutit.supabase.co';
 const _SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zdHllcWxhYnRqdmtibm91dGl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3ODg1MzMsImV4cCI6MjA5NTM2NDUzM30.VrAFckdchNF9EHSE_dcqPZUyqOBHr__MzgnGNYmirpk';
@@ -12280,7 +12306,9 @@ async function dbGetEmployees(){
   const _localEmps = getData('employees');
   if(!sbReady()) return _localEmps;
   try{
-    const {data,error}=await _sb.from('employees').select('*').order('id',{ascending:false});
+    let q = _sb.from('employees').select('*').order('id',{ascending:false});
+    if(_COMPANY_ID) q = q.eq('company_id', _COMPANY_ID);
+    const {data,error}=await q;
     if(error){console.error('dbGetEmployees error:',error);toast('DB error: '+JSON.stringify(error),'error');return _cache.emps||[];}
     const fetched = data.map(rowToEmp);
     // Sync pinHash + all fields to localStorage so PIN login works offline
@@ -12465,7 +12493,9 @@ async function dbGetUsers(){
   ensureSB();
   if(!sbReady()) return [];
   try{
-  const {data,error}=await _sb.from('hr_users').select('*').order('id',{ascending:true});
+  let q = _sb.from('hr_users').select('*').order('id',{ascending:true});
+  if(_COMPANY_ID) q = q.eq('company_id', _COMPANY_ID);
+  const {data,error}=await q;
   if(error){console.error(error);return S.get('users',[]);}
   const users = data.map(r=>({
     id:r.id,name:r.name,username:r.username,
@@ -12642,6 +12672,7 @@ function empToRow(e){
     is_hod:               String(e.isHOD || false),
     is_senior_hod:        String(e.isSeniorHOD || false),
     updated_at:           new Date().toISOString(),
+    company_id:           e.companyId || _COMPANY_ID || 1,
   };
   // Remove any remaining undefined values
   Object.keys(row).forEach(k=>{ if(row[k]===undefined) delete row[k]; });
@@ -12832,6 +12863,8 @@ async function boot(){
     }
     if(_sessionUser && _sessionUser.active!==false){
       CU = _sessionUser;
+      _COMPANY_ID = _savedSession.companyId || _sessionUser.companyId || 1;
+      CU.companyId = _COMPANY_ID;
       // Load fresh data then restore the platform
       initSupabase();
       if(sbReady()){
@@ -13093,7 +13126,12 @@ async function doLogin(){
   }
   document.getElementById('lerr').style.display='none';
   CU=user;
-  SS.set('session',{userId:user.id, username:user.username, loginAt:new Date().toISOString()});
+  // Get company_id from selector or from user record
+  const _loginCompanyEl = document.getElementById('login-company');
+  const _loginCompanyId = (_loginCompanyEl && _loginCompanyEl.value) ? parseInt(_loginCompanyEl.value) : (user.companyId||1);
+  _COMPANY_ID = _loginCompanyId;
+  CU.companyId = _loginCompanyId;
+  SS.set('session',{userId:user.id, username:user.username, companyId:_loginCompanyId, loginAt:new Date().toISOString()});
   addAudit(user.name,'Logged in');
   document.getElementById('login-screen').style.display='none';
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
@@ -13549,6 +13587,16 @@ function applyPermissions(){
   // Update sidebar user avatar initials
   const sbAv=document.getElementById('sb-user-av');
   if(sbAv)sbAv.textContent=CU.name.split(' ').map(p=>p[0]).join('').toUpperCase().slice(0,2);
+  // Show company switcher for super admin (jerome848)
+  const switcherWrap = document.getElementById('company-switcher-wrap');
+  if(switcherWrap){
+    const isSuperAdmin = CU.username==='jerome848';
+    switcherWrap.style.display = isSuperAdmin ? 'block' : 'none';
+    if(isSuperAdmin){
+      const sw = document.getElementById('company-switcher');
+      if(sw) sw.value = String(_COMPANY_ID);
+    }
+  }
   // Hide section labels that have no visible items
   ['sb-sec-hr','sb-sec-reports'].forEach(secId=>{
     const sec=document.getElementById(secId);if(!sec)return;
@@ -16859,7 +16907,8 @@ function attToRow(r){
   const row = { emp_id:r.empId, clock_in:r.clockIn, clock_out:r.clockOut||null,
     date:r.date, duration_minutes:r.durationMinutes||null,
     location:r.location||'', location_id:r.locationId||null,
-    lat:r.lat||null, lng:r.lng||null, notes:r.notes||'' };
+    lat:r.lat||null, lng:r.lng||null, notes:r.notes||'',
+    company_id: r.companyId || _COMPANY_ID || 1 };
   Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
   return row;
 }
@@ -17120,6 +17169,42 @@ async function renderAttendanceReport(){
       </td>
     </tr>`;
   }).join('');
+}
+
+async function switchCompany(companyId){
+  if(!companyId) return;
+  _COMPANY_ID = parseInt(companyId);
+  if(CU) CU.companyId = _COMPANY_ID;
+  // Update session
+  const sess = SS.get('session',{});
+  sess.companyId = _COMPANY_ID;
+  SS.set('session', sess);
+  // Clear caches
+  _cache = {emps:[],evts:[],asgn:[],progs:[]};
+  _attendance = [];
+  _userCache = null;
+  showLoader('Switching company...');
+  try{
+    const [fe,fev,fa,fp] = await Promise.all([
+      dbGetEmployees(),dbGetEvents(),dbGetAssignments(),dbGetPrograms()
+    ]);
+    _cache={emps:fe,evts:fev,asgn:fa,progs:fp};
+    // Load company settings
+    if(sbReady()){
+      const {data} = await _sb.from('company_settings').select('key,value').eq('company_id',_COMPANY_ID);
+      if(data&&data.length){
+        const patch={};
+        data.forEach(r=>{try{patch[r.key]=JSON.parse(r.value);}catch{patch[r.key]=r.value;}});
+        S.set('companySettings',patch);
+        if(patch.orgName) S.set('org',patch.orgName);
+        await applyStoredBranding();
+      }
+    }
+  }catch(e){ console.error('switchCompany error:',e); }
+  hideLoader();
+  // Re-render current page
+  renderDashboard();
+  toast('Switched to company '+companyId,'info');
 }
 
 function setAttMainTab(tab, el){
