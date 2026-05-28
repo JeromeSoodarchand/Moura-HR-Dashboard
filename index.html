@@ -14699,7 +14699,7 @@ function openModal(type,pid,pid2){
   oninput="document.getElementById('fm').value='__other'">
 </div>
       <div class="fg"><label class="fl">Mobile clock-in</label>
-        <select class="fs" id="fclockmode" onchange="_onClockModeChange(this,emp)">
+        <select class="fs" id="fclockmode" onchange="_onClockModeChange(this)">
           <option value="kiosk">Kiosk only — must use the entrance tablet</option>
           <option value="simple">Self-clocking — employee clocks in/out from their own phone (no QR needed)</option>
           <option value="qr">Mobile (QR required) — clock in from phone by scanning a QR code</option>
@@ -15013,8 +15013,8 @@ function updateRoleDesc(role,elId='role-desc-box'){
 }
 
 // ─── CLOCK MODE SCHEDULE HELPERS ─────────────────────────────────────────────
-function _onClockModeChange(sel, emp){
-  _initClockModeSchedule(sel, emp);
+function _onClockModeChange(sel){
+  _initClockModeSchedule(sel, null);
 }
 
 function _initClockModeSchedule(sel, emp){
