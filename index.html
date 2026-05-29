@@ -13962,6 +13962,8 @@ function autoLogout(){
     _inactivityToast.parentNode.removeChild(_inactivityToast);
     _inactivityToast = null;
   }
+  // Don't auto-logout PIN sessions — clock-in screen should always stay open
+  if(CU?.loginMethod === 'pin'){ resetInactivityTimers(); return; }
   addAudit(CU?.name||'User','Auto-logged out after 15 minutes of inactivity');
   CU=null;SS.set('session',null);
   // Show message before reload
@@ -20245,7 +20247,9 @@ async function loginPinSubmit(){
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
   const org=getSettings().orgName||S.get('org','')||'';
   const nel=document.getElementById('org-name-nav');if(nel)nel.textContent=org;
-  applyPermissions();applyAttEditorPerm();applyStoredBranding();initInactivityTracking();startAutoClockTimer();
+  applyPermissions();applyAttEditorPerm();applyStoredBranding();
+  // Don't start inactivity timer for PIN sessions — clock-in screen should stay open
+  if(CU?.loginMethod !== 'pin'){ initInactivityTracking();startAutoClockTimer(); }
   // Always load fresh from Supabase on login — never show stale/demo data
   if(sbReady()){
     try{
@@ -20775,7 +20779,9 @@ async function confirmPinLogin(empId, pin){
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
   const org=getSettings().orgName||S.get('org','')||'';
   const nel=document.getElementById('org-name-nav');if(nel)nel.textContent=org;
-  applyPermissions();applyAttEditorPerm();applyStoredBranding();initInactivityTracking();startAutoClockTimer();
+  applyPermissions();applyAttEditorPerm();applyStoredBranding();
+  // Don't start inactivity timer for PIN sessions — clock-in screen should stay open
+  if(CU?.loginMethod !== 'pin'){ initInactivityTracking();startAutoClockTimer(); }
   // Always load fresh from Supabase on login — never show stale/demo data
   if(sbReady()){
     try{
