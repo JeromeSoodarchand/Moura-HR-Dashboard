@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -336,7 +341,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 .kiosk-time{font-size:48px;font-weight:200;color:#fff;text-align:center;letter-spacing:.05em;margin-bottom:4px;font-variant-numeric:tabular-nums}
 .kiosk-clock{font-size:64px;font-weight:700;color:#fff;text-align:center;letter-spacing:2px;margin-bottom:4px;font-variant-numeric:tabular-nums}
 .kiosk-date{font-size:14px;color:rgba(255,255,255,0.4);text-align:center;margin-bottom:40px;text-transform:uppercase;letter-spacing:.08em}
-.kiosk-card{background:rgba(255,255,255,0.06);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:32px 36px;width:360px;max-width:90vw}
+.kiosk-card{background:rgba(255,255,255,0.06);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:32px 36px;width:360px;max-width:90vw}
 .kiosk-prompt{font-size:16px;color:rgba(255,255,255,0.7);text-align:center;margin-bottom:20px;font-weight:400}
 .kiosk-pin-display{display:flex;justify-content:center;gap:12px;margin-bottom:28px;height:20px;align-items:center}
 .kiosk-dot{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,0.3);transition:all .15s}
@@ -344,7 +349,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 .kiosk-dot.error{background:var(--red);border-color:var(--red)}
 .kiosk-dot.success{background:#25D366;border-color:#25D366}
 .pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.pin-btn{aspect-ratio:1;border:none;border-radius:14px;background:rgba(255,255,255,0.08);color:#fff;font-size:22px;font-weight:500;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;-webkit-tap-highlight-color:transparent;user-select:none}
+.pin-btn{aspect-ratio:1;border:none;border-radius:14px;background:rgba(255,255,255,0.08);color:#fff;font-size:22px;font-weight:500;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
 .pin-btn:hover{background:rgba(255,255,255,0.14)}
 .pin-btn:active{transform:scale(.93);background:rgba(255,255,255,0.2)}
 .pin-btn.pin-zero{grid-column:2}
@@ -413,9 +418,137 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 @media(max-width:900px){
   .mobile-logout-btn{display:flex}
 }
+
+/* ── CROSS-BROWSER & MOBILE COMPATIBILITY ────────────────────────────────── */
+
+/* Prevent iOS Safari from zooming on input focus (font-size < 16px triggers zoom) */
+input, select, textarea {
+  font-size: 16px !important;
+}
+.fi, .fs, .si {
+  font-size: 16px !important;
+}
+/* But keep display compact on desktop */
+@media (min-width: 768px) {
+  input, select, textarea, .fi, .fs, .si {
+    font-size: 13px !important;
+  }
+}
+
+/* Remove tap highlight on Android/iOS */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Smooth scrolling on iOS */
+.sidebar, .main-content, [class*="panel"], [class*="modal"], body {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ensure buttons are easily tappable on mobile (min 44px touch target) */
+button, .btn, .tbb, [role="button"] {
+  min-height: 36px;
+  touch-action: manipulation;
+}
+
+/* Kiosk PIN buttons extra large on touch */
+.kiosk-btn {
+  touch-action: manipulation;
+}
+
+/* Prevent text size adjustment on orientation change (iOS/Android) */
+html {
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Safe area insets for iPhone notch/home bar */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  body { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+/* Print styles */
+@media print {
+  .sidebar, .nav-actions, .btn, button { display: none !important; }
+  .main-content { margin: 0 !important; }
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+// ── CROSS-BROWSER COMPATIBILITY POLYFILLS ────────────────────────────────────
+
+// Element.closest polyfill (IE, old Edge)
+if(!Element.prototype.closest){
+  Element.prototype.closest=function(s){
+    var el=this;
+    do{ if(typeof el.matches==='function'&&el.matches(s))return el; el=el.parentElement||el.parentNode; }
+    while(el!==null&&el.nodeType===1);
+    return null;
+  };
+}
+
+// Element.matches polyfill
+if(!Element.prototype.matches){
+  Element.prototype.matches=Element.prototype.msMatchesSelector||Element.prototype.webkitMatchesSelector;
+}
+
+// String.prototype.replaceAll polyfill (Edge < 85, Android < 85)
+if(!String.prototype.replaceAll){
+  String.prototype.replaceAll=function(search,replace){
+    return this.split(search).join(replace);
+  };
+}
+
+// Object.fromEntries polyfill (Edge < 79)
+if(!Object.fromEntries){
+  Object.fromEntries=function(entries){
+    return [...entries].reduce(function(obj,e){ obj[e[0]]=e[1]; return obj; },{});
+  };
+}
+
+// Array.prototype.flat polyfill (Edge < 79)
+if(!Array.prototype.flat){
+  Array.prototype.flat=function(depth){
+    var d=depth===undefined?1:Math.floor(depth);
+    if(d<1)return Array.prototype.slice.call(this);
+    return Array.prototype.reduce.call(this,function(acc,val){
+      if(Array.isArray(val))acc.push.apply(acc,val.flat(d-1));
+      else acc.push(val);
+      return acc;
+    },[]);
+  };
+}
+
+// Array.prototype.flatMap polyfill
+if(!Array.prototype.flatMap){
+  Array.prototype.flatMap=function(cb){ return Array.prototype.map.call(this,cb).flat(); };
+}
+
+// queueMicrotask polyfill
+if(typeof queueMicrotask!=='function'){
+  window.queueMicrotask=function(cb){ Promise.resolve().then(cb).catch(function(e){ setTimeout(function(){ throw e; }); }); };
+}
+
+// globalThis polyfill
+if(typeof globalThis==='undefined'){ window.globalThis=window; }
+
+// CSS.supports polyfill
+if(!window.CSS||!window.CSS.supports){ window.CSS={supports:function(){ return true; }}; }
+
+// Fix passive event listeners for mobile scroll performance
+(function(){
+  var _add=EventTarget.prototype.addEventListener;
+  var passiveEvents=['touchstart','touchmove','wheel','mousewheel'];
+  EventTarget.prototype.addEventListener=function(type,fn,opts){
+    if(passiveEvents.indexOf(type)>-1&&opts===undefined){
+      opts={passive:true};
+    }
+    return _add.call(this,type,fn,opts);
+  };
+})();
+
+
 function renderUserAuditSummary(){
   const el = document.getElementById('account-audit-summary');
   if(!el) return;
@@ -805,7 +938,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 .kiosk-sub{font-size:14px;color:rgba(255,255,255,0.4);margin-top:4px;letter-spacing:.05em;text-transform:uppercase}
 .kiosk-time{font-size:48px;font-weight:200;color:#fff;text-align:center;letter-spacing:.05em;margin-bottom:4px;font-variant-numeric:tabular-nums}
 .kiosk-date{font-size:14px;color:rgba(255,255,255,0.4);text-align:center;margin-bottom:40px;text-transform:uppercase;letter-spacing:.08em}
-.kiosk-card{background:rgba(255,255,255,0.06);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:32px 36px;width:360px;max-width:90vw}
+.kiosk-card{background:rgba(255,255,255,0.06);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:32px 36px;width:360px;max-width:90vw}
 .kiosk-prompt{font-size:16px;color:rgba(255,255,255,0.7);text-align:center;margin-bottom:20px;font-weight:400}
 .kiosk-pin-display{display:flex;justify-content:center;gap:12px;margin-bottom:28px;height:20px;align-items:center}
 .kiosk-dot{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,0.3);transition:all .15s}
@@ -813,7 +946,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 .kiosk-dot.error{background:var(--red);border-color:var(--red)}
 .kiosk-dot.success{background:#25D366;border-color:#25D366}
 .pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.pin-btn{aspect-ratio:1;border:none;border-radius:14px;background:rgba(255,255,255,0.08);color:#fff;font-size:22px;font-weight:500;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;-webkit-tap-highlight-color:transparent;user-select:none}
+.pin-btn{aspect-ratio:1;border:none;border-radius:14px;background:rgba(255,255,255,0.08);color:#fff;font-size:22px;font-weight:500;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
 .pin-btn:hover{background:rgba(255,255,255,0.14)}
 .pin-btn:active{transform:scale(.93);background:rgba(255,255,255,0.2)}
 .pin-btn.pin-zero{grid-column:2}
@@ -17968,7 +18101,7 @@ function printLocationQR(id, name, qrCode){
     + '#qr{margin-bottom:16px}'
     + '.code{font-size:10px;color:#bbb;font-family:monospace;margin-top:8px}'
     + '.instr{font-size:12px;color:#555;margin-top:16px;text-align:center;max-width:280px}'
-    + '</style></head><body>'
+    + '<\/style></head><body>'
     + '<div class="title">' + name + '</div>'
     + '<div class="sub">Scan to clock in / clock out</div>'
     + '<div id="qr"></div>'
@@ -21270,28 +21403,20 @@ async function runOvertimeReport(){
   try{ _cache.emps = await dbGetEmployees(); } catch(e){}
 
   const settings = getOTSettings();
-  let emps = getEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF));
+  let emps = getScopedEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF));
 
-  // Fetch attendance
+  // Fetch attendance — filter by scoped employee IDs
   let recs = [];
   try{ recs = await dbGetAttendance(from, to); } catch(e){ recs = S.get('attendance',[]).filter(r=>r.date>=from&&r.date<=to); }
 
-  // Show diagnostic in panel
-  const allAttEmpIds = [...new Set(recs.map(r=>String(r.empId)))];
-  const allEmpIds = emps.map(e=>String(e.id));
-  if(body) body.innerHTML = '<div style="padding:10px 14px;background:#f0f4ff;border:1px solid #c0d0ff;border-radius:8px;font-size:12px;font-family:monospace;margin-bottom:12px;white-space:pre-wrap">'
-    +'Date: '+from+' to '+to+'\n'
-    +'Attendance records: '+recs.length+'\n'
-    +'Employees loaded: '+emps.length+'\n'
-    +'Work hours: '+settings.workHours+'h ('+settings.workStart+' - '+settings.workEnd+')\n'
-    +'Att empIds: '+allAttEmpIds.join(', ')+'\n'
-    +'Emp ids:    '+allEmpIds.join(', ')
-    +'</div>';
+  // Filter records to scoped employees only
+  const scopedEmpIds = new Set(emps.flatMap(e=>[String(e.id), e.userId?String(e.userId):''].filter(Boolean)));
+  recs = recs.filter(r=>scopedEmpIds.has(String(r.empId)));
 
   // Populate dept filter
   const deptSel = document.getElementById('ot-dept-filter');
   if(deptSel && deptSel.options.length<=1){
-    const depts = [...new Set(getEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
+    const depts = [...new Set(getScopedEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
     depts.forEach(d=>{ const o=document.createElement('option'); o.value=d; o.textContent=d; deptSel.appendChild(o); });
   }
 
