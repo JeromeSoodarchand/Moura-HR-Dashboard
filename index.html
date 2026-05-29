@@ -13436,8 +13436,12 @@ async function doLogin(){
   // Check clockMode — QR/HOD employees always see clock-in screen first
   const _dLoginEmp = user.empId ? gE(user.empId) : getEmps().find(e=>
     (user.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===user.phone.replace(/[^0-9]/g,''))||
-    (user.email&&e.email&&e.email.toLowerCase()===user.email.toLowerCase())
+    (user.email&&e.email&&e.email.toLowerCase()===user.email.toLowerCase())||
+    (user.name&&e.name&&e.name.toLowerCase().trim()===user.name.toLowerCase().trim())
   );
+  // Always stamp empId onto CU so getScopedEmps can find the HOD employee record
+  if(_dLoginEmp && !CU.empId){ CU.empId = _dLoginEmp.id; }
+  if(_dLoginEmp && _dLoginEmp.userId && !CU.id) CU.id = _dLoginEmp.userId;
   const _dLoginCM = _dLoginEmp?.clockMode||'kiosk';
   if(_dLoginCM==='qr'||_dLoginCM==='hod'){
     showEmployeeClockInScreen(user);
@@ -17589,6 +17593,11 @@ function getEmployeeActiveRecord(empId){
 async function renderAttendance(){
   // Always reload employees first so companyEmpIds is populated for attendance filtering
   _cache.emps = await dbGetEmployees();
+  // If CU.empId is missing, try to find it now that employees are loaded
+  if(CU && !CU.empId){
+    const found = _findHodEmp();
+    if(found) CU.empId = found.id;
+  }
   // Auto clock-in/out self-clocking employees before loading records
   await autoClockSelfClockingEmployees().catch(()=>{});
   const [sbRecs, locs] = await Promise.all([dbGetAttendance(todayStr(),todayStr()),dbGetLocations()]);
@@ -17714,8 +17723,11 @@ async function renderAttendanceReport(){
   const scopedEmps = getScopedEmps();
   const allEmps = scopedEmps.filter(e=>
     (!deptF||!deptF.value||e.dept===deptF.value));
-  const empIds = allEmps.map(e=>e.id);
-  let list = recs.filter(r=>empIds.some(id=>String(id)===String(r.empId)));
+  // Build a set of all possible IDs for scoped employees (emp.id + emp.userId)
+  const empIdSet = new Set(
+    allEmps.flatMap(e=>[String(e.id), e.userId?String(e.userId):''].filter(Boolean))
+  );
+  let list = recs.filter(r=>empIdSet.has(String(r.empId)));
   list.sort((a,b)=>new Date(b.clockIn)-new Date(a.clockIn));
 
   // Current sub-tab filter
@@ -20090,6 +20102,7 @@ async function loginPinSubmit(){
 
   // Log in — ensure empId is always linked
   if(emp && !user.empId) user.empId = emp.id;
+  if(emp) user.empId = emp.id; // always stamp empId from the matched employee
   CU = user;
   CU.companyId = _COMPANY_ID;
   SS.set('session',{userId:user.id, username:user.username||emp.phone, companyId:_COMPANY_ID, loginAt:new Date().toISOString()});
@@ -23902,8 +23915,8 @@ async function submitAddAttRecord(){
 }
 function isHODMode(){
   if(!CU || CU.role==='admin'||CU.role==='hr') return false;
-  const hodEmp = CU.empId ? gE(CU.empId) : null;
-  return hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager';
+  const hodEmp = _findHodEmp();
+  return !!(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager');
 }
 
 // ── LEAVE TYPES MANAGEMENT ────────────────────────────────────────────────────
