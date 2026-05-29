@@ -13098,6 +13098,7 @@ async function boot(){
     }
     if(_sessionUser && _sessionUser.active!==false){
       CU = _sessionUser;
+      CU.loginMethod = _savedSession.loginMethod || 'password';
       // Always use the session's companyId — it was explicitly set when the user selected their company at login
       _COMPANY_ID = _savedSession.companyId || _sessionUser.companyId || 1;
       CU.companyId = _COMPANY_ID;
@@ -13400,7 +13401,8 @@ async function doLogin(){
   const _loginCompanyId = (_loginCompanyEl && _loginCompanyEl.value) ? parseInt(_loginCompanyEl.value) : (user.companyId||1);
   _COMPANY_ID = _loginCompanyId;
   CU.companyId = _loginCompanyId;
-  SS.set('session',{userId:user.id, username:user.username, companyId:_loginCompanyId, loginAt:new Date().toISOString()});
+  CU.loginMethod = 'password'; // Password login — full HR platform access
+  SS.set('session',{userId:user.id, username:user.username, companyId:_loginCompanyId, loginAt:new Date().toISOString(), loginMethod:'password'});
   addAudit(user.name,'Logged in');
 
   // Clear ALL caches so previous company data doesn't bleed through
@@ -17587,18 +17589,6 @@ async function renderAttendance(){
   // Auto clock-in/out self-clocking employees before loading records
   await autoClockSelfClockingEmployees().catch(()=>{});
 
-  // Diagnostic — show in panel so we can see what's happening on Edge
-  const _dbgTbody = document.getElementById('att-tbody');
-  const _dbgEmpId = CU ? (CU.empId||'none') : 'NO CU';
-  const _dbgHod = _findHodEmp();
-  const _dbgScoped = getScopedEmps();
-  if(_dbgTbody) _dbgTbody.innerHTML = '<tr><td colspan="8" style="font-family:monospace;font-size:11px;padding:12px;background:#f0f4ff;color:#333">'+
-    'CU.id='+( CU&&CU.id||'?')+' | CU.empId='+_dbgEmpId+' | CU.role='+(CU&&CU.role||'?')+' | CU.name='+(CU&&CU.name||'?')+'<br>'+
-    'hodEmp found: '+(  _dbgHod?_dbgHod.name+' (id='+_dbgHod.id+', isHOD='+_dbgHod.isHOD+', dept='+_dbgHod.dept+')'  :'null')+'<br>'+
-    'scopedEmps: '+_dbgScoped.length+' — '+_dbgScoped.map(e=>e.name+'('+e.id+')').join(', ')+'<br>'+
-    'total emps in cache: '+getEmps().length+
-  '</td></tr>';
-
   const [sbRecs, locs] = await Promise.all([dbGetAttendance(todayStr(),todayStr()),dbGetLocations()]);
   _attLocations = locs;
   // Merge Supabase records with local-only records not yet synced
@@ -17606,11 +17596,6 @@ async function renderAttendance(){
   const sbIds = new Set(sbRecs.map(r=>String(r.id)));
   const localOnly = local.filter(r=>!sbIds.has(String(r.id)));
   _attendance = [...sbRecs, ...localOnly];
-
-  // Append attendance count to diagnostic
-  if(_dbgTbody) _dbgTbody.innerHTML += '<tr><td colspan="8" style="font-family:monospace;font-size:11px;padding:4px 12px;background:#f0f4ff;color:#333">'+
-    'attendance records fetched: '+sbRecs.length+' | local: '+localOnly.length+
-  '</td></tr>';
 
   renderAttLiveBoard();
   renderAttMetrics();
@@ -19832,7 +19817,7 @@ async function showEmployeeClockInScreen(user){
             ${logoSrc?`<img src="${logoSrc}" style="height:24px;width:auto;object-fit:contain;flex-shrink:0">`:``}
             <div style="font-size:13px;font-weight:600;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${cs.orgName||''}</div>
           </div>
-          ${(isHRRole||isHODClockMode)?`<button onclick="openFullHRPlatform()" style="font-size:12px;color:#fff;background:var(--navy);border:none;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:500;white-space:nowrap;flex-shrink:0;margin-left:8px">📊 HR Platform</button>`:''}
+          ${(isHRRole||isHODClockMode)&&CU?.loginMethod!=='pin'?`<button onclick="openFullHRPlatform()" style="font-size:12px;color:#fff;background:var(--navy);border:none;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:500;white-space:nowrap;flex-shrink:0;margin-left:8px">📊 HR Platform</button>`:''}
         </div>
         <button onclick="doLogout()" style="width:100%;padding:9px;font-size:13px;font-weight:500;color:var(--text2);background:#fff;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-family:inherit">
           Sign Out
@@ -19898,6 +19883,11 @@ async function showEmployeeClockInScreen(user){
 }
 
 function openFullHRPlatform(){
+  // Block HR platform access for PIN-authenticated sessions
+  if(CU && CU.loginMethod === 'pin'){
+    toast('HR platform requires username & password login.','error');
+    return;
+  }
   if(_empOv) _empOv.style.display = 'none';
   const app = document.getElementById('app');
   if(app){ app.style.display='flex'; app.style.flexDirection='row'; }
@@ -20110,7 +20100,8 @@ async function loginPinSubmit(){
   if(emp) user.empId = emp.id; // always stamp empId from the matched employee
   CU = user;
   CU.companyId = _COMPANY_ID;
-  SS.set('session',{userId:user.id, username:user.username||emp.phone, companyId:_COMPANY_ID, loginAt:new Date().toISOString()});
+  CU.loginMethod = 'pin'; // PIN login — clock-in only, no HR platform access
+  SS.set('session',{userId:user.id, username:user.username||emp.phone, companyId:_COMPANY_ID, loginAt:new Date().toISOString(), loginMethod:'pin'});
   addAudit(user.name,'Logged in via PIN');
   document.getElementById('login-screen').style.display='none';
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
