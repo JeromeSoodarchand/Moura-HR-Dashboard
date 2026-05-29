@@ -13176,9 +13176,35 @@ async function boot(){
   const isSetup = await checkSetupToken();
   if(isSetup) return; // setup flow handles everything
 
-  // Step 2c — restore session if available (sessionStorage is per-tab, safe)
+  // Step 2c — restore session if available
   const _savedSession = SS.get('session', null);
   if(_savedSession && _savedSession.userId){
+    // PIN sessions restore to clock-in screen, not HR platform
+    if(_savedSession.loginMethod === 'pin'){
+      // Reload employees for this company then show clock-in screen
+      _COMPANY_ID = _savedSession.companyId || 1;
+      initSupabase();
+      document.getElementById('login-screen').style.display = 'none';
+      if(sbReady()) try{ _cache.emps = await dbGetEmployees(); }catch(e){}
+      // Find the employee record
+      const _pinEmp = getEmps().find(e=>
+        String(e.id)===String(_savedSession.empId||_savedSession.userId)||
+        (e.phone&&_savedSession.username&&e.phone.replace(/\D/g,'')===_savedSession.username.replace(/\D/g,''))
+      );
+      const _pinUser = {
+        id: _savedSession.userId,
+        name: _savedSession.username,
+        role: 'employee',
+        loginMethod: 'pin',
+        empId: _savedSession.empId || _savedSession.userId,
+        companyId: _COMPANY_ID
+      };
+      if(_pinEmp) { _pinUser.name = _pinEmp.name; _pinUser.empId = _pinEmp.id; }
+      CU = _pinUser;
+      await applyStoredBranding();
+      showEmployeeClockInScreen(CU);
+      return;
+    }
     // Find user from cache or Supabase
     let _sessionUser = localUsers.find(u=>
       String(u.id)===String(_savedSession.userId)||
@@ -20213,7 +20239,7 @@ async function loginPinSubmit(){
   CU = user;
   CU.companyId = _COMPANY_ID;
   CU.loginMethod = 'pin'; // PIN login — clock-in only, no HR platform access
-  SS.set('session',{userId:user.id, username:user.username||emp.phone, companyId:_COMPANY_ID, loginAt:new Date().toISOString(), loginMethod:'pin'});
+  SS.set('session',{userId:user.id, username:user.username||emp.phone, empId:emp?.id||user.id, companyId:_COMPANY_ID, loginAt:new Date().toISOString(), loginMethod:'pin'});
   addAudit(user.name,'Logged in via PIN');
   document.getElementById('login-screen').style.display='none';
   const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
