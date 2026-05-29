@@ -17388,32 +17388,17 @@ async function dbGetAttendance(dateFrom, dateTo){
     let q = _sb.from('attendance').select('*').order('clock_in', {ascending:false});
     if(dateFrom) q = q.gte('date', dateFrom);
     if(dateTo)   q = q.lte('date', dateTo);
-    if(_COMPANY_ID && companyEmpIds.size > 0){
-      // Use filter() instead of in() for broader Supabase client version compatibility
-      q = q.filter('emp_id', 'in', '('+[...companyEmpIds].join(',')+')');
-    } else if(_COMPANY_ID){
-      // Fallback: no employees loaded yet — filter by company_id column instead
-      q = q.eq('company_id', _COMPANY_ID);
-    }
+    // No client-side .in()/.filter() — fetch by date only, filter by empId in JS
+    // This works across all Supabase client versions and browsers
     const {data, error} = await q;
     if(error){ console.error('dbGetAttendance:', error); return local; }
-    let sbRecs = data.map(rowToAtt);
-
-    // Second pass: also fetch by company_id column to catch employees whose
-    // company_id in the employees table is wrong but was stamped correctly on attendance
-    if(_COMPANY_ID && companyEmpIds.size > 0){
-      try{
-        let q2 = _sb.from('attendance').select('*').order('clock_in',{ascending:false}).eq('company_id',_COMPANY_ID);
-        if(dateFrom) q2 = q2.gte('date', dateFrom);
-        if(dateTo)   q2 = q2.lte('date', dateTo);
-        const {data:d2} = await q2;
-        if(d2 && d2.length){
-          const existingIds = new Set(sbRecs.map(r=>String(r.id)));
-          const extra = d2.map(rowToAtt).filter(r=>!existingIds.has(String(r.id)));
-          sbRecs = [...sbRecs, ...extra];
-        }
-      } catch(e2){ /* ignore second pass errors */ }
-    }
+    // Filter by company employee IDs in JavaScript
+    let sbRecs = data.map(rowToAtt).filter(r=>{
+      if(_COMPANY_ID && companyEmpIds.size > 0){
+        return companyEmpIds.has(String(r.empId));
+      }
+      return true;
+    });
 
     // Merge with local-only records in the same date range AND same company
     const sbIds = new Set(sbRecs.map(r=>String(r.id)));
