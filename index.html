@@ -11292,6 +11292,9 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
           <div class="sb-user-role"><span id="rd"></span></div>
         </div>
       </div>
+      <button id="sb-clock-btn" onclick="openAttendanceModal('scanQR')" style="display:none;width:100%;padding:8px 12px;margin-bottom:6px;background:var(--green);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;text-align:left">
+        ⏱ Clock In / Out
+      </button>
       <button class="sb-logout" onclick="doLogout()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         <span class="sb-logout-text">Sign out</span>
@@ -12399,10 +12402,10 @@ const S={
   set:(k,v)=>{try{localStorage.setItem('pdhr_'+k,JSON.stringify(v));}catch{}}
 };
 
-// ── Per-tab session storage (sessionStorage — not shared across tabs) ─────────
+// ── Session storage (localStorage for persistence across refresh/tab close) ───
 const SS={
-  get:(k,def=null)=>{try{const v=sessionStorage.getItem('pdhr_'+k);return v?JSON.parse(v):def;}catch{return def;}},
-  set:(k,v)=>{try{sessionStorage.setItem('pdhr_'+k,JSON.stringify(v));}catch{}}
+  get:(k,def=null)=>{try{const v=localStorage.getItem('pdhr_'+k);return v?JSON.parse(v):def;}catch{return def;}},
+  set:(k,v)=>{try{localStorage.setItem('pdhr_'+k,JSON.stringify(v));}catch{}}
 }
 
 // ── APP SESSION SECRET — must match app.app_secret in Supabase SQL ──────────
@@ -13047,7 +13050,7 @@ async function assignMissingEmpNos(){
 
 async function boot(){
   // Pre-boot: if session exists, show loader immediately so login screen never flickers
-  const _preSession = sessionStorage.getItem('pdhr_session');
+  const _preSession = localStorage.getItem('pdhr_session');
   if(_preSession){
     try{
       const _ps = JSON.parse(_preSession);
@@ -13127,19 +13130,15 @@ async function boot(){
       applyPermissions();applyAttEditorPerm();
       await applyStoredBranding();initInactivityTracking();startAutoClockTimer();
   assignMissingEmpNos().catch(()=>{});
-      // Route same as login — but if HOD was on HR platform, go there directly
-      const _rEmp = CU.empId ? gE(CU.empId) : null;
+      // Route on restore — same logic as fresh login
+      const _rEmp = _findHodEmp();
       const _rCM  = _rEmp?.clockMode||'kiosk';
-      const _wasHRPlatform = SS.get('hrPlatform', false);
-      if(_wasHRPlatform && (_rCM==='hod'||CU.role==='admin'||CU.role==='hr'||CU.role==='manager')){
+      if(CU.role==='admin'||CU.role==='hr'){
         renderDashboard();
-      } else if(_rCM==='qr'||_rCM==='hod'){
+      } else if(CU.role==='hod'||CU.role==='manager'){
+        renderDashboard();
+      } else if(_rCM==='qr'||_rCM==='hod'||_rCM==='simple'){
         showEmployeeClockInScreen(CU);
-      } else if(CU.role==='admin'||CU.role==='hr'){
-        renderDashboard(); // admin/hr go straight to dashboard on refresh
-      } else if(CU.role==='manager'){
-        renderDashboard();
-        setTimeout(()=>showManagerLoginChoice(CU),400);
       } else {
         showEmployeeClockInScreen(CU);
       }
@@ -13969,6 +13968,13 @@ function applyPermissions(){
   // Update sidebar user avatar initials
   const sbAv=document.getElementById('sb-user-av');
   if(sbAv)sbAv.textContent=CU.name.split(' ').map(p=>p[0]).join('').toUpperCase().slice(0,2);
+  // Show clock-in button for HOD/manager users (not admin/hr who don't clock in via platform)
+  const sbClockBtn = document.getElementById('sb-clock-btn');
+  if(sbClockBtn){
+    const showClock = CU.role==='hod'||CU.role==='manager'||
+      (CU.role!=='admin'&&CU.role!=='hr'&&CU.role!=='kiosk'&&CU.empId);
+    sbClockBtn.style.display = showClock ? 'block' : 'none';
+  }
   // Show company switcher for super admin (jerome848)
   const switcherWrap = document.getElementById('company-switcher-wrap');
   if(switcherWrap){
