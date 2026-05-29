@@ -13134,9 +13134,9 @@ async function boot(){
       const _rEmp = _findHodEmp();
       const _rCM  = _rEmp?.clockMode||'kiosk';
       if(CU.role==='admin'||CU.role==='hr'){
-        renderDashboard();
+        loadAndRenderDashboard();
       } else if(CU.role==='hod'||CU.role==='manager'){
-        renderDashboard();
+        loadAndRenderDashboard();
       } else if(_rCM==='qr'||_rCM==='hod'||_rCM==='simple'){
         showEmployeeClockInScreen(CU);
       } else {
@@ -13352,7 +13352,7 @@ async function doLogin(){
     applyPermissions();applyStoredBranding();initInactivityTracking();startAutoClockTimer();
     const _saSw = document.getElementById('company-switcher');
     if(_saSw){ _saSw.value = String(_COMPANY_ID); }
-    renderDashboard();
+    loadAndRenderDashboard();
     return;
   }
 
@@ -13446,10 +13446,10 @@ async function doLogin(){
   const _dLoginCM = _dLoginEmp?.clockMode||'kiosk';
   if(user.role==='admin'||user.role==='hr'){
     // Admin/HR always go straight to dashboard
-    renderDashboard();
+    loadAndRenderDashboard();
   } else if(user.role==='hod'||user.role==='manager'){
     // HOD/Manager go straight to dashboard — they can clock in from the attendance page
-    renderDashboard();
+    loadAndRenderDashboard();
   } else if(_dLoginCM==='qr'||_dLoginCM==='hod'||_dLoginCM==='simple'){
     // Employee with mobile clock-in enabled — show clock-in screen
     showEmployeeClockInScreen(user);
@@ -19903,7 +19903,7 @@ function openFullHRPlatform(){
   if(sb) sb.style.display='';
   applyPermissions();
   applyStoredBranding();
-  renderDashboard();
+  loadAndRenderDashboard();
   SS.set('hrPlatform', true);
 }
 
