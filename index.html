@@ -13445,13 +13445,15 @@ async function doLogin(){
   if(_dLoginEmp && !CU.empId){ CU.empId = _dLoginEmp.id; }
   if(_dLoginEmp && _dLoginEmp.userId && !CU.id) CU.id = _dLoginEmp.userId;
   const _dLoginCM = _dLoginEmp?.clockMode||'kiosk';
-  if(_dLoginCM==='qr'||_dLoginCM==='hod'){
+  if(user.role==='admin'||user.role==='hr'){
+    // Admin/HR always go straight to dashboard
+    renderDashboard();
+  } else if(user.role==='hod'||user.role==='manager'){
+    // HOD/Manager go straight to dashboard — they can clock in from the attendance page
+    renderDashboard();
+  } else if(_dLoginCM==='qr'||_dLoginCM==='hod'||_dLoginCM==='simple'){
+    // Employee with mobile clock-in enabled — show clock-in screen
     showEmployeeClockInScreen(user);
-  } else if(user.role==='admin'||user.role==='hr'){
-    renderDashboard();
-  } else if(user.role==='manager'){
-    renderDashboard();
-    setTimeout(()=>showManagerLoginChoice(user), 400);
   } else {
     showEmployeeClockInScreen(user);
   }
