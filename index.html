@@ -20005,12 +20005,21 @@ async function loginPinSubmit(){
     if(e){e.textContent='Enter all 4 digits.';e.style.display='block';}
     return;
   }
-  const pinHash = simpleHash(_loginPin);
 
-  // Set company from selector before loading data
+  // Require company selection before PIN login
   const loginCompanyEl = document.getElementById('login-company');
-  const selectedCompanyId = loginCompanyEl && loginCompanyEl.value ? parseInt(loginCompanyEl.value) : _COMPANY_ID||1;
+  const selectedCompanyId = loginCompanyEl && loginCompanyEl.value ? parseInt(loginCompanyEl.value) : 0;
+  if(!selectedCompanyId){
+    _loginPin='';
+    updateLoginDots();
+    const e=document.getElementById('lerr-pin');
+    if(e){e.textContent='Please select your company first.';e.style.display='block';}
+    setTimeout(()=>{ if(e)e.style.display='none'; },4000);
+    return;
+  }
   _COMPANY_ID = selectedCompanyId;
+
+  const pinHash = simpleHash(_loginPin);
 
   // Ensure Supabase is connected (uses embedded creds as fallback)
   ensureSB();
@@ -20111,6 +20120,16 @@ function toggleLoginMode(){
   const btn         = document.getElementById('toggle-login-mode');
   if(!pinSection||!passSection) return;
   const showingPass = passSection.style.display!=='none';
+  // If switching TO pin mode, require company selection first
+  if(showingPass){
+    const loginCompanyEl = document.getElementById('login-company');
+    if(!loginCompanyEl || !loginCompanyEl.value){
+      toast('Please select your company before using PIN clock-in.','error');
+      // Highlight the company selector
+      if(loginCompanyEl){ loginCompanyEl.focus(); loginCompanyEl.style.outline='2px solid var(--red)'; setTimeout(()=>loginCompanyEl.style.outline='',2000); }
+      return;
+    }
+  }
   passSection.style.display = showingPass ? 'none' : '';
   pinSection.style.display  = showingPass ? '' : 'none';
   if(btn) btn.textContent = showingPass
@@ -23008,7 +23027,7 @@ function toggleEmpClockMode(empId, newMode){
 function getLeaveApprovalContext(){
   const isHR = CU.role==='admin'||CU.role==='hr';
   // Check employee record for HOD flags (primary source of truth)
-  const emp = CU.empId ? gE(CU.empId) : null;
+  const emp = _findHodEmp();
   // Also check hr_users for legacy role=manager support
   const u = getUsers().find(u=>
     (CU.empId&&String(u.empId)===String(CU.empId))||
@@ -23632,23 +23651,52 @@ function isEmpAdminOrHR(emp){
   return false;
 }
 
+function _findHodEmp(){
+  if(!CU) return null;
+  const allEmps = getEmps();
+  // 1. By CU.empId (most reliable)
+  if(CU.empId){ const e=gE(CU.empId); if(e) return e; }
+  // 2. By userId link — employee whose userId matches CU.id
+  if(CU.id){ const e=allEmps.find(e=>String(e.userId)===String(CU.id)); if(e) return e; }
+  // 3. By exact name match (case-insensitive)
+  if(CU.name){ const cuName=CU.name.toLowerCase().trim();
+    const e=allEmps.find(e=>e.name&&e.name.toLowerCase().trim()===cuName); if(e) return e; }
+  // 4. By partial name match (first name + last name, handles "Siva Chocken" vs "Siva CHOCKEN")
+  if(CU.name){ const parts=CU.name.toLowerCase().trim().split(/\s+/);
+    const e=allEmps.find(e=>{ if(!e.name) return false;
+      const ep=e.name.toLowerCase().trim().split(/\s+/);
+      return parts.every(p=>ep.some(ep2=>ep2.startsWith(p)||p.startsWith(ep2)));
+    }); if(e) return e; }
+  // 5. By phone/email match
+  if(CU.phone||CU.email){ const e=allEmps.find(e=>
+    (CU.phone&&e.phone&&e.phone.replace(/\D/g,'')===CU.phone.replace(/\D/g,''))||
+    (CU.email&&e.email&&e.email.toLowerCase()===CU.email?.toLowerCase())
+  ); if(e) return e; }
+  return null;
+}
+
 function getScopedEmps(){
   const all = getEmps().filter(e=>e.status!=='offboarded');
   if(!CU) return all;
   if(CU.role==='admin'||CU.role==='hr') return all;
-  const hodEmp = CU.empId ? gE(CU.empId) :
-    getEmps().find(e=>e.name&&CU.name&&e.name.toLowerCase()===CU.name.toLowerCase()) || null;
+  const hodEmp = _findHodEmp();
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
     const myName = hodEmp?.name || CU.name;
     const myDept = hodEmp?.dept || null;
     // Team = direct reports + same dept employees (excluding admin/hr accounts)
-    return all.filter(e=>
+    const team = all.filter(e=>
       !isEmpAdminOrHR(e) &&
       (e.manager === myName ||
       (myDept && e.dept === myDept && String(e.id) !== String(hodEmp?.id)))
     );
+    // Always include self if found
+    if(hodEmp && !team.find(e=>String(e.id)===String(hodEmp.id))){
+      team.unshift(hodEmp);
+    }
+    return team;
   }
   // Viewer — only self
+  if(hodEmp) return [hodEmp];
   if(CU.empId) return all.filter(e=>String(e.id)===String(CU.empId));
   return [];
 }
@@ -23658,8 +23706,7 @@ function getScopedLeaveEmps(){
   const all = getEmps().filter(e=>e.status!=='offboarded');
   if(!CU) return all;
   if(CU.role==='admin'||CU.role==='hr') return all;
-  const hodEmp = CU.empId ? gE(CU.empId) :
-    getEmps().find(e=>e.name&&CU.name&&e.name.toLowerCase()===CU.name.toLowerCase()) || null;
+  const hodEmp = _findHodEmp();
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
     const myName = hodEmp?.name || CU.name;
     const myDept = hodEmp?.dept || null;
