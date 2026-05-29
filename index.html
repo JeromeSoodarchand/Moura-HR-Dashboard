@@ -477,34 +477,26 @@ html {
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ── RESEND EMAIL CONFIGURATION ───────────────────────────────────────────────
-const _RESEND_API_KEY = 're_h6NSX16U_KYVuaCYs75nrard1fgFnVt4H';
-const _RESEND_FROM    = 'SolentraHR <hr@solentrahr.com>';
-const _RESEND_URL     = 'https://api.resend.com/emails';
+// Email sent via Cloudflare Worker (server-side) to avoid CORS issues with Resend
+// Worker URL — update this after deploying the worker to Cloudflare
+const _EMAIL_WORKER_URL = 'https://solentrahr-email.jerome-8c5.workers.dev';
 
 async function sendEmail({to, subject, html}){
   if(!to) return;
   const emails = Array.isArray(to) ? to : [to];
   const validEmails = emails.filter(e=>e&&e.includes('@'));
-  if(!validEmails.length) return;
+  if(!validEmails.length){ console.warn('[Email] No valid email addresses'); return; }
   try{
-    const resp = await fetch(_RESEND_URL, {
+    const resp = await fetch(_EMAIL_WORKER_URL, {
       method: 'POST',
-      headers: {
-        'Authorization': 'Bearer '+_RESEND_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        from: _RESEND_FROM,
-        to: validEmails,
-        subject,
-        html
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: validEmails, subject, html })
     });
     const result = await resp.json();
     if(!resp.ok) console.warn('[Email] Send failed:', result);
     else console.log('[Email] Sent to', validEmails.join(', '));
     return result;
-  } catch(e){ console.warn('[Email] Error:', e); }
+  } catch(e){ console.warn('[Email] Worker error:', e); }
 }
 
 function emailLeaveRequestToHOD(emp, hod, req){
