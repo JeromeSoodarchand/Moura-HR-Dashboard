@@ -17601,6 +17601,19 @@ async function renderAttendance(){
   }
   // Auto clock-in/out self-clocking employees before loading records
   await autoClockSelfClockingEmployees().catch(()=>{});
+
+  // Diagnostic — show in panel so we can see what's happening on Edge
+  const _dbgTbody = document.getElementById('att-tbody');
+  const _dbgEmpId = CU ? (CU.empId||'none') : 'NO CU';
+  const _dbgHod = _findHodEmp();
+  const _dbgScoped = getScopedEmps();
+  if(_dbgTbody) _dbgTbody.innerHTML = '<tr><td colspan="8" style="font-family:monospace;font-size:11px;padding:12px;background:#f0f4ff;color:#333">'+
+    'CU.id='+( CU&&CU.id||'?')+' | CU.empId='+_dbgEmpId+' | CU.role='+(CU&&CU.role||'?')+' | CU.name='+(CU&&CU.name||'?')+'<br>'+
+    'hodEmp found: '+(  _dbgHod?_dbgHod.name+' (id='+_dbgHod.id+', isHOD='+_dbgHod.isHOD+', dept='+_dbgHod.dept+')'  :'null')+'<br>'+
+    'scopedEmps: '+_dbgScoped.length+' — '+_dbgScoped.map(e=>e.name+'('+e.id+')').join(', ')+'<br>'+
+    'total emps in cache: '+getEmps().length+
+  '</td></tr>';
+
   const [sbRecs, locs] = await Promise.all([dbGetAttendance(todayStr(),todayStr()),dbGetLocations()]);
   _attLocations = locs;
   // Merge Supabase records with local-only records not yet synced
@@ -17608,6 +17621,12 @@ async function renderAttendance(){
   const sbIds = new Set(sbRecs.map(r=>String(r.id)));
   const localOnly = local.filter(r=>!sbIds.has(String(r.id)));
   _attendance = [...sbRecs, ...localOnly];
+
+  // Append attendance count to diagnostic
+  if(_dbgTbody) _dbgTbody.innerHTML += '<tr><td colspan="8" style="font-family:monospace;font-size:11px;padding:4px 12px;background:#f0f4ff;color:#333">'+
+    'attendance records fetched: '+sbRecs.length+' | local: '+localOnly.length+
+  '</td></tr>';
+
   renderAttLiveBoard();
   renderAttMetrics();
   renderAttReportFilters();
