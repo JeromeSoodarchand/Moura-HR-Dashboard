@@ -476,6 +476,111 @@ html {
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+// ── RESEND EMAIL CONFIGURATION ───────────────────────────────────────────────
+const _RESEND_API_KEY = 're_h6NSX16U_KYVuaCYs75nrard1fgFnVt4H';
+const _RESEND_FROM    = 'SolentraHR <hr@solentrahr.com>';
+const _RESEND_URL     = 'https://api.resend.com/emails';
+
+async function sendEmail({to, subject, html}){
+  if(!to) return;
+  const emails = Array.isArray(to) ? to : [to];
+  const validEmails = emails.filter(e=>e&&e.includes('@'));
+  if(!validEmails.length) return;
+  try{
+    const resp = await fetch(_RESEND_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer '+_RESEND_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: _RESEND_FROM,
+        to: validEmails,
+        subject,
+        html
+      })
+    });
+    const result = await resp.json();
+    if(!resp.ok) console.warn('[Email] Send failed:', result);
+    else console.log('[Email] Sent to', validEmails.join(', '));
+    return result;
+  } catch(e){ console.warn('[Email] Error:', e); }
+}
+
+function emailLeaveRequestToHOD(emp, hod, req){
+  const leaveLabel = getLEAVE_TYPES()[req.type]?.label || req.type;
+  const dateRange  = req.days>1 ? fDate(req.fromDate)+' – '+fDate(req.toDate) : fDate(req.fromDate);
+  const subject    = `Leave Request — ${emp.name} (${req.days} day${req.days>1?'s':''})`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+      <div style="background:#1E1445;padding:20px 24px;border-radius:8px 8px 0 0">
+        <h2 style="color:#C9A84C;margin:0;font-size:20px">SolentraHR</h2>
+        <p style="color:#CADCFC;margin:4px 0 0;font-size:13px">Leave Request Notification</p>
+      </div>
+      <div style="background:#f9f9f9;padding:24px;border:1px solid #e5e7eb;border-radius:0 0 8px 8px">
+        <p style="margin:0 0 16px;font-size:15px">Hi <strong>${hod.name}</strong>,</p>
+        <p style="margin:0 0 16px;font-size:14px;color:#374151">
+          <strong>${emp.name}</strong> has submitted a leave request that requires your approval.
+        </p>
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:20px">
+          <table style="width:100%;font-size:13px;border-collapse:collapse">
+            <tr><td style="padding:6px 0;color:#6b7280;width:120px">Employee</td><td style="padding:6px 0;font-weight:600">${emp.name}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280">Leave Type</td><td style="padding:6px 0">${leaveLabel}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280">Period</td><td style="padding:6px 0">${dateRange}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280">Days</td><td style="padding:6px 0">${req.days} day${req.days>1?'s':''}</td></tr>
+            ${req.reason?`<tr><td style="padding:6px 0;color:#6b7280">Reason</td><td style="padding:6px 0">${req.reason}</td></tr>`:''}
+          </table>
+        </div>
+        <p style="margin:0 0 20px;font-size:13px;color:#6b7280">
+          Please log in to SolentraHR to approve or reject this request.
+        </p>
+        <div style="border-top:1px solid #e5e7eb;padding-top:16px;font-size:12px;color:#9ca3af">
+          This is an automated notification from SolentraHR. Please do not reply to this email.
+        </div>
+      </div>
+    </div>`;
+  return sendEmail({to: hod.email, subject, html});
+}
+
+function emailLeaveResultToEmployee(emp, req, approved, note){
+  const leaveLabel = getLEAVE_TYPES()[req.type]?.label || req.type;
+  const dateRange  = req.days>1 ? fDate(req.fromDate)+' – '+fDate(req.toDate) : fDate(req.fromDate);
+  const status     = approved ? 'Approved' : 'Rejected';
+  const color      = approved ? '#059669' : '#DC2626';
+  const subject    = `Your Leave Request has been ${status}`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+      <div style="background:#1E1445;padding:20px 24px;border-radius:8px 8px 0 0">
+        <h2 style="color:#C9A84C;margin:0;font-size:20px">SolentraHR</h2>
+        <p style="color:#CADCFC;margin:4px 0 0;font-size:13px">Leave Request Update</p>
+      </div>
+      <div style="background:#f9f9f9;padding:24px;border:1px solid #e5e7eb;border-radius:0 0 8px 8px">
+        <p style="margin:0 0 16px;font-size:15px">Hi <strong>${emp.name}</strong>,</p>
+        <div style="background:${approved?'#ECFDF5':'#FEF2F2'};border:1px solid ${color};border-radius:8px;padding:12px 16px;margin-bottom:20px">
+          <p style="margin:0;font-size:15px;font-weight:700;color:${color}">
+            Your leave request has been <span style="text-transform:uppercase">${status}</span>
+          </p>
+        </div>
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:20px">
+          <table style="width:100%;font-size:13px;border-collapse:collapse">
+            <tr><td style="padding:6px 0;color:#6b7280;width:120px">Leave Type</td><td style="padding:6px 0">${leaveLabel}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280">Period</td><td style="padding:6px 0">${dateRange}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280">Days</td><td style="padding:6px 0">${req.days} day${req.days>1?'s':''}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280">Status</td><td style="padding:6px 0;font-weight:600;color:${color}">${status}</td></tr>
+            ${note?`<tr><td style="padding:6px 0;color:#6b7280">Note</td><td style="padding:6px 0">${note}</td></tr>`:''}
+          </table>
+        </div>
+        <p style="margin:0 0 20px;font-size:13px;color:#6b7280">
+          Please log in to SolentraHR to view your leave balance and request history.
+        </p>
+        <div style="border-top:1px solid #e5e7eb;padding-top:16px;font-size:12px;color:#9ca3af">
+          This is an automated notification from SolentraHR. Please do not reply to this email.
+        </div>
+      </div>
+    </div>`;
+  return sendEmail({to: emp.email, subject, html});
+}
+
 // ── CROSS-BROWSER COMPATIBILITY POLYFILLS ────────────────────────────────────
 
 // Element.closest polyfill (IE, old Edge)
@@ -23332,36 +23437,43 @@ async function notifyHODofLeaveRequest(req){
   const emp = gE(req.empId);
   if(!emp) return;
 
+  // Build list of HODs to notify
+  let hodList = [];
   if(req.requesterIsHOD){
-    // Notify all senior HODs (by employee flag or hr_users flag)
-    const seniorHODs = getEmps().filter(e=>e.isSeniorHOD&&e.status!=='offboarded');
-    seniorHODs.forEach(e=>{
-      addNotif(`${emp.name} (HOD) requested ${req.days}d leave — awaiting your approval.`,'info');
-    });
-    // Also notify hr_users with seniorHOD flag (legacy)
-    getUsers().filter(u=>u.seniorHOD&&u.active).forEach(u=>{
-      addNotif(`${emp.name} (HOD) requested ${req.days}d leave — awaiting your approval.`,'info');
-    });
+    // HOD submitting — notify senior HODs
+    hodList = getEmps().filter(e=>e.isSeniorHOD&&e.status!=='offboarded');
+    // Also check hr_users for senior HODs
+    const seniorUsers = getUsers().filter(u=>u.seniorHOD&&u.active&&u.email);
+    seniorUsers.forEach(u=>{ if(!hodList.find(e=>e.email===u.email)) hodList.push({name:u.name,email:u.email}); });
   } else {
-    // Notify the employee's HOD — find by manager name match
-    // Primary: find employee with isHOD=true whose name matches emp.manager
+    // Regular employee — notify their HOD/manager
     const hodEmp = getEmps().find(e=>
       e.isHOD && e.status!=='offboarded' &&
       (e.name===emp.manager || String(e.id)===String(emp.managerId))
     );
-    if(hodEmp){
-      addNotif(`${emp.name} requested ${req.days}d leave — requires your approval.`,'info');
-    }
-    // Fallback: notify hr_users with role=manager whose name matches
+    if(hodEmp) hodList.push(hodEmp);
+    // Fallback: hr_user with manager role
     const mgrUser = getUsers().find(u=>
-      u.role==='manager'&&u.active&&(
-        u.name===emp.manager||(u.empId&&String(u.empId)===String(emp.managerId))
-      )
+      (u.role==='manager'||u.role==='hod')&&u.active&&
+      (u.name===emp.manager||(u.empId&&String(u.empId)===String(emp.managerId)))
     );
-    if(mgrUser&&!hodEmp){
-      addNotif(`${emp.name} requested ${req.days}d leave — requires your approval.`,'info');
-    }
+    if(mgrUser && !hodList.length) hodList.push({name:mgrUser.name, email:mgrUser.email});
+    // Also notify HR users of the same company
+    const hrUsers = getUsers().filter(u=>(u.role==='admin'||u.role==='hr')&&u.active&&u.email&&(u.companyId===_COMPANY_ID||!u.companyId));
+    hrUsers.forEach(u=>{ if(!hodList.find(e=>e.email===u.email)) hodList.push({name:u.name,email:u.email}); });
   }
+
+  // In-app notification
+  addNotif(`${emp.name} requested ${req.days}d leave — requires approval.`,'info');
+
+  // Send email to each HOD with an email address
+  for(const hod of hodList){
+    if(hod.email) await emailLeaveRequestToHOD(emp, hod, req).catch(()=>{});
+  }
+
+  // If no email found, show WhatsApp fallback modal
+  const hasEmail = hodList.some(h=>h.email);
+  if(!hasEmail) showHODLeaveNotifModal(req);
 }
 
 
@@ -23460,30 +23572,35 @@ async function notifyEmployeeLeaveResult(req, approved, note){
   const dateRange  = req.days > 1
     ? fDate(req.fromDate) + ' – ' + fDate(req.toDate)
     : fDate(req.fromDate);
+  const statusLabel = approved ? 'Approved' : 'Rejected';
 
-  // In-app notification (shows in bell if employee is logged in)
-  const statusLabel = approved ? '✅ Approved' : '❌ Rejected';
+  // In-app notification
   addNotif(
-    `${statusLabel}: Your ${leaveLabel} request (${dateRange}) has been ${approved?'approved':'rejected'}.`
-    + (note ? ' Reason: ' + note : ''),
+    `${approved?'✅':'❌'} Your ${leaveLabel} request (${dateRange}) has been ${statusLabel.toLowerCase()}.`
+    + (note ? ' Note: ' + note : ''),
     approved ? 'success' : 'error'
   );
 
-  // WhatsApp button for HR to notify employee
-  if(canEdit() && emp.phone){
-    const clean = emp.phone.replace(/[^0-9+]/g,'');
-    const to    = clean.startsWith('+') ? clean.slice(1) : clean;
-    const msg   = approved
-      ? `Hi ${emp.name}, your ${leaveLabel} request for ${dateRange} (${req.days} day${req.days>1?'s':''}) has been approved. Enjoy your leave!`
-      : `Hi ${emp.name}, your ${leaveLabel} request for ${dateRange} has been rejected.${note?' Reason: '+note:''} Please contact HR for more information.`;
-    const waUrl = `https://wa.me/${to}?text=${encodeURIComponent(msg)}`;
-    // Show a brief toast with WA link
-    toast(
-      `${emp.name} notified in-app. <a href="${waUrl}" target="_blank" rel="noopener" style="color:#25D366;font-weight:600;margin-left:6px">📲 Also send WhatsApp</a>`,
-      approved ? 'success' : 'info'
-    );
+  // Send email to employee if they have an email address
+  if(emp.email){
+    await emailLeaveResultToEmployee(emp, req, approved, note).catch(()=>{});
+    toast(`Leave ${statusLabel.toLowerCase()} — email sent to ${emp.name}.`, approved?'success':'info');
   } else {
-    toast(`Leave ${approved?'approved':'rejected'} for ${emp.name}.`, approved?'success':'info');
+    // Fallback: WhatsApp link if no email
+    if(emp.phone){
+      const clean = emp.phone.replace(/[^0-9+]/g,'');
+      const to    = clean.startsWith('+') ? clean.slice(1) : clean;
+      const msg   = approved
+        ? `Hi ${emp.name}, your ${leaveLabel} request for ${dateRange} (${req.days} day${req.days>1?'s':''}) has been approved.`
+        : `Hi ${emp.name}, your ${leaveLabel} request for ${dateRange} has been rejected.${note?' Reason: '+note:''} Please contact HR.`;
+      const waUrl = `https://wa.me/${to}?text=${encodeURIComponent(msg)}`;
+      toast(
+        `Leave ${statusLabel.toLowerCase()} — no email on file. <a href="${waUrl}" target="_blank" rel="noopener" style="color:#25D366;font-weight:600;margin-left:6px">📲 Notify via WhatsApp</a>`,
+        approved?'success':'info'
+      );
+    } else {
+      toast(`Leave ${statusLabel.toLowerCase()} for ${emp.name}. No email or phone on file.`, approved?'success':'info');
+    }
   }
 }
 
