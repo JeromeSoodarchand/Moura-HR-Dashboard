@@ -17389,7 +17389,8 @@ async function dbGetAttendance(dateFrom, dateTo){
     if(dateFrom) q = q.gte('date', dateFrom);
     if(dateTo)   q = q.lte('date', dateTo);
     if(_COMPANY_ID && companyEmpIds.size > 0){
-      q = q.in('emp_id', [...companyEmpIds]);
+      // Use filter() instead of in() for broader Supabase client version compatibility
+      q = q.filter('emp_id', 'in', '('+[...companyEmpIds].join(',')+')');
     } else if(_COMPANY_ID){
       // Fallback: no employees loaded yet — filter by company_id column instead
       q = q.eq('company_id', _COMPANY_ID);
