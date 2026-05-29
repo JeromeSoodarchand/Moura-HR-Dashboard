@@ -11340,6 +11340,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     <button class="nav-tab" data-perm="view_employees" onclick="showPage('leave',this)">
       <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg></div>
       <span class="tab-label">Leave</span>
+      <span id="leave-nav-badge" style="display:none;background:var(--red);color:#fff;border-radius:10px;font-size:9px;font-weight:700;padding:1px 5px;margin-left:4px">0</span>
     </button>
     <button class="nav-tab" data-perm="view_training" onclick="showPage('training',this)">
       <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
@@ -13012,6 +13013,9 @@ async function loadAndRenderDashboard(){
   const [emps,evts,asgn]=await Promise.all([dbGetEmployees(),dbGetEvents(),dbGetAssignments()]);
   _cache={emps,evts,asgn,progs:_cache.progs};
   renderDashboard();
+  // Update leave pending badge after data loads
+  if(!_leaveRequests){ try{ _leaveRequests=await dbGetLeaveRequests(); }catch(e){} }
+  renderLeavePending();
 }
 async function loadAndRenderEmployees(){
   _cache.emps=await dbGetEmployees();
@@ -19475,6 +19479,9 @@ function renderLeavePending(){
   const pending = getVisibleLeaveRequests().filter(r=>r.status==='pending')
     .sort((a,b)=>new Date(a.fromDate)-new Date(b.fromDate));
   if(cnt) cnt.textContent = pending.length+' pending';
+  // Update nav badge
+  const badge = document.getElementById('leave-nav-badge');
+  if(badge){ badge.textContent=pending.length; badge.style.display=pending.length?'inline':'none'; }
   if(!pending.length){
     el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:12px 0;text-align:center">✅ No pending requests</div>';
     return;
@@ -19495,7 +19502,7 @@ function renderLeavePending(){
         <span class="leave-type-badge" style="background:${cfg.bg};color:${cfg.color}">${cfg.label}</span>
       </div>
       ${req.reason?`<div class="txs tm" style="margin-bottom:10px;padding-left:36px">${req.reason}</div>`:''}
-      ${canEdit()?`<div style="display:flex;gap:6px;padding-left:36px">
+      ${(canEdit()||canApproveRequest(req))?`<div style="display:flex;gap:6px;padding-left:36px">
         <button class="btn btn-xs btn-primary" onclick="reviewLeave('${req.id}','approved')">✓ Approve</button>
         <button class="btn btn-xs btn-danger" onclick="reviewLeave('${req.id}','rejected')">✕ Reject</button>
       </div>`:''}
