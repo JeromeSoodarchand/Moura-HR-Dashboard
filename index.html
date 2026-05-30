@@ -19537,8 +19537,8 @@ function renderLeavePending(){
       </div>
       ${req.reason?`<div class="txs tm" style="margin-bottom:10px;padding-left:36px">${req.reason}</div>`:''}
       ${(canEdit()||canApproveRequest(req))?`<div style="display:flex;gap:6px;padding-left:36px">
-        <button class="btn btn-xs btn-primary" onclick="reviewLeave('${req.id}','approved')">✓ Approve</button>
-        <button class="btn btn-xs btn-danger" onclick="reviewLeave('${req.id}','rejected')">✕ Reject</button>
+        <button class="btn btn-xs btn-primary" onclick="approveLeave('${req.id}',true)">✓ Approve</button>
+        <button class="btn btn-xs btn-danger" onclick="approveLeave('${req.id}',false)">✕ Reject</button>
       </div>`:''}
     </div>`;
   }).join('');
@@ -19787,62 +19787,8 @@ async function submitLeaveRequest(){
 }
 
 async function reviewLeave(reqId, newStatus){
-  const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
-  if(!req) return;
-
-  let note = '';
-  if(newStatus==='rejected'){
-    note = prompt('Reason for rejection (optional):','');
-    if(note===null) return; // cancelled
-  }
-
-  req.status     = newStatus;
-  req.reviewedBy = CU.name;
-  req.reviewNote = note||'';
-  req.updatedAt  = new Date().toISOString();
-
-  // Update HOD/HR status based on role
-  if(CU.role==='admin'||CU.role==='hr'){
-    req.hrStatus      = newStatus;
-    req.hrApprovedBy  = CU.name;
-    req.hrApprovedAt  = new Date().toISOString();
-    req.hodStatus     = newStatus; // HR approval overrides HOD too
-    req.hodApprovedBy = CU.name;
-    req.hodApprovedAt = new Date().toISOString();
-  } else if(CU.role==='hod'||CU.role==='manager'||_findHodEmp()?.isHOD){
-    req.hodStatus     = newStatus;
-    req.hodApprovedBy = CU.name;
-    req.hodApprovedAt = new Date().toISOString();
-  }
-
-  showLoader('Saving…');
-  await dbSaveLeaveRequest(req);
-  hideLoader();
-
-  const idx = _leaveRequests.findIndex(r=>String(r.id)===String(reqId));
-  if(idx>=0) _leaveRequests[idx]=req;
-  S.set('leaveRequests', _leaveRequests);
-
-  const emp = gE(req.empId);
-  const action = {approved:'Approved',rejected:'Rejected',cancelled:'Cancelled'}[newStatus]||newStatus;
-  addNotif(`${action}: ${emp?emp.name:'Employee'} leave request (${getLEAVE_TYPES()[req.type].label})`,newStatus==='approved'?'success':'info');
-  dbAddAudit(CU.name,`${action} leave for ${emp?emp.name:req.empId}: ${req.fromDate} to ${req.toDate}`);
-
-  // Notify employee by email
-  notifyEmployeeLeaveResult(req, newStatus==='approved', note);
-
-  if(newStatus==='approved'){
-    // Log as event
-    const evtDesc=`${getLEAVE_TYPES()[req.type]?.label||req.type} approved: ${fDate(req.fromDate)} – ${fDate(req.toDate)} (${req.days} days)`;
-    const newEvt={id:Date.now(),empId:req.empId,type:'absence',date:req.fromDate,desc:evtDesc,loggedBy:CU.name,notified:true};
-    dbSaveEvent(newEvt).then(ev=>{_cache.evts.unshift(ev||newEvt);saveEvts(_cache.evts);}).catch(()=>{});
-    // Deduct leave balance
-    deductLeaveBalance(req).catch(()=>{});
-  }
-
-  // Reload from Supabase to get fresh data then re-render
-  _leaveRequests = await dbGetLeaveRequests();
-  renderLeave();
+  // Simplified — delegates to approveLeave
+  return approveLeave(reqId, newStatus==='approved');
 }
 
 function openEditBalance(empId){
@@ -23287,85 +23233,45 @@ function getRequestDisplayStatus(req){
   return {label:'Pending HOD', cls:'b-warning', detail:''};
 }
 
-async function hodApproveLeave(reqId, approve){
-  const ctx = getLeaveApprovalContext();
+async function approveLeave(reqId, approve){
   const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
   if(!req){ toast('Request not found.','error'); return; }
 
-  const note = approve ? '' : prompt('Reason for rejection (optional):')||'';
+  const note = approve ? '' : (prompt('Reason for rejection (optional):')||'');
+  if(note === null) return; // cancelled
 
-  if(req.requesterIsHOD){
-    // Senior HOD approving another HOD's leave — final decision
-    req.status         = approve ? 'approved' : 'rejected';
-    req.hrStatus       = approve ? 'approved' : 'rejected';
-    req.hrApprovedBy   = ctx.userName;
-    req.hrApprovedAt   = new Date().toISOString();
-    req.reviewNote     = note;
-  } else {
-    // Manager approving regular employee at HOD stage
-    req.hodStatus      = approve ? 'approved' : 'rejected';
-    req.hodApprovedBy  = ctx.userName;
-    req.hodApprovedAt  = new Date().toISOString();
-    req.reviewNote     = note;
-    if(!approve){
-      req.status = 'rejected';
-      req.hrStatus = 'rejected';
-    }
+  // Single stage — whoever approves (HOD or HR) is final
+  req.status        = approve ? 'approved' : 'rejected';
+  req.hodStatus     = approve ? 'approved' : 'rejected';
+  req.hrStatus      = approve ? 'approved' : 'rejected';
+  req.hodApprovedBy = CU.name;
+  req.hodApprovedAt = new Date().toISOString();
+  req.hrApprovedBy  = CU.name;
+  req.hrApprovedAt  = new Date().toISOString();
+  req.reviewedBy    = CU.name;
+  req.reviewNote    = note||'';
+  req.updatedAt     = new Date().toISOString();
+
+  showLoader('Saving…');
+  try{
+    await dbSaveLeaveRequest(req);
+    const idx = _leaveRequests.findIndex(r=>String(r.id)===String(reqId));
+    if(idx>=0) _leaveRequests[idx] = req;
+    S.set('leaveRequests', _leaveRequests);
+    if(approve) await deductLeaveBalance(req).catch(()=>{});
+  } catch(e){ toast('Save error: '+e.message,'error'); hideLoader(); return; }
+  hideLoader();
+
+  dbAddAudit(CU.name, `${approve?'Approved':'Rejected'} leave for ${gE(req.empId)?.name}`);
+  notifyEmployeeLeaveResult(req, approve, note);
+
+  if(approve){
+    const evtDesc = `${getLEAVE_TYPES()[req.type]?.label||req.type} approved: ${fDate(req.fromDate)} – ${fDate(req.toDate)} (${req.days} days)`;
+    const newEvt = {id:Date.now(),empId:req.empId,type:'absence',date:req.fromDate,desc:evtDesc,loggedBy:CU.name,notified:true};
+    dbSaveEvent(newEvt).then(ev=>{_cache.evts.unshift(ev||newEvt);saveEvts(_cache.evts);}).catch(()=>{});
   }
 
-  showLoader('Saving…');
-  try{
-    const saved = await dbSaveLeaveRequest(req);
-    const idx = _leaveRequests.findIndex(r=>String(r.id)===String(reqId));
-    if(idx>=0) _leaveRequests[idx] = saved||req;
-
-    if(approve && !req.requesterIsHOD){
-      // Notify HR to confirm
-      addNotif(`Leave request for ${gE(req.empId)?.name} approved by HOD — awaiting HR confirmation.`,'info');
-      sendHRAlert('leave_hod_approved', getHREmails(), {
-        employeeName: gE(req.empId)?.name, type:req.type,
-        from:fDate(req.fromDate), to:fDate(req.toDate),
-        hodName:ctx.userName
-      });
-    } else if(approve && req.requesterIsHOD){
-      addNotif(`${gE(req.empId)?.name}'s leave approved by Senior HOD.`,'success');
-      // Update leave balance
-      await deductLeaveBalance(req);
-    } else {
-      addNotif(`Leave request for ${gE(req.empId)?.name} rejected by ${ctx.userName}.`,'info');
-    }
-  } catch(e){ toast('Save error.','error'); }
-  hideLoader();
-  dbAddAudit(ctx.userName, `${approve?'Approved':'Rejected'} leave (HOD stage) for ${gE(req.empId)?.name}`);
-  toast(approve?'Leave approved.':'Leave rejected.', approve?'success':'info');
-  notifyEmployeeLeaveResult(req, approve, note);
-  renderLeave();
-}
-
-async function hrConfirmLeave(reqId, approve){
-  const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
-  if(!req){ toast('Request not found.','error'); return; }
-
-  const note = approve ? '' : prompt('Reason for rejection (optional):')||'';
-
-  req.status       = approve ? 'approved' : 'rejected';
-  req.hrStatus     = approve ? 'approved' : 'rejected';
-  req.hrApprovedBy = CU.name;
-  req.hrApprovedAt = new Date().toISOString();
-  if(note) req.reviewNote = (req.reviewNote?req.reviewNote+' | ':'')+note;
-
-  showLoader('Saving…');
-  try{
-    const saved = await dbSaveLeaveRequest(req);
-    const idx = _leaveRequests.findIndex(r=>String(r.id)===String(reqId));
-    if(idx>=0) _leaveRequests[idx] = saved||req;
-    if(approve) await deductLeaveBalance(req);
-    addNotif(`Leave ${approve?'confirmed':'rejected'} for ${gE(req.empId)?.name}.`, approve?'success':'info');
-  } catch(e){ toast('Save error.','error'); }
-  hideLoader();
-  dbAddAudit(CU.name, `HR ${approve?'confirmed':'rejected'} leave for ${gE(req.empId)?.name}`);
-  toast(approve?'Leave confirmed by HR.':'Leave rejected.', approve?'success':'info');
-  notifyEmployeeLeaveResult(req, approve, note);
+  _leaveRequests = await dbGetLeaveRequests();
   renderLeave();
 }
 
