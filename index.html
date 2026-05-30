@@ -12500,10 +12500,10 @@ const S={
   set:(k,v)=>{try{localStorage.setItem('pdhr_'+k,JSON.stringify(v));}catch{}}
 };
 
-// ── Session storage (localStorage for persistence across refresh/tab close) ───
+// ── Session storage (sessionStorage — per-tab, survives refresh, not shared across tabs) ───
 const SS={
-  get:(k,def=null)=>{try{const v=localStorage.getItem('pdhr_'+k);return v?JSON.parse(v):def;}catch{return def;}},
-  set:(k,v)=>{try{localStorage.setItem('pdhr_'+k,JSON.stringify(v));}catch{}}
+  get:(k,def=null)=>{try{const v=sessionStorage.getItem('pdhr_'+k);return v?JSON.parse(v):def;}catch{return def;}},
+  set:(k,v)=>{try{sessionStorage.setItem('pdhr_'+k,JSON.stringify(v));}catch{}}
 }
 
 // ── APP SESSION SECRET — must match app.app_secret in Supabase SQL ──────────
@@ -13151,7 +13151,7 @@ async function assignMissingEmpNos(){
 
 async function boot(){
   // Pre-boot: if session exists, show loader immediately so login screen never flickers
-  const _preSession = localStorage.getItem('pdhr_session');
+  const _preSession = sessionStorage.getItem('pdhr_session');
   if(_preSession){
     try{
       const _ps = JSON.parse(_preSession);
