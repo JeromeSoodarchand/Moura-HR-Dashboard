@@ -15226,6 +15226,11 @@ function viewEmp(id){
       <button class="btn btn-primary btn-sm" onclick="closeModal()">Close</button>
     </div>`;
   document.getElementById('mb').classList.add('open');
+  // Render fingerprint status
+  setTimeout(()=>{
+    const fpEl = document.getElementById('fp-section-'+id);
+    if(fpEl) renderFPStatus(id, fpEl);
+  }, 50);
   }catch(err){
     console.error('viewEmp error:',err);
     toast('Error loading employee profile: '+err.message,'error');
