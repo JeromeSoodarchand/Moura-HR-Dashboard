@@ -19237,15 +19237,17 @@ async function dbSaveLeaveRequest(req){
     Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
     if(req.id && String(req.id).length<=12){
       const {data,error} = await _sb.from('leave_requests').update(row).eq('id',req.id).select();
-      if(error){ console.error('Update leave error:',error); return req; }
+      if(error){ console.error('Update leave error:',error); toast('Leave save error: '+error.message,'error'); return req; }
       return data ? {...req, id:data.id} : req;
     } else {
       delete row.id;
+      console.log('[Leave] Inserting row:', JSON.stringify(row));
       const {data,error} = await _sb.from('leave_requests').insert(row).select();
-      if(error){ console.error('Insert leave error:',error); return req; }
-      return data ? {...req, id:data.id} : req;
+      if(error){ console.error('Insert leave error:',error); toast('Leave save error: '+error.message,'error'); return req; }
+      console.log('[Leave] Insert result:', JSON.stringify(data));
+      return data ? {...req, id:data[0]?.id||data.id} : req;
     }
-  } catch(e){ console.error('dbSaveLeaveRequest exception:',e); return req; }
+  } catch(e){ console.error('dbSaveLeaveRequest exception:',e); toast('Leave save error: '+e.message,'error'); return req; }
 }
 
 async function dbGetLeaveBalances(){
