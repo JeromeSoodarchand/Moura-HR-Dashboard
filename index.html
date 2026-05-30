@@ -589,16 +589,15 @@ async function dbGetCompanies(){
   try{
     const {data,error} = await _sb.from('companies').select('*').eq('active',true).order('id');
     if(error||!data||!data.length){
-      // Table may not exist yet — use defaults
-      _companiesCache = local.length>=7 ? local : defaults;
+      // Table missing or empty — use hardcoded defaults
+      _companiesCache = defaults;
     } else {
+      // Trust Supabase completely — no merging with defaults
       _companiesCache = data.map(r=>({id:r.id, name:r.name, slug:r.slug||'', active:r.active!==false}));
-      // Merge with defaults to ensure all are present
-      defaults.forEach(d=>{ if(!_companiesCache.find(c=>c.id===d.id)) _companiesCache.push(d); });
       _companiesCache.sort((a,b)=>a.id-b.id);
       S.set('companies', _companiesCache);
     }
-  } catch(e){ _companiesCache = local.length>=7 ? local : defaults; }
+  } catch(e){ _companiesCache = defaults; }
   return _companiesCache;
 }
 
@@ -766,7 +765,8 @@ async function kioskFingerprintAuth(){
         allowCredentials,
         userVerification: 'required',
         timeout: 30000
-      }
+      },
+      mediation: 'required'  // force explicit user interaction (biometric prompt)
     });
 
     // Find matching credential
@@ -820,9 +820,17 @@ async function kioskFingerprintForSelected(){
 // Register fingerprint for an employee — called from HR platform
 async function registerFingerprintForEmp(empId){
   if(!fpSupported()){
-    toast('WebAuthn / fingerprint not supported on this device.','error');
+    toast('Fingerprint not supported on this device.','error');
     return false;
   }
+  // Check if platform authenticator (biometric) is available
+  try{
+    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    if(!available){
+      toast('No biometric sensor found. Please enrol a fingerprint in device Settings → Security → Biometrics.','error');
+      return false;
+    }
+  } catch(e){}
   const emp = gE(empId);
   if(!emp){ toast('Employee not found.','error'); return false; }
 
@@ -840,9 +848,13 @@ async function registerFingerprintForEmp(empId){
           { type:'public-key', alg:-257 } // RS256
         ],
         authenticatorSelection: {
-          authenticatorAttachment: 'platform', // device biometric only
+          authenticatorAttachment: 'platform',
           userVerification: 'required',
-          requireResidentKey: false
+          requireResidentKey: true,        // forces FIDO2 resident key = biometric
+          residentKey: 'required'          // explicit biometric requirement
+        },
+        extensions: {
+          credProps: true                  // request credential properties
         },
         timeout: 60000,
         attestation: 'none'
@@ -17854,8 +17866,8 @@ function copyInviteMessage(){
 
 
 initSupabase();
-// Clear stale companies cache so it reloads fresh
-if((S.get("companies",[]).length||0)<7){ S.set("companies",[]); _companiesCache=null; }
+// Always clear companies cache on load so Supabase is the source of truth
+S.set('companies',[]); _companiesCache=null;
 populateCompanyDropdowns().catch(()=>{});
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&document.getElementById('login-screen').style.display==='flex')doLogin();
