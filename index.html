@@ -19490,13 +19490,14 @@ function getVisibleLeaveRequests(){
   if(!CU) return all;
   if(CU.role==='admin'||CU.role==='hr') return all;
   // HOD/manager: see own team + other HODs
-  const hodEmp = CU.empId ? gE(CU.empId) : null;
-  if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
+  const hodEmp = _findHodEmp();
+  if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='hod' || CU.role==='manager'){
     const scopedIds = new Set(getScopedLeaveEmps().map(e=>String(e.id)));
     return all.filter(r=>scopedIds.has(String(r.empId)));
   }
   // Regular viewer: own requests only
-  if(CU.empId) return all.filter(r=>String(r.empId)===String(CU.empId));
+  const empId = CU.empId || hodEmp?.id;
+  if(empId) return all.filter(r=>String(r.empId)===String(empId));
   return [];
 }
 
@@ -19742,6 +19743,7 @@ async function submitLeaveRequest(){
   const req = {
     id:Date.now(), empId, type, fromDate:from, toDate:to,
     days, reason,
+    companyId: _COMPANY_ID || CU?.companyId || 1,
     // Two-stage approval for regular employees, one-stage for HODs
     status:'pending',
     hodStatus: requesterIsHOD ? 'needs_senior_hod' : requesterIsHR ? 'approved' : 'pending',
@@ -23468,30 +23470,37 @@ async function notifyHODofLeaveRequest(req){
   const emp = gE(req.empId);
   if(!emp) return;
 
-  // Build list of HODs to notify
+  // Build list of people to notify
   let hodList = [];
-  if(req.requesterIsHOD){
-    // HOD submitting — notify senior HODs
-    hodList = getEmps().filter(e=>e.isSeniorHOD&&e.status!=='offboarded');
-    // Also check hr_users for senior HODs
-    const seniorUsers = getUsers().filter(u=>u.seniorHOD&&u.active&&u.email);
-    seniorUsers.forEach(u=>{ if(!hodList.find(e=>e.email===u.email)) hodList.push({name:u.name,email:u.email}); });
-  } else {
-    // Regular employee — notify their HOD/manager
-    const hodEmp = getEmps().find(e=>
-      e.isHOD && e.status!=='offboarded' &&
-      (e.name===emp.manager || String(e.id)===String(emp.managerId))
-    );
-    if(hodEmp) hodList.push(hodEmp);
-    // Fallback: hr_user with manager role
-    const mgrUser = getUsers().find(u=>
-      (u.role==='manager'||u.role==='hod')&&u.active&&
-      (u.name===emp.manager||(u.empId&&String(u.empId)===String(emp.managerId)))
-    );
-    if(mgrUser && !hodList.length) hodList.push({name:mgrUser.name, email:mgrUser.email});
-    // Also notify HR users of the same company
-    const hrUsers = getUsers().filter(u=>(u.role==='admin'||u.role==='hr')&&u.active&&u.email&&(u.companyId===_COMPANY_ID||!u.companyId));
-    hrUsers.forEach(u=>{ if(!hodList.find(e=>e.email===u.email)) hodList.push({name:u.name,email:u.email}); });
+
+  // Always notify the direct manager first (by emp.manager name match)
+  // This applies to both HODs and regular employees
+  const directMgrEmp = getEmps().find(e=>
+    e.status!=='offboarded' &&
+    emp.manager && e.name === emp.manager
+  );
+  if(directMgrEmp && directMgrEmp.email) hodList.push(directMgrEmp);
+
+  // Also find the manager's HR user account (may have different email)
+  const directMgrUser = getUsers().find(u=>
+    u.active && emp.manager &&
+    (u.name===emp.manager || (u.empId && String(u.empId)===String(directMgrEmp?.id)))
+  );
+  if(directMgrUser?.email && !hodList.find(h=>h.email===directMgrUser.email)){
+    hodList.push({name:directMgrUser.name, email:directMgrUser.email});
+  }
+
+  if(req.requesterIsHOD && !hodList.length){
+    // HOD with no direct manager set — fall back to Senior HODs
+    const seniorHODs = getEmps().filter(e=>e.isSeniorHOD&&e.status!=='offboarded'&&e.email);
+    seniorHODs.forEach(e=>{ if(!hodList.find(h=>h.email===e.email)) hodList.push(e); });
+  }
+
+  if(!req.requesterIsHOD && !hodList.length){
+    // Regular employee with no manager set — notify HR admin
+    const hrUsers = getUsers().filter(u=>(u.role==='admin'||u.role==='hr')&&u.active&&u.email&&
+      (u.companyId===_COMPANY_ID||!u.companyId));
+    hrUsers.forEach(u=>{ if(!hodList.find(h=>h.email===u.email)) hodList.push({name:u.name,email:u.email}); });
   }
 
   // In-app notification
