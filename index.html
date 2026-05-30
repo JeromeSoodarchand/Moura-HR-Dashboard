@@ -17866,7 +17866,13 @@ function copyInviteMessage(){
 
 
 initSupabase();
-// Always clear companies cache on load so Supabase is the source of truth
+// Cache version — increment this to force clear stale caches on all browsers
+const _CACHE_VERSION = '2';
+if(localStorage.getItem('pdhr_cache_version') !== _CACHE_VERSION){
+  localStorage.removeItem('pdhr_companies');
+  localStorage.setItem('pdhr_cache_version', _CACHE_VERSION);
+  _companiesCache = null;
+}
 S.set('companies',[]); _companiesCache=null;
 populateCompanyDropdowns().catch(()=>{});
 document.addEventListener('keydown',e=>{
