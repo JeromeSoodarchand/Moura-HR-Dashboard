@@ -19239,18 +19239,19 @@ async function dbSaveLeaveRequest(req){
     };
     Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
     if(req.id && String(req.id).length<=12){
-      const {data,error} = await _sb.from('leave_requests').update(row).eq('id',req.id).select();
+      const {error} = await _sb.from('leave_requests').update(row).eq('id',req.id);
       if(error){ console.error('Update leave error:',error); toast('Leave save error: '+error.message,'error'); return req; }
-      return data ? {...req, id:data.id} : req;
+      return req;
     } else {
       delete row.id;
-      console.log('[Leave] sbReady:', sbReady(), '| SB URL:', _sb?.supabaseUrl||'unknown');
-      console.log('[Leave] Inserting row:', JSON.stringify(row));
-      const {data,error} = await _sb.from('leave_requests').insert(row).select();
-      if(error){ console.error('Insert leave error:',error); toast('Leave save error: '+JSON.stringify(error),'error'); return req; }
-      console.log('[Leave] Insert result:', JSON.stringify(data));
-      if(!data||!data.length){ toast('Leave saved locally only — Supabase returned no data','error'); }
-      return data ? {...req, id:data[0]?.id||data.id} : req;
+      console.log('[LR] Attempting insert to leave_requests');
+      console.log('[LR] Row data:', JSON.stringify(row));
+      const {data:insData, error:insError, status:insStatus, statusText:insText} = await _sb.from('leave_requests').insert(row);
+      console.log('[LR] Insert status:', insStatus, insText);
+      console.log('[LR] Insert error:', JSON.stringify(insError));
+      console.log('[LR] Insert data:', JSON.stringify(insData));
+      if(insError){ toast('DB Error: '+insError.message+' ('+insError.code+')','error'); return req; }
+      return req;
     }
   } catch(e){ console.error('dbSaveLeaveRequest exception:',e); toast('Leave save error: '+e.message,'error'); return req; }
 }
