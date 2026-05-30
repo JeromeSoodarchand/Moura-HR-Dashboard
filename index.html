@@ -19244,13 +19244,8 @@ async function dbSaveLeaveRequest(req){
       return req;
     } else {
       delete row.id;
-      console.log('[LR] Attempting insert to leave_requests');
-      console.log('[LR] Row data:', JSON.stringify(row));
-      const {data:insData, error:insError, status:insStatus, statusText:insText} = await _sb.from('leave_requests').insert(row);
-      console.log('[LR] Insert status:', insStatus, insText);
-      console.log('[LR] Insert error:', JSON.stringify(insError));
-      console.log('[LR] Insert data:', JSON.stringify(insData));
-      if(insError){ toast('DB Error: '+insError.message+' ('+insError.code+')','error'); return req; }
+      const {error:insError} = await _sb.from('leave_requests').insert(row);
+      if(insError){ console.error('Insert leave error:',insError); toast('Leave save error: '+insError.message,'error'); return req; }
       return req;
     }
   } catch(e){ console.error('dbSaveLeaveRequest exception:',e); toast('Leave save error: '+e.message,'error'); return req; }
@@ -19501,14 +19496,9 @@ function getVisibleLeaveRequests(){
   const hodEmp = _findHodEmp();
   const scopedEmps = getScopedLeaveEmps();
   const scopedIds = new Set(scopedEmps.map(e=>String(e.id)));
-  console.log('[Leave] CU:', CU.name, 'role:', CU.role, 'empId:', CU.empId);
-  console.log('[Leave] hodEmp:', hodEmp?.name, 'isHOD:', hodEmp?.isHOD, 'dept:', hodEmp?.dept);
-  console.log('[Leave] scopedEmps:', scopedEmps.map(e=>e.name+':'+e.id).join(', '));
-  console.log('[Leave] all requests:', all.length, all.map(r=>r.empId+':'+r.status).join(', '));
+
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='hod' || CU.role==='manager'){
-    const filtered = all.filter(r=>scopedIds.has(String(r.empId)));
-    console.log('[Leave] filtered for HOD:', filtered.length);
-    return filtered;
+    return all.filter(r=>scopedIds.has(String(r.empId)));
   }
   // Regular viewer: own requests only
   const empId = CU.empId || hodEmp?.id;
@@ -19811,6 +19801,20 @@ async function reviewLeave(reqId, newStatus){
   req.reviewNote = note||'';
   req.updatedAt  = new Date().toISOString();
 
+  // Update HOD/HR status based on role
+  if(CU.role==='admin'||CU.role==='hr'){
+    req.hrStatus      = newStatus;
+    req.hrApprovedBy  = CU.name;
+    req.hrApprovedAt  = new Date().toISOString();
+    req.hodStatus     = newStatus; // HR approval overrides HOD too
+    req.hodApprovedBy = CU.name;
+    req.hodApprovedAt = new Date().toISOString();
+  } else if(CU.role==='hod'||CU.role==='manager'||_findHodEmp()?.isHOD){
+    req.hodStatus     = newStatus;
+    req.hodApprovedBy = CU.name;
+    req.hodApprovedAt = new Date().toISOString();
+  }
+
   showLoader('Saving…');
   await dbSaveLeaveRequest(req);
   hideLoader();
@@ -19824,18 +19828,20 @@ async function reviewLeave(reqId, newStatus){
   addNotif(`${action}: ${emp?emp.name:'Employee'} leave request (${getLEAVE_TYPES()[req.type].label})`,newStatus==='approved'?'success':'info');
   dbAddAudit(CU.name,`${action} leave for ${emp?emp.name:req.empId}: ${req.fromDate} to ${req.toDate}`);
 
+  // Notify employee by email
+  notifyEmployeeLeaveResult(req, newStatus==='approved', note);
+
   if(newStatus==='approved'){
-    toast(`Leave approved for ${emp?emp.name:'employee'}.`,'success');
     // Log as event
-    const evtDesc=`${getLEAVE_TYPES()[req.type].label} approved: ${fDate(req.fromDate)} – ${fDate(req.toDate)} (${req.days} days)`;
+    const evtDesc=`${getLEAVE_TYPES()[req.type]?.label||req.type} approved: ${fDate(req.fromDate)} – ${fDate(req.toDate)} (${req.days} days)`;
     const newEvt={id:Date.now(),empId:req.empId,type:'absence',date:req.fromDate,desc:evtDesc,loggedBy:CU.name,notified:true};
     dbSaveEvent(newEvt).then(ev=>{_cache.evts.unshift(ev||newEvt);saveEvts(_cache.evts);}).catch(()=>{});
-  } else if(newStatus==='rejected'){
-    toast(`Leave rejected.${note?' Reason: '+note:''}`,'info');
-  } else {
-    toast('Leave cancelled.','info');
+    // Deduct leave balance
+    deductLeaveBalance(req).catch(()=>{});
   }
 
+  // Reload from Supabase to get fresh data then re-render
+  _leaveRequests = await dbGetLeaveRequests();
   renderLeave();
 }
 
