@@ -19491,9 +19491,16 @@ function getVisibleLeaveRequests(){
   if(CU.role==='admin'||CU.role==='hr') return all;
   // HOD/manager: see own team + other HODs
   const hodEmp = _findHodEmp();
+  const scopedEmps = getScopedLeaveEmps();
+  const scopedIds = new Set(scopedEmps.map(e=>String(e.id)));
+  console.log('[Leave] CU:', CU.name, 'role:', CU.role, 'empId:', CU.empId);
+  console.log('[Leave] hodEmp:', hodEmp?.name, 'isHOD:', hodEmp?.isHOD, 'dept:', hodEmp?.dept);
+  console.log('[Leave] scopedEmps:', scopedEmps.map(e=>e.name+':'+e.id).join(', '));
+  console.log('[Leave] all requests:', all.length, all.map(r=>r.empId+':'+r.status).join(', '));
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='hod' || CU.role==='manager'){
-    const scopedIds = new Set(getScopedLeaveEmps().map(e=>String(e.id)));
-    return all.filter(r=>scopedIds.has(String(r.empId)));
+    const filtered = all.filter(r=>scopedIds.has(String(r.empId)));
+    console.log('[Leave] filtered for HOD:', filtered.length);
+    return filtered;
   }
   // Regular viewer: own requests only
   const empId = CU.empId || hodEmp?.id;
