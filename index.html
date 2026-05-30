@@ -573,6 +573,336 @@ function emailLeaveResultToEmployee(emp, req, approved, note){
   return sendEmail({to: emp.email, subject, html});
 }
 
+// ── COMPANY MANAGEMENT ───────────────────────────────────────────────────────
+let _companiesCache = null;
+
+async function dbGetCompanies(){
+  // Try localStorage cache first for speed
+  if(_companiesCache) return _companiesCache;
+  const local = S.get('companies', []);
+  if(!sbReady()){ _companiesCache = local.length ? local : getDefaultCompanies(); return _companiesCache; }
+  try{
+    const {data,error} = await _sb.from('companies').select('*').eq('active',true).order('id');
+    if(error||!data||!data.length){
+      _companiesCache = local.length ? local : getDefaultCompanies();
+    } else {
+      _companiesCache = data.map(r=>({id:r.id, name:r.name, slug:r.slug||'', active:r.active!==false}));
+      S.set('companies', _companiesCache);
+    }
+  } catch(e){ _companiesCache = local.length ? local : getDefaultCompanies(); }
+  return _companiesCache;
+}
+
+async function dbSaveCompany(company){
+  if(!sbReady()) return company;
+  try{
+    if(company.id && company.id <= 9999){
+      await _sb.from('companies').upsert({id:company.id, name:company.name, slug:company.slug||company.name.toLowerCase().replace(/[^a-z0-9]/g,'-'), active:true});
+    } else {
+      const {data} = await _sb.from('companies').insert({name:company.name, slug:company.slug||company.name.toLowerCase().replace(/[^a-z0-9]/g,'-'), active:true}).select();
+      if(data && data[0]) company.id = data[0].id;
+    }
+    _companiesCache = null; // invalidate cache
+  } catch(e){ console.error('dbSaveCompany:',e); }
+  return company;
+}
+
+async function dbDeleteCompany(id){
+  if(!sbReady()) return;
+  try{ await _sb.from('companies').update({active:false}).eq('id',id); _companiesCache=null; }
+  catch(e){ console.error('dbDeleteCompany:',e); }
+}
+
+function getDefaultCompanies(){
+  return [
+    {id:1,name:'Corevest Shared Services',slug:'corevest',active:true},
+    {id:2,name:'MTI Funeral Scheme Manager Ltd',slug:'mti',active:true},
+    {id:3,name:'Moura Operations Co Ltd',slug:'moura',active:true},
+    {id:4,name:'Eiffel Property',slug:'eiffel',active:true},
+    {id:5,name:'Stone and Granite',slug:'stone-granite',active:true},
+    {id:6,name:'Island Funeral Supplies',slug:'island-funeral',active:true},
+    {id:7,name:'Materico',slug:'materico',active:true},
+  ];
+}
+
+async function populateCompanyDropdowns(){
+  const companies = await dbGetCompanies();
+  const opts = companies.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  // Login dropdown
+  const loginSel = document.getElementById('login-company');
+  if(loginSel){
+    const cur = loginSel.value;
+    loginSel.innerHTML = '<option value="">— Select your company —</option>' + opts;
+    if(cur) loginSel.value = cur;
+  }
+  // Sidebar switcher
+  const sw = document.getElementById('company-switcher');
+  if(sw){
+    const cur = sw.value;
+    sw.innerHTML = opts;
+    if(cur) sw.value = cur;
+    else if(_COMPANY_ID) sw.value = String(_COMPANY_ID);
+  }
+}
+
+async function renderCompanyMgmt(){
+  const el = document.getElementById('company-mgmt-list');
+  if(!el) return;
+  const companies = await dbGetCompanies();
+  el.innerHTML = companies.map(c=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2);border-radius:8px;margin-bottom:6px;border:1px solid var(--border)">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600">${c.name}</div>
+        <div style="font-size:11px;color:var(--text3)">ID: ${c.id} · slug: ${c.slug||'—'}</div>
+      </div>
+      <button onclick="editCompanyName(${c.id},'${c.name.replace(/'/g,"\'")}')" class="btn btn-xs">✎ Rename</button>
+      <button onclick="deleteCompany(${c.id},'${c.name.replace(/'/g,"\'")}')" class="btn btn-xs btn-danger">✕</button>
+    </div>
+  `).join('') + `
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <input id="new-company-name" class="fi" placeholder="New company name" style="flex:1">
+      <button class="btn btn-primary" onclick="addCompany()">+ Add Company</button>
+    </div>`;
+}
+
+async function addCompany(){
+  const input = document.getElementById('new-company-name');
+  const name = input?.value.trim();
+  if(!name){ toast('Enter a company name.','error'); return; }
+  showLoader('Adding company…');
+  const company = await dbSaveCompany({name});
+  _companiesCache = null;
+  await populateCompanyDropdowns();
+  await renderCompanyMgmt();
+  if(input) input.value='';
+  hideLoader();
+  toast(name+' added successfully.','success');
+}
+
+async function editCompanyName(id, currentName){
+  const newName = prompt('Rename company:', currentName);
+  if(!newName||newName===currentName) return;
+  showLoader('Saving…');
+  await dbSaveCompany({id, name:newName});
+  _companiesCache = null;
+  await populateCompanyDropdowns();
+  await renderCompanyMgmt();
+  hideLoader();
+  toast('Company renamed.','success');
+}
+
+async function deleteCompany(id, name){
+  if(!confirm('Deactivate "'+name+'"?\n\nThis hides it from the login screen. Employee data is preserved.')) return;
+  showLoader('Deactivating…');
+  await dbDeleteCompany(id);
+  _companiesCache = null;
+  await populateCompanyDropdowns();
+  await renderCompanyMgmt();
+  hideLoader();
+  toast(name+' deactivated.','info');
+}
+
+
+// ── FINGERPRINT / WEBAUTHN ────────────────────────────────────────────────────
+// Credentials are device-bound — must re-register if tablet is replaced
+// Storage key: 'fp_creds' in localStorage → [{empId, credId, pubKey, name}]
+
+function fpSupported(){
+  return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
+}
+
+function getFPCreds(){
+  try{ return JSON.parse(localStorage.getItem('fp_creds')||'[]'); }
+  catch(e){ return []; }
+}
+
+function saveFPCreds(creds){
+  localStorage.setItem('fp_creds', JSON.stringify(creds));
+}
+
+function getFPCredsForEmp(empId){
+  return getFPCreds().filter(c=>String(c.empId)===String(empId));
+}
+
+function hasFPRegistered(empId){
+  return getFPCredsForEmp(empId).length > 0;
+}
+
+// Called when kiosk opens — show fingerprint button if any creds registered
+function initKioskFingerprint(){
+  const btn = document.getElementById('kiosk-fingerprint-btn');
+  if(!btn) return;
+  const hasCreds = fpSupported() && getFPCreds().length > 0;
+  btn.style.display = hasCreds ? 'block' : 'none';
+}
+
+// Fingerprint auth — identify employee from stored credentials
+async function kioskFingerprintAuth(){
+  if(!fpSupported()){ toast('Fingerprint not supported on this device.','error'); return; }
+  const creds = getFPCreds();
+  if(!creds.length){ toast('No fingerprints registered yet.','error'); return; }
+
+  try{
+    // Build allowCredentials list from all stored creds
+    const allowCredentials = creds.map(c=>({
+      id: base64ToBuffer(c.credId),
+      type: 'public-key',
+      transports: ['internal']
+    }));
+
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        allowCredentials,
+        userVerification: 'required',
+        timeout: 30000
+      }
+    });
+
+    // Find matching credential
+    const credIdB64 = bufferToBase64(assertion.rawId);
+    const matched = creds.find(c=>c.credId===credIdB64);
+    if(!matched){ toast('Fingerprint not recognised.','error'); return; }
+
+    // Found — proceed with clock-in for this employee
+    const emp = gE(matched.empId);
+    if(!emp){ toast('Employee not found.','error'); return; }
+    kioskSelectEmp(emp.id);
+
+  } catch(e){
+    if(e.name==='NotAllowedError'){
+      toast('Fingerprint cancelled or timed out.','info');
+    } else {
+      console.warn('[FP] Auth error:', e);
+      toast('Fingerprint failed — please use PIN.','error');
+    }
+  }
+}
+
+// Fingerprint auth for already-selected employee (fallback from PIN step)
+async function kioskFingerprintForSelected(){
+  const empId = window._kioskSelectedEmpId;
+  if(!empId){ toast('No employee selected.','error'); return; }
+  const creds = getFPCredsForEmp(empId);
+  if(!creds.length){ toast('No fingerprint registered for this employee.','error'); return; }
+
+  try{
+    const allowCredentials = creds.map(c=>({
+      id: base64ToBuffer(c.credId),
+      type: 'public-key',
+      transports: ['internal']
+    }));
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    await navigator.credentials.get({
+      publicKey: { challenge, allowCredentials, userVerification:'required', timeout:30000 }
+    });
+    // Auth passed — submit clock-in directly
+    await kioskSubmit(true);
+  } catch(e){
+    if(e.name==='NotAllowedError'){
+      toast('Fingerprint cancelled — use PIN instead.','info');
+    } else {
+      toast('Fingerprint failed — use PIN.','error');
+    }
+  }
+}
+
+// Register fingerprint for an employee — called from HR platform
+async function registerFingerprintForEmp(empId){
+  if(!fpSupported()){
+    toast('WebAuthn / fingerprint not supported on this device.','error');
+    return false;
+  }
+  const emp = gE(empId);
+  if(!emp){ toast('Employee not found.','error'); return false; }
+
+  try{
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const userId = new TextEncoder().encode(String(empId));
+
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        challenge,
+        rp: { name:'SolentraHR', id: window.location.hostname },
+        user: { id:userId, name:emp.name, displayName:emp.name },
+        pubKeyCredParams: [
+          { type:'public-key', alg:-7 },  // ES256
+          { type:'public-key', alg:-257 } // RS256
+        ],
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform', // device biometric only
+          userVerification: 'required',
+          requireResidentKey: false
+        },
+        timeout: 60000,
+        attestation: 'none'
+      }
+    });
+
+    // Store credential
+    const credId = bufferToBase64(credential.rawId);
+    const creds = getFPCreds().filter(c=>!(String(c.empId)===String(empId)&&c.credId===credId));
+    creds.push({ empId, credId, name:emp.name, registeredAt:new Date().toISOString() });
+    saveFPCreds(creds);
+    dbAddAudit(CU?.name||'HR', 'Registered fingerprint for: '+emp.name);
+    toast('Fingerprint registered for '+emp.name+'!','success');
+    return true;
+
+  } catch(e){
+    if(e.name==='NotAllowedError'){
+      toast('Registration cancelled or timed out.','info');
+    } else if(e.name==='InvalidStateError'){
+      toast('This fingerprint is already registered for '+emp.name+'.','info');
+    } else {
+      console.warn('[FP] Registration error:', e);
+      toast('Registration failed: '+e.message,'error');
+    }
+    return false;
+  }
+}
+
+function removeFingerprintForEmp(empId){
+  if(!confirm('Remove fingerprint for this employee?')) return;
+  const creds = getFPCreds().filter(c=>String(c.empId)!==String(empId));
+  saveFPCreds(creds);
+  dbAddAudit(CU?.name||'HR', 'Removed fingerprint for emp '+empId);
+  toast('Fingerprint removed.','info');
+  // Refresh employee profile if open
+  const fpSection = document.getElementById('fp-section-'+empId);
+  if(fpSection) renderFPStatus(empId, fpSection);
+}
+
+function renderFPStatus(empId, container){
+  if(!container) return;
+  const supported = fpSupported();
+  const registered = hasFPRegistered(empId);
+  container.innerHTML = supported
+    ? registered
+      ? `<div style="display:flex;align-items:center;gap:10px">
+          <span style="color:var(--green);font-size:13px">✓ Fingerprint registered on this device</span>
+          <button class="btn btn-xs btn-danger" onclick="removeFingerprintForEmp(${empId})">Remove</button>
+         </div>`
+      : `<button class="btn btn-primary" onclick="registerFingerprintForEmp(${empId}).then(ok=>{ if(ok) renderFPStatus(${empId}, document.getElementById('fp-section-${empId}')); })">
+           👆 Register Fingerprint
+         </button>`
+    : `<span style="color:var(--text3);font-size:12px">Fingerprint not supported on this device</span>`;
+}
+
+// Utility: buffer ↔ base64url
+function bufferToBase64(buffer){
+  return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+function base64ToBuffer(b64){
+  const b64std = b64.replace(/-/g,'+').replace(/_/g,'/');
+  const bin = atob(b64std);
+  const buf = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+  return buf.buffer;
+}
+
 // ── CROSS-BROWSER COMPATIBILITY POLYFILLS ────────────────────────────────────
 
 // Element.closest polyfill (IE, old Edge)
@@ -11255,13 +11585,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
       <div class="lf"><label>Company</label>
         <select id="login-company" class="fi" style="width:100%" onchange="updateLoginBranding(this.value)">
           <option value="">— Select your company —</option>
-          <option value="1">Corevest Shared Services</option>
-          <option value="2">MTI Funeral Scheme Manager Ltd</option>
-          <option value="3">Moura Operations Co Ltd</option>
-          <option value="4">Eiffel Property</option>
-          <option value="5">Stone and Granite</option>
-          <option value="6">Island Funeral Supplies</option>
-          <option value="7">Materico</option>
+          <option value="">— Select your company —</option>
         </select>
       </div>
       <div class="lf"><label>Username</label><input id="lu" placeholder="Username" autocomplete="off" oninput="document.getElementById('lerr').style.display='none'"></div>
@@ -11374,13 +11698,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
       <div id="company-switcher-wrap" style="display:none;padding:8px 12px;border-top:1px solid var(--border);margin-bottom:4px">
         <div style="font-size:10px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Company</div>
         <select id="company-switcher" style="width:100%;font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer" onchange="switchCompany(this.value)">
-          <option value="1">Corevest Shared Services</option>
-          <option value="2">MTI Funeral Scheme Manager Ltd</option>
-          <option value="3">Moura Operations Co Ltd</option>
-          <option value="4">Eiffel Property</option>
-          <option value="5">Stone and Granite</option>
-          <option value="6">Island Funeral Supplies</option>
-          <option value="7">Materico</option>
+          <option value="">— Select company —</option>
         </select>
       </div>
       <div class="sb-user">
@@ -12227,6 +12545,15 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
               <div id="custom-holidays-list" style="max-height:220px;overflow-y:auto"></div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- COMPANY MANAGEMENT (super admin only) -->
+      <div class="card" id="company-mgmt-section" style="display:none;margin-bottom:16px">
+        <div class="ch"><span class="ct">🏢 Company Management</span></div>
+        <div class="cb">
+          <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Add, rename or deactivate companies. Deactivated companies are hidden from the login screen but data is preserved.</div>
+          <div id="company-mgmt-list"></div>
         </div>
       </div>
 
@@ -14758,6 +15085,7 @@ function viewEmp(id){
         <button class="btn btn-sm pdf-btn" onclick="generateEmployeePDF(${id})">⬇ PDF Report</button>
         ${canEdit()?`<button class="btn btn-sm btn-primary" onclick="closeModal();openModal('editEmployee',${id})">Edit</button>`:''}
         ${canEdit()?`<button class="btn btn-sm" style="background:var(--navy);color:#fff;border-color:var(--navy)" onclick="openGrantHRAccess(${id})">🔑 HR Access</button>`:''}
+        ${canEdit()?`<div id="fp-section-${id}" style="margin-top:4px"></div>`:''}
       </div>
     </div>
     <div class="ig">
@@ -15277,6 +15605,11 @@ function openModal(type,pid,pid2){
     if(cm){
       if(empForModal?.clockMode) cm.value = empForModal.clockMode;
       _initClockModeSchedule(cm, empForModal);
+    }
+    // Render fingerprint status in employee profile
+    if(empForModal && typeof pid !== 'undefined'){
+      const fpEl = document.getElementById('fp-section-'+pid);
+      if(fpEl) renderFPStatus(pid, fpEl);
     }
   }, 0);
   document.getElementById('mb').classList.add('open');
@@ -16321,6 +16654,10 @@ function renderSettings(){
   const sc2=document.getElementById('settings-secondary-color');
   pc.oninput=()=>{document.getElementById('settings-primary-hex').value=pc.value;updateColorPreview(pc.value,document.getElementById('settings-secondary-color').value);};
   sc2.oninput=()=>{document.getElementById('settings-secondary-hex').value=sc2.value;updateColorPreview(document.getElementById('settings-primary-color').value,sc2.value);};
+  // Show company management for super admin only
+  const compMgmt = document.getElementById('company-mgmt-section');
+  if(compMgmt) compMgmt.style.display = (CU?.username==='jerome848') ? 'block' : 'none';
+  if(CU?.username==='jerome848') renderCompanyMgmt();
   // Populate working hours fields from saved settings
   const wsEl = document.getElementById('settings-work-start');
   const weEl = document.getElementById('settings-work-end');
@@ -16718,6 +17055,8 @@ function renderSettingsSummary(cs){
 async function applyStoredBranding(){
   // Load global public holidays (shared across all companies, company_id=0)
   loadGlobalPublicHolidays().catch(()=>{});
+  // Populate company dropdowns from Supabase
+  populateCompanyDropdowns().catch(()=>{});
   // Always try to load fresh from Supabase first — filtered by current company
   if(sbReady() && _COMPANY_ID){
     try{
@@ -17500,6 +17839,7 @@ function copyInviteMessage(){
 
 
 initSupabase();
+populateCompanyDropdowns().catch(()=>{});
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&document.getElementById('login-screen').style.display==='flex')doLogin();
   if(e.key==='Escape')closeModal();
@@ -20272,6 +20612,8 @@ function isSuperAdmin(){
 
 
 function openKiosk(){
+  // Init fingerprint button visibility
+  initKioskFingerprint();
   // Find kiosk account(s)
   const kioskUsers = getUsers().filter(u=>u.role==='kiosk'&&u.active!==false);
   if(!kioskUsers.length){
@@ -20357,6 +20699,10 @@ function kioskFilterEmps(val){
 }
 
 function kioskSelectEmp(empId){
+  window._kioskSelectedEmpId = empId;
+  // Show fingerprint fallback button if this emp has a registered fingerprint
+  const fpBtn = document.getElementById('kiosk-fp-fallback-btn');
+  if(fpBtn) fpBtn.style.display = (fpSupported() && hasFPRegistered(empId)) ? 'block' : 'none';
   const emp = getEmps().find(e=>String(e.id)===String(empId));
   if(!emp) return;
   _kioskSelectedEmp = emp;
@@ -24363,7 +24709,11 @@ function renderUserAuditSummary(){
     <!-- STEP 1: Select name -->
     <div id="kiosk-step-select" style="display:block">
       <div class="kiosk-prompt">Who are you?</div>
-      <div style="max-height:280px;overflow-y:auto;margin-bottom:10px" id="kiosk-emp-list"></div>
+      <button id="kiosk-fingerprint-btn" onclick="kioskFingerprintAuth()"
+        style="display:none;width:100%;padding:14px;margin-bottom:14px;background:linear-gradient(135deg,#059669,#047857);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.02em">
+        👆 Clock In / Out with Fingerprint
+      </button>
+      <div style="max-height:240px;overflow-y:auto;margin-bottom:10px" id="kiosk-emp-list"></div>
       <input id="kiosk-search" placeholder="Search name…"
         style="width:100%;padding:10px 12px;border:1px solid rgba(255,255,255,.15);border-radius:10px;background:rgba(255,255,255,.08);color:#fff;font-size:14px;font-family:inherit;outline:none;margin-bottom:8px"
         oninput="kioskFilterEmps(this.value)">
@@ -24378,6 +24728,10 @@ function renderUserAuditSummary(){
           <div style="color:rgba(255,255,255,.4);font-size:11px;margin-top:1px">← Tap to change</div>
         </div>
       </div>
+      <button id="kiosk-fp-fallback-btn" onclick="kioskFingerprintForSelected()" 
+        style="display:none;width:100%;padding:10px;margin-bottom:10px;background:rgba(5,150,105,0.2);color:#6ee7b7;border:1px solid rgba(5,150,105,0.4);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">
+        👆 Use Fingerprint Instead
+      </button>
       <div class="kiosk-prompt" id="kiosk-prompt">Enter your PIN</div>
       <div class="kiosk-pin-display" id="kiosk-dots">
         <div class="kiosk-dot" id="kd0"></div>
