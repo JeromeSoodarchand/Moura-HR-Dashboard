@@ -580,16 +580,25 @@ async function dbGetCompanies(){
   // Try localStorage cache first for speed
   if(_companiesCache) return _companiesCache;
   const local = S.get('companies', []);
-  if(!sbReady()){ _companiesCache = local.length ? local : getDefaultCompanies(); return _companiesCache; }
+  // Always ensure all 7 default companies are present
+  const defaults = getDefaultCompanies();
+  if(!sbReady()){
+    _companiesCache = local.length>=7 ? local : defaults;
+    return _companiesCache;
+  }
   try{
     const {data,error} = await _sb.from('companies').select('*').eq('active',true).order('id');
     if(error||!data||!data.length){
-      _companiesCache = local.length ? local : getDefaultCompanies();
+      // Table may not exist yet — use defaults
+      _companiesCache = local.length>=7 ? local : defaults;
     } else {
       _companiesCache = data.map(r=>({id:r.id, name:r.name, slug:r.slug||'', active:r.active!==false}));
+      // Merge with defaults to ensure all are present
+      defaults.forEach(d=>{ if(!_companiesCache.find(c=>c.id===d.id)) _companiesCache.push(d); });
+      _companiesCache.sort((a,b)=>a.id-b.id);
       S.set('companies', _companiesCache);
     }
-  } catch(e){ _companiesCache = local.length ? local : getDefaultCompanies(); }
+  } catch(e){ _companiesCache = local.length>=7 ? local : defaults; }
   return _companiesCache;
 }
 
@@ -15598,20 +15607,21 @@ function openModal(type,pid,pid2){
         <button class="btn btn-primary" id="import-btn" onclick="executeImport()" style="display:none">Import records</button>
       </div>`;
   }
-  // Init clock mode schedule panel if editEmployee/addEmployee modal
+  // Init post-render hooks for employee modals
   setTimeout(()=>{
-    const cm = document.getElementById('fclockmode');
     const empForModal = typeof pid !== 'undefined' ? gE(pid) : null;
+    // Clock mode schedule panel
+    const cm = document.getElementById('fclockmode');
     if(cm){
       if(empForModal?.clockMode) cm.value = empForModal.clockMode;
       _initClockModeSchedule(cm, empForModal);
     }
-    // Render fingerprint status in employee profile
-    if(empForModal && typeof pid !== 'undefined'){
+    // Render fingerprint status — works for both view and edit profile
+    if(typeof pid !== 'undefined' && pid){
       const fpEl = document.getElementById('fp-section-'+pid);
       if(fpEl) renderFPStatus(pid, fpEl);
     }
-  }, 0);
+  }, 50);
   document.getElementById('mb').classList.add('open');
 }
 
@@ -17839,6 +17849,8 @@ function copyInviteMessage(){
 
 
 initSupabase();
+// Clear stale companies cache so it reloads fresh
+if((S.get("companies",[]).length||0)<7){ S.set("companies",[]); _companiesCache=null; }
 populateCompanyDropdowns().catch(()=>{});
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&document.getElementById('login-screen').style.display==='flex')doLogin();
