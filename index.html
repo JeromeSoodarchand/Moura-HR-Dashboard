@@ -19187,8 +19187,9 @@ function getLEAVE_TYPES(){
 // ── DB helpers ────────────────────────────────────────────────────────────────
 async function dbGetLeaveRequests(){
   ensureSB();
+  if(!sbReady()) ensureSB(); // retry once
   const local = _leaveRequests || S.get('leaveRequests', []);
-  if(!sbReady()) return local;
+  if(!sbReady()){ console.warn('[Leave] Supabase not ready — returning local only'); return local; }
   try{
     let q = _sb.from('leave_requests').select('*').order('id',{ascending:false});
     if(_COMPANY_ID) q = q.eq('company_id', _COMPANY_ID);
@@ -19218,6 +19219,8 @@ async function dbSaveLeaveRequest(req){
   if(i>=0) local[i]=req; else local.push(req);
   S.set('leaveRequests', local);
   _leaveRequests = local;
+  // Always try to initialize Supabase before saving
+  if(!sbReady()) ensureSB();
   if(!sbReady()) return req;
   try{
     const row = {
@@ -19903,6 +19906,8 @@ function exportLeaveCSV(){
 
 
 async function showEmployeeClockInScreen(user){
+  // Ensure Supabase is connected for leave requests and attendance
+  if(!sbReady()) ensureSB();
   // Load locations and employees if needed
   ensureSB();
   if(!_attLocations||!_attLocations.length){
