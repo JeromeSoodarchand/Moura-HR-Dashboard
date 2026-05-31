@@ -499,15 +499,22 @@ async function sendEmail({to, subject, html}){
   } catch(e){ console.warn('[Email] Worker error:', e); }
 }
 
-function emailLeaveRequestToHOD(emp, hod, req){
+async function emailLeaveRequestToHOD(emp, hod, req){
   const leaveLabel = getLEAVE_TYPES()[req.type]?.label || req.type;
   const dateRange  = req.days>1 ? fDate(req.fromDate)+' – '+fDate(req.toDate) : fDate(req.fromDate);
-  const subject    = `Leave Request — ${emp.name} (${req.days} day${req.days>1?'s':''})`;
+  const subject    = `Action Required: Leave Request — ${emp.name} (${req.days} day${req.days>1?'s':''})`;
+
+  // Generate one-click approval token
+  const token = await generateApprovalToken(req.id);
+  const workerBase = _EMAIL_WORKER_URL;
+  const approveUrl = token ? `${workerBase}/approve?token=${token}` : null;
+  const rejectUrl  = token ? `${workerBase}/reject?token=${token}`  : null;
+
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
       <div style="background:#1E1445;padding:20px 24px;border-radius:8px 8px 0 0">
         <h2 style="color:#C9A84C;margin:0;font-size:20px">SolentraHR</h2>
-        <p style="color:#CADCFC;margin:4px 0 0;font-size:13px">Leave Request Notification</p>
+        <p style="color:#CADCFC;margin:4px 0 0;font-size:13px">Leave Request — Action Required</p>
       </div>
       <div style="background:#f9f9f9;padding:24px;border:1px solid #e5e7eb;border-radius:0 0 8px 8px">
         <p style="margin:0 0 16px;font-size:15px">Hi <strong>${hod.name}</strong>,</p>
@@ -523,9 +530,21 @@ function emailLeaveRequestToHOD(emp, hod, req){
             ${req.reason?`<tr><td style="padding:6px 0;color:#6b7280">Reason</td><td style="padding:6px 0">${req.reason}</td></tr>`:''}
           </table>
         </div>
+        ${approveUrl ? `
+        <div style="display:flex;gap:12px;margin-bottom:20px">
+          <a href="${approveUrl}" style="flex:1;display:block;background:#059669;color:#fff;text-align:center;padding:14px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:700">
+            ✓ Approve
+          </a>
+          <a href="${rejectUrl}" style="flex:1;display:block;background:#DC2626;color:#fff;text-align:center;padding:14px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:700">
+            ✕ Reject
+          </a>
+        </div>
+        <p style="margin:0 0 16px;font-size:12px;color:#9ca3af;text-align:center">
+          One click to approve or reject — no login required. Links expire in 7 days.
+        </p>` : `
         <p style="margin:0 0 20px;font-size:13px;color:#6b7280">
           Please log in to SolentraHR to approve or reject this request.
-        </p>
+        </p>`}
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;font-size:12px;color:#9ca3af">
           This is an automated notification from SolentraHR. Please do not reply to this email.
         </div>
@@ -994,68 +1013,8 @@ if(!window.CSS||!window.CSS.supports){ window.CSS={supports:function(){ return t
 })();
 
 
-function renderUserAuditSummary(){
-  const el = document.getElementById('account-audit-summary');
-  if(!el) return;
-  const emps = getEmps().filter(e=>e.status!=='offboarded');
-  const users = getUsers();
-  const missing = emps.filter(emp=>!findUserForEmployee(emp, users));
-  const noPIN = emps.filter(emp=>{
-    const u = findUserForEmployee(emp, users);
-    return u && !u.pinHash && !u.passwordHash;
-  });
-  if(missing.length===0 && noPIN.length===0){
-    el.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--green-light);border-radius:var(--radius);font-size:13px;color:var(--green-deep)">&#10003; All active employees have user accounts.</div>';
-    return;
-  }
-  let html = '';
-  if(missing.length > 0){
-    html += '<div style="background:var(--red-light);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px">'
-          + '<div style="font-size:13px;font-weight:600;color:var(--red-deep);margin-bottom:8px">&#9888; '
-          + missing.length + ' employee(s) have no login account:</div>'
-          + missing.map(function(emp){
-              return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06)">'
-                + '<div><span style="font-size:13px;font-weight:500">' + emp.name + '</span>'
-                + '<span style="font-size:11.5px;color:var(--text3);margin-left:8px">' + (emp.dept||'') + '</span></div>'
-                + '<button class="btn btn-xs btn-primary" data-empid="' + emp.id + '" onclick="auditCreateOne(this.dataset.empid)">+ Create</button>'
-                + '</div>';
-            }).join('')
-          + '<div style="margin-top:10px">'
-          + '<button class="btn btn-primary" onclick="auditCreateAll()">Create All Missing Accounts</button>'
-          + '</div></div>';
-  }
-  if(noPIN.length > 0){
-    html += '<div style="background:var(--amber-light);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px">'
-          + '<div style="font-size:13px;font-weight:600;color:var(--amber-deep);margin-bottom:8px">&#128273; '
-          + noPIN.length + ' employee(s) have an account but no PIN set:</div>'
-          + noPIN.map(function(emp){
-              var u = findUserForEmployee(emp, users);
-              return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06)">'
-                + '<div><span style="font-size:13px;font-weight:500">' + emp.name + '</span>'
-                + '<span style="font-size:11.5px;color:var(--text3);margin-left:8px">' + (emp.dept||'') + '</span></div>'
-                + (u ? '<button class="btn btn-xs" data-uid="' + u.id + '" data-name="' + emp.name + '" onclick="openSetPINModal(this.dataset.uid, this.dataset.name)">Set PIN</button>' : '')
-                + '</div>';
-            }).join('')
-          + '</div>';
-  }
-  el.innerHTML = html;
-}
 
-async function auditCreateAll(){
-  const emps = getEmps().filter(e=>e.status!=='offboarded');
-  const users = getUsers();
-  const missing = emps.filter(emp=>!findUserForEmployee(emp, users));
-  if(!missing.length){ toast('No missing accounts.','info'); return; }
-  showLoader('Creating ' + missing.length + ' accounts...');
-  let created = 0;
-  for(var i=0; i<missing.length; i++){
-    try{ await autoCreateAccountForNewEmployee(missing[i]); created++; }
-    catch(e){ console.error('Failed for '+missing[i].name, e); }
-  }
-  hideLoader();
-  toast(created + ' account(s) created. Set PINs via the list below.','success');
-  renderUserMgmt();
-}
+
 </script>
 <style>
 :root{
@@ -18822,8 +18781,6 @@ const _origBoot = window.boot;
 // ── Rebuild renderLeaveTable with approval actions ─────────────────────────────
 // Notify HOD when a new leave request is submitted by their department employee
 // ── JOB TITLES + CUSTOM EVENT TYPES + KIOSK LEAVE ───────────────────────────
-async function submitKioskLeave(){var empId=document.getElementById('kiosk-leave-emp')&&document.getElementById('kiosk-leave-emp').value;var type=document.getElementById('kiosk-leave-type')&&document.getElementById('kiosk-leave-type').value;var from=document.getElementById('kiosk-leave-from')&&document.getElementById('kiosk-leave-from').value;var to=document.getElementById('kiosk-leave-to')&&document.getElementById('kiosk-leave-to').value;var reason=(document.getElementById('kiosk-leave-reason')&&document.getElementById('kiosk-leave-reason').value)||'';if(!empId||!from||!to){toast('Fill employee and dates.','error');return;}if(to<from){toast('End date must be after start.','error');return;}var days=countWorkingDays(from,to);if(!days){toast('No working days in range.','error');return;}var req={id:Date.now(),empId:empId,type:type,fromDate:from,toDate:to,days:days,reason:reason,status:'approved',hodStatus:'approved',hodApprovedBy:CU.name,hodApprovedAt:new Date().toISOString(),hrStatus:'approved',hrApprovedBy:CU.name,hrApprovedAt:new Date().toISOString(),reviewedBy:CU.name,reviewNote:'Submitted by HR on behalf of kiosk employee',createdAt:new Date().toISOString(),submittedByHR:true};showLoader('Saving...');try{var saved=await dbSaveLeaveRequest(req);_leaveRequests.unshift(saved||req);await deductLeaveBalance(req);hideLoader();toast((gE(empId)&&gE(empId).name||'Employee')+': '+days+' day(s) leave recorded.','success');['kiosk-leave-emp','kiosk-leave-from','kiosk-leave-to','kiosk-leave-reason'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});dbAddAudit(CU.name,'Kiosk leave: '+(gE(empId)&&gE(empId).name||empId)+' '+from+' to '+to);}catch(e){hideLoader();toast('Error: '+(e.message||e),'error');}}
-
 // ── WHATSAPP HOD NOTIFICATION ────────────────────────────────────────────────
 // ── NOTIFY EMPLOYEE OF LEAVE RESULT ─────────────────────────────────────────
 // ── AUTO-CREATE HR ACCOUNT FOR NEW EMPLOYEE ──────────────────────────────────
@@ -19097,6 +19054,37 @@ async function sendPayslipEmailTo(rowIdx, overrideEmail){
     </div>
   </div>`;
   await sendEmail({ to: overrideEmail || emp.email, subject: `${overrideEmail?'[TEST] ':''}Payslip — ${period} — ${emp.name}`, html });
+}
+
+
+// ── MISSING FUNCTIONS (referenced but not yet defined) ───────────────────────
+
+function calcWorkingDays(fromStr, toStr){
+  // Count working days (Mon-Fri) between two date strings, inclusive
+  const start = new Date(fromStr + 'T00:00:00');
+  const end   = new Date(toStr   + 'T00:00:00');
+  let count = 0;
+  const cur = new Date(start);
+  while(cur <= end){
+    const day = cur.getDay();
+    if(day !== 0 && day !== 6) count++; // Skip Sun=0, Sat=6
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
+async function anomalySaveNote(recId, idx, empId, type, date){
+  const noteEl = document.querySelector('[data-anomaly-note="'+recId+'"]');
+  const note = noteEl ? noteEl.value.trim() : '';
+  try{
+    await _sb.from('attendance').update({ notes: note }).eq('id', recId);
+    toast('Note saved.','success');
+  } catch(e){
+    // Save to local cache
+    const rec = (_attendance||[]).find(r=>String(r.id)===String(recId));
+    if(rec){ rec.notes = note; }
+    toast('Note saved locally.','info');
+  }
 }
 
 // ── LEAVE TYPES MANAGEMENT ────────────────────────────────────────────────────
@@ -23976,25 +23964,25 @@ function renderLeaveTable(){
       if(ctx.isHR && req.hodStatus==='approved'){
         // HR confirmation stage
         actionBtns = `
-          <button class="btn btn-xs btn-primary" onclick="hrConfirmLeave('${req.id}',true)">✓ HR Confirm</button>
-          <button class="btn btn-xs btn-danger" onclick="hrConfirmLeave('${req.id}',false)">✗ Reject</button>`;
+          <button class="btn btn-xs btn-primary" onclick="approveLeave('${req.id}',true)">✓ Confirm</button>
+          <button class="btn btn-xs btn-danger" onclick="approveLeave('${req.id}',false)">✗ Reject</button>`;
       } else if(ctx.isHR && req.hodStatus==='pending'){
         // HR can skip HOD and approve directly, or send WA to HOD
         actionBtns = `
           <button class="btn btn-xs" style="background:#25D366;color:#fff;border-color:#25D366" onclick="showHODLeaveNotifModal(_leaveRequests.find(r=>String(r.id)==='${req.id}'))">&#128172; Notify HOD</button>
           ` + `
-          <button class="btn btn-xs btn-primary" onclick="hrConfirmLeave('${req.id}',true)">✓ Approve (skip HOD)</button>
-          <button class="btn btn-xs btn-danger" onclick="hrConfirmLeave('${req.id}',false)">✗ Reject</button>`;
+          <button class="btn btn-xs btn-primary" onclick="approveLeave('${req.id}',true)">✓ Approve</button>
+          <button class="btn btn-xs btn-danger" onclick="approveLeave('${req.id}',false)">✗ Reject</button>`;
       } else if(ctx.isManager && req.hodStatus==='pending' && !req.requesterIsHOD){
         // HOD approves regular employee
         actionBtns = `
-          <button class="btn btn-xs btn-primary" onclick="hodApproveLeave('${req.id}',true)">✓ Approve</button>
-          <button class="btn btn-xs btn-danger" onclick="hodApproveLeave('${req.id}',false)">✗ Reject</button>`;
+          <button class="btn btn-xs btn-primary" onclick="approveLeave('${req.id}',true)">✓ Approve</button>
+          <button class="btn btn-xs btn-danger" onclick="approveLeave('${req.id}',false)">✗ Reject</button>`;
       } else if(ctx.isSeniorHOD && req.requesterIsHOD && req.hodStatus==='needs_senior_hod'){
         // Senior HOD approves another HOD
         actionBtns = `
-          <button class="btn btn-xs btn-primary" onclick="hodApproveLeave('${req.id}',true)">✓ Approve HOD leave</button>
-          <button class="btn btn-xs btn-danger" onclick="hodApproveLeave('${req.id}',false)">✗ Reject</button>`;
+          <button class="btn btn-xs btn-primary" onclick="approveLeave('${req.id}',true)">✓ Approve</button>
+          <button class="btn btn-xs btn-danger" onclick="approveLeave('${req.id}',false)">✗ Reject</button>`;
       }
     }
 
@@ -24043,6 +24031,20 @@ function renderLeaveTable(){
 }
 
 // Notify HOD when a new leave request is submitted by their department employee
+async function generateApprovalToken(leaveId){
+  // Generate a secure random token
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  const token = Array.from(array).map(b=>b.toString(16).padStart(2,'0')).join('');
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+  try{
+    await _sb.from('leave_approval_tokens').insert({
+      token, leave_request_id: leaveId, expires_at: expiresAt, used: false
+    });
+    return token;
+  } catch(e){ console.error('Token generation failed:', e); return null; }
+}
+
 async function notifyHODofLeaveRequest(req){
   const emp = gE(req.empId);
   if(!emp) return;
