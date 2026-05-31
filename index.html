@@ -19873,8 +19873,20 @@ async function dbSaveLeaveRequest(req){
       return req;
     } else {
       delete row.id;
-      const {error:insError} = await _sb.from('leave_requests').insert(row);
+      // Insert and get the real Supabase ID back
+      const {data:insData, error:insError} = await _sb.from('leave_requests').insert(row).select('id');
       if(insError){ console.error('Insert leave error:',insError); toast('Leave save error: '+insError.message,'error'); return req; }
+      // Update local record with real Supabase ID
+      const realId = insData?.[0]?.id;
+      if(realId){
+        req = {...req, id: realId};
+        // Update localStorage with real ID
+        const updated = S.get('leaveRequests',[]);
+        const idx = updated.findIndex(r=>String(r.id)===String(Date.now()) || !r.id || String(r.id).length > 12);
+        if(idx>=0) updated[idx] = req; else updated.push(req);
+        S.set('leaveRequests', updated);
+        _leaveRequests = updated;
+      }
       return req;
     }
   } catch(e){ console.error('dbSaveLeaveRequest exception:',e); toast('Leave save error: '+e.message,'error'); return req; }
