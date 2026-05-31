@@ -19827,6 +19827,7 @@ async function dbGetLeaveRequests(){
     const reqs = data.map(r=>({
       id:r.id, empId:r.emp_id, type:r.type, fromDate:r.from_date, toDate:r.to_date,
       days:r.days, reason:r.reason||'', status:r.status,
+      companyId:r.company_id||null,
       hodStatus:r.hod_status||'pending',
       hodApprovedBy:r.hod_approved_by||'',
       hodApprovedAt:r.hod_approved_at||null,
@@ -19835,7 +19836,7 @@ async function dbGetLeaveRequests(){
       hrApprovedAt:r.hr_approved_at||null,
       requesterIsHOD:r.requester_is_hod||false,
       reviewedBy:r.reviewed_by||'', reviewNote:r.review_note||'',
-      createdAt:r.created_at, updatedAt:r.updated_at
+      createdAt:r.created_at||r.updated_at||null, updatedAt:r.updated_at
     }));
     S.set('leaveRequests', reqs);
     return reqs;
@@ -19880,9 +19881,16 @@ async function dbSaveLeaveRequest(req){
       const realId = insData?.[0]?.id;
       if(realId){
         req = {...req, id: realId};
-        // Update localStorage with real ID
+        // Update localStorage — replace the temp Date.now() ID with real Supabase ID
+        const tempId = req.id; // before reassignment — but we already reassigned above
         const updated = S.get('leaveRequests',[]);
-        const idx = updated.findIndex(r=>String(r.id)===String(Date.now()) || !r.id || String(r.id).length > 12);
+        // Find by matching all fields except id (since id was Date.now() temp)
+        const idx = updated.findIndex(r=>
+          String(r.empId)===String(req.empId) &&
+          r.fromDate===req.fromDate &&
+          r.toDate===req.toDate &&
+          r.type===req.type
+        );
         if(idx>=0) updated[idx] = req; else updated.push(req);
         S.set('leaveRequests', updated);
         _leaveRequests = updated;
@@ -20098,6 +20106,14 @@ async function renderLeave(){
 
   [_leaveRequests, _leaveBalances] = await Promise.all([dbGetLeaveRequests(), dbGetLeaveBalances()]);
   renderLeaveMetrics();
+  // Auto-create attendance records for recently approved leaves (catches email approvals)
+  if(_leaveRequests && sbReady()){
+    const cutoff = new Date(Date.now()-7*24*60*60*1000).toISOString().slice(0,10);
+    const recentApproved = _leaveRequests.filter(r=>r.status==='approved'&&r.toDate>=cutoff);
+    for(const req of recentApproved){
+      await createLeaveAttendanceRecords(req).catch(()=>{});
+    }
+  }
   renderLeavePending();
   renderLeaveCalendar();
   renderLeaveTable();
@@ -20414,7 +20430,7 @@ async function submitLeaveRequest(){
   hideLoader();
   if(!_leaveRequests.find(r=>String(r.id)===String(saved.id))) _leaveRequests.unshift(saved);
   S.set('leaveRequests', _leaveRequests);
-  notifyHODofLeaveRequest(saved||req);
+  notifyHODofLeaveRequest(saved||req).catch(e=>console.warn('Notify error:',e));
 
   const emp = gE(empId);
   addNotif((emp?emp.name:'Employee')+' submitted '+getLEAVE_TYPES()[type].label+' request ('+days+' days)','info');
@@ -22977,14 +22993,41 @@ async function confirmAndRunPayroll(){
       if(om>0){ const mult=type==='holiday'?settings.otHoliday:type==='weekend'?settings.otWeekend:settings.otWeekday;
         otMins+=om; otPay+=(om/60)*hourlyRate*mult; }
     });
+    // Approved leave days are paid — attendance records created automatically on approval
+    // Only deduct for absent days (no attendance + no approved leave)
     let leaveDeduct=0,leaveNote='';
-    leaveRecs.filter(r=>String(r.empId)===String(emp.id)).forEach(req=>{
+    // Count approved leave days in period (informational only — no deduction)
+    const approvedLeaveRecs = leaveRecs.filter(r=>String(r.empId)===String(emp.id)&&r.status==='approved');
+    approvedLeaveRecs.forEach(req=>{
       let days=0,cur=new Date(req.fromDate+'T00:00:00');
       const end=new Date(req.toDate+'T00:00:00'),ps=new Date(from+'T00:00:00'),pe=new Date(to+'T00:00:00');
       while(cur<=end){ if(cur>=ps&&cur<=pe){const dow=cur.getDay(),ds=cur.toISOString().slice(0,10);
         if(dow!==0&&dow!==6&&!isDayHoliday(ds)&&!isDayEmployerLeave(ds))days++;}cur.setDate(cur.getDate()+1);}
-      if(days>0)leaveNote+=(leaveNote?', ':'')+days+'d '+req.type;
+      if(days>0)leaveNote+=(leaveNote?', ':'')+days+'d '+req.type+' (approved)';
     });
+    // Only deduct for unapproved absences (working days with no attendance and no approved leave)
+    const attDates = new Set(empRecs.map(r=>r.date));
+    const leaveDates = new Set();
+    approvedLeaveRecs.forEach(req=>{
+      let cur=new Date(req.fromDate+'T00:00:00');
+      const end=new Date(req.toDate+'T00:00:00');
+      while(cur<=end){ leaveDates.add(cur.toISOString().slice(0,10)); cur.setDate(cur.getDate()+1); }
+    });
+    // Count absent days = working days with no att and no approved leave
+    let absentDays=0;
+    let wCur=new Date(from+'T00:00:00');
+    const wEnd=new Date(to+'T00:00:00');
+    while(wCur<=wEnd){
+      const ds=wCur.toISOString().slice(0,10),dow=wCur.getDay();
+      if(dow!==0&&dow!==6&&!isDayHoliday(ds)&&!isDayEmployerLeave(ds)&&!attDates.has(ds)&&!leaveDates.has(ds)){
+        absentDays++;
+      }
+      wCur.setDate(wCur.getDate()+1);
+    }
+    if(absentDays>0){
+      leaveDeduct=absentDays*dailyRate;
+      leaveNote+=(leaveNote?', ':'')+absentDays+'d absent (unpaid)';
+    }
     const reviewRow=_attReviewData.find(r=>String(r.emp.id)===String(emp.id));
     const deptVal=_deptValidations[emp.dept||'No department'];
     return {emp,annual,currency,periodPay,dailyRate,hourlyRate,daysWorked,totalWDays,
@@ -23906,7 +23949,11 @@ async function approveLeave(reqId, approve){
     const idx = _leaveRequests.findIndex(r=>String(r.id)===String(reqId));
     if(idx>=0) _leaveRequests[idx] = req;
     S.set('leaveRequests', _leaveRequests);
-    if(approve) await deductLeaveBalance(req).catch(()=>{});
+    if(approve){
+      await deductLeaveBalance(req).catch(()=>{});
+      // Create attendance records for approved leave days
+      await createLeaveAttendanceRecords(req).catch(()=>{});
+    }
   } catch(e){ toast('Save error: '+e.message,'error'); hideLoader(); return; }
   hideLoader();
 
@@ -23921,6 +23968,83 @@ async function approveLeave(reqId, approve){
 
   _leaveRequests = await dbGetLeaveRequests();
   renderLeave();
+}
+
+
+// ── CREATE ATTENDANCE RECORDS FOR APPROVED LEAVE ─────────────────────────────
+async function createLeaveAttendanceRecords(req){
+  if(!sbReady()) return;
+  const emp = gE(req.empId);
+  if(!emp) return;
+
+  try{
+    const settings = getSettings();
+    const workStart = settings.workStart || '08:30';
+    const workEnd   = settings.workEnd   || '17:00';
+    const leaveLabel = getLEAVE_TYPES()[req.type]?.label || req.type;
+
+    // Get all working days in the leave period
+    const from = new Date(req.fromDate + 'T00:00:00');
+    const to   = new Date(req.toDate   + 'T00:00:00');
+    const cur  = new Date(from);
+    const rows = [];
+
+    while(cur <= to){
+      const dayOfWeek = cur.getDay();
+      // Skip weekends (0=Sun, 6=Sat)
+      if(dayOfWeek !== 0 && dayOfWeek !== 6){
+        // Skip public holidays
+        const dateStr = cur.toISOString().slice(0,10);
+        if(!isDayHoliday(dateStr)){
+          // Build clock_in and clock_out timestamps for the leave day
+          const clockIn  = new Date(dateStr + 'T' + workStart + ':00');
+          const clockOut = new Date(dateStr + 'T' + workEnd   + ':00');
+          const durationMinutes = Math.round((clockOut - clockIn) / 60000);
+
+          rows.push({
+            emp_id:           String(emp.id),
+            date:             dateStr,
+            clock_in:         clockIn.toISOString(),
+            clock_out:        clockOut.toISOString(),
+            duration_minutes: durationMinutes,
+            location:         'Leave',
+            notes:            leaveLabel + ' — approved leave',
+            company_id:       req.companyId || _COMPANY_ID || emp.companyId || 1,
+          });
+        }
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    if(!rows.length) return;
+
+    // Check for existing attendance on those dates to avoid duplicates
+    const dates = rows.map(r=>r.date);
+    const {data:existing} = await _sb.from('attendance')
+      .select('date')
+      .eq('emp_id', String(emp.id))
+      .gte('date', req.fromDate)
+      .lte('date', req.toDate);
+
+    const existingDates = new Set((existing||[]).map(r=>r.date));
+    const newRows = rows.filter(r=>!existingDates.has(r.date));
+
+    if(!newRows.length){
+      console.log('[Leave] Attendance records already exist for this period');
+      return;
+    }
+
+    // Insert attendance records
+    const {error} = await _sb.from('attendance').insert(newRows);
+    if(error){
+      console.warn('[Leave] Failed to create attendance records:', error.message);
+    } else {
+      console.log('[Leave] Created', newRows.length, 'attendance record(s) for', emp.name);
+    }
+
+  } catch(e){
+    console.warn('[Leave] createLeaveAttendanceRecords error:', e);
+  }
 }
 
 async function deductLeaveBalance(req){
@@ -23957,7 +24081,13 @@ function renderLeaveTable(){
   let list = getVisibleLeaveRequests().filter(r=>canViewRequest(r));
   if(typeF)   list=list.filter(r=>r.type===typeF);
   if(statusF) list=list.filter(r=>r.status===statusF);
-  list.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  list.sort((a,b)=>{
+    // Fall back to id sort when createdAt is null
+    if(!a.createdAt && !b.createdAt) return b.id - a.id;
+    if(!a.createdAt) return 1;
+    if(!b.createdAt) return -1;
+    return new Date(b.createdAt)-new Date(a.createdAt);
+  });
 
   if(!list.length){
     tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text3)">No leave requests found.</td></tr>';
@@ -24094,10 +24224,17 @@ async function notifyHODofLeaveRequest(req){
     hrUsers.forEach(u=>{ if(!hodList.find(h=>h.email===u.email)) hodList.push({name:u.name,email:u.email}); });
   }
 
+  // Final fallback — if nobody to notify, send to all HR/admin users
+  if(!hodList.length){
+    const allHR = getUsers().filter(u=>(u.role==='admin'||u.role==='hr')&&u.active&&u.email&&
+      (!u.companyId||u.companyId===_COMPANY_ID));
+    allHR.forEach(u=>{ if(!hodList.find(h=>h.email===u.email)) hodList.push({name:u.name,email:u.email}); });
+  }
+
   // In-app notification
   addNotif(`${emp.name} requested ${req.days}d leave — requires approval.`,'info');
 
-  // Send email to each HOD with an email address
+  // Send email to each notifiable person
   for(const hod of hodList){
     if(hod.email) await emailLeaveRequestToHOD(emp, hod, req).catch(()=>{});
   }
