@@ -765,8 +765,7 @@ async function kioskFingerprintAuth(){
         allowCredentials,
         userVerification: 'required',
         timeout: 30000
-      },
-      mediation: 'required'  // force explicit user interaction (biometric prompt)
+      }
     });
 
     // Find matching credential
@@ -850,15 +849,13 @@ async function registerFingerprintForEmp(empId){
         authenticatorSelection: {
           authenticatorAttachment: 'platform',
           userVerification: 'required',
-          requireResidentKey: true,        // forces FIDO2 resident key = biometric
-          residentKey: 'required'          // explicit biometric requirement
-        },
-        extensions: {
-          credProps: true                  // request credential properties
+          requireResidentKey: false,
+          residentKey: 'discouraged'       // avoid passkey/Google PM flow
         },
         timeout: 60000,
         attestation: 'none'
-      }
+      },
+      signal: undefined
     });
 
     // Store credential
@@ -12116,6 +12113,17 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         <div class="ph-title">Payroll</div>
         <div class="ph-actions" id="payroll-actions">
           <button class="btn" onclick="exportPayrollCSV()">&#x2B07; Export CSV</button>
+          <button class="btn" onclick="sendAllPayslips()" style="background:var(--navy);color:#fff;border-color:var(--navy)">&#128231; Email All Payslips</button>
+          <button class="btn" onclick="(()=>{const e=prompt('Send all payslips to this test email:');if(e&&e.includes('@'))sendAllPayslips(e);})()" style="background:var(--amber);color:#fff;border-color:var(--amber)">&#128231; Test Email</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">
+            <span style="font-size:11px;color:var(--text3)">Statutory:</span>
+            <button class="btn btn-xs" onclick="exportStatutoryReport('prgf')">PRGF</button>
+            <button class="btn btn-xs" onclick="exportStatutoryReport('nsf')">NSF</button>
+            <button class="btn btn-xs" onclick="exportStatutoryReport('nps')">NPS</button>
+            <button class="btn btn-xs" onclick="exportStatutoryReport('npf')">NPF</button>
+            <button class="btn btn-xs" onclick="exportStatutoryReport('paye')">PAYE/MRA</button>
+            <button class="btn btn-xs btn-primary" onclick="exportStatutoryReport('summary')">Full Summary</button>
+          </div>
         </div>
       </div>
 
@@ -13279,7 +13287,7 @@ async function dbSetSetting(key,value){
 
 // ── ROW MAPPERS ──
 function rowToEmp(r){
-  return{id:r.id,empNo:r.emp_no||null,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
+  return{id:r.id,empNo:r.emp_no||null,nic:r.nic||null,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
     salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:typeof r.salary_history==='string'?JSON.parse(r.salary_history||'[]'):(r.salary_history||[])}:null,
     checklist:typeof r.checklist==='string'?JSON.parse(r.checklist||'{}'):(r.checklist||{}),offChecklist:typeof r.off_checklist==='string'?JSON.parse(r.off_checklist||'{}'):(r.off_checklist||{}),lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
     photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:[true,'true','1',1].includes(r.att_editor),isHOD:[true,'true','1',1].includes(r.is_hod),isSeniorHOD:[true,'true','1',1].includes(r.is_senior_hod),
@@ -13290,6 +13298,7 @@ function rowToEmp(r){
 function empToRow(e){
   const row={
     emp_no:     e.empNo||null,
+    nic:        e.nic||null,
     name:       e.name||'',
     email:      (e.email||'').trim()||null,
     phone:      e.phone||null,
@@ -15308,6 +15317,9 @@ function openModal(type,pid,pid2){
       <div class="fsec">Personal Information</div>
       <div class="fr"><div class="fg"><label class="fl">Full name *</label><input class="fi" id="fn" value="${emp?.name||''}" placeholder="Jane Smith"></div>
       <div class="fg"><label class="fl">Email *</label><input class="fi" id="fe" value="${emp?.email||''}" placeholder="jane@company.com"></div></div>
+      <div class="fg2">
+        <div class="fg"><label class="fl">NIC / ID Number</label><input class="fi" id="fnic" value="${emp?.nic||''}" placeholder="e.g. A1234567890Z"></div>
+      </div>
       <div class="fr"><div class="fg"><label class="fl">Phone</label><input class="fi" id="fph" value="${emp?.phone||''}" placeholder="+230 or +27 number"></div>
       <div class="fg"><label class="fl">Start date</label><input class="fi" id="fst" type="date" value="${emp?.start||td()}"></div></div>
       <div class="fsec">Role</div>
@@ -18833,6 +18845,260 @@ window.showPage = function(id, el){
 // For leave page: HOD sees their team + all other HODs (cross-HOD leave visibility)
 // ── SINGLE RECORD EDIT (from Attendance tab records table) ───────────────────
 // ── ADD ATTENDANCE RECORD (from Attendance tab) ───────────────────────────────
+
+// ── MAURITIUS STATUTORY CALCULATIONS ─────────────────────────────────────────
+
+function calcStatutory(grossMonthly, annualSalary){
+  // Employee contributions
+  const prgfEmp  = Math.round(grossMonthly * 0.03 * 100) / 100;        // 3%
+  const nsfEmp   = Math.min(Math.round(grossMonthly * 0.01 * 100) / 100, 50); // 1%, capped Rs 50
+  const npsEmp   = Math.round(grossMonthly * 0.03 * 100) / 100;        // 3%
+  const totalEmpDeductions = prgfEmp + nsfEmp + npsEmp;
+
+  // Employer contributions
+  const prgfEr   = Math.round(grossMonthly * 0.06 * 100) / 100;        // 6%
+  const nsfEr    = Math.round(grossMonthly * 0.025 * 100) / 100;       // 2.5%
+  const npsEr    = Math.round(grossMonthly * 0.06 * 100) / 100;        // 6%
+  const npfEr    = 75;                                                   // Rs 75 flat
+  const totalErContrib = prgfEr + nsfEr + npsEr + npfEr;
+
+  // PAYE (income tax) — simplified Mauritius brackets
+  let paye = 0;
+  if(annualSalary > 650000){
+    paye = Math.round(((annualSalary - 650000) * 0.15 + (650000 - 390000) * 0.10) / 12 * 100) / 100;
+  } else if(annualSalary > 390000){
+    paye = Math.round(((annualSalary - 390000) * 0.10) / 12 * 100) / 100;
+  }
+
+  const netPay = grossMonthly - totalEmpDeductions - paye;
+
+  return {
+    grossMonthly,
+    prgfEmp, nsfEmp, npsEmp, totalEmpDeductions,
+    prgfEr, nsfEr, npsEr, npfEr, totalErContrib,
+    paye,
+    netPay: Math.round(netPay * 100) / 100
+  };
+}
+
+async function exportStatutoryReport(type){
+  if(!_payrollData||!_payrollData.length){ toast('Run payroll first.','error'); return; }
+  const {from, to, payDate} = _payrollPeriod || {};
+  const month = from ? from.slice(0,7) : new Date().toISOString().slice(0,7);
+
+  const rows = _payrollData.map(row=>{
+    const gross = (row.overridePeriodPay??row.periodPay) + (row.overrideOTPay??row.otPay) - (row.overrideDeduct??row.leaveDeduct);
+    const annual = row.annual || 0;
+    const s = calcStatutory(gross, annual);
+    return { emp: row.emp, gross, ...s };
+  });
+
+  let csv = '';
+  let filename = '';
+
+  if(type === 'prgf'){
+    filename = `PRGF_${month}.csv`;
+    csv = 'Employee Name,NIC/ID,Basic Salary,Employee PRGF (3%),Employer PRGF (6%),Total PRGF\n';
+    csv += rows.map(r=>
+      `"${r.emp.name}","${r.emp.nic||''}",${r.gross.toFixed(2)},${r.prgfEmp.toFixed(2)},${r.prgfEr.toFixed(2)},${(r.prgfEmp+r.prgfEr).toFixed(2)}`
+    ).join('\n');
+    const totGross = rows.reduce((s,r)=>s+r.gross,0);
+    const totEmp   = rows.reduce((s,r)=>s+r.prgfEmp,0);
+    const totEr    = rows.reduce((s,r)=>s+r.prgfEr,0);
+    csv += `
+"TOTAL",,${totGross.toFixed(2)},${totEmp.toFixed(2)},${totEr.toFixed(2)},${(totEmp+totEr).toFixed(2)}`;
+
+  } else if(type === 'nsf'){
+    filename = `NSF_${month}.csv`;
+    csv = 'Employee Name,NIC/ID,Basic Salary,Employee NSF (1% max Rs50),Employer NSF (2.5%),Total NSF\n';
+    csv += rows.map(r=>
+      `"${r.emp.name}","${r.emp.nic||''}",${r.gross.toFixed(2)},${r.nsfEmp.toFixed(2)},${r.nsfEr.toFixed(2)},${(r.nsfEmp+r.nsfEr).toFixed(2)}`
+    ).join('\n');
+    const totGross = rows.reduce((s,r)=>s+r.gross,0);
+    const totEmp   = rows.reduce((s,r)=>s+r.nsfEmp,0);
+    const totEr    = rows.reduce((s,r)=>s+r.nsfEr,0);
+    csv += `
+"TOTAL",,${totGross.toFixed(2)},${totEmp.toFixed(2)},${totEr.toFixed(2)},${(totEmp+totEr).toFixed(2)}`;
+
+  } else if(type === 'nps'){
+    filename = `NPS_${month}.csv`;
+    csv = 'Employee Name,NIC/ID,Basic Salary,Employee NPS (3%),Employer NPS (6%),Total NPS\n';
+    csv += rows.map(r=>
+      `"${r.emp.name}","${r.emp.nic||''}",${r.gross.toFixed(2)},${r.npsEmp.toFixed(2)},${r.npsEr.toFixed(2)},${(r.npsEmp+r.npsEr).toFixed(2)}`
+    ).join('\n');
+    const totGross = rows.reduce((s,r)=>s+r.gross,0);
+    const totEmp   = rows.reduce((s,r)=>s+r.npsEmp,0);
+    const totEr    = rows.reduce((s,r)=>s+r.npsEr,0);
+    csv += `
+"TOTAL",,${totGross.toFixed(2)},${totEmp.toFixed(2)},${totEr.toFixed(2)},${(totEmp+totEr).toFixed(2)}`;
+
+  } else if(type === 'npf'){
+    filename = `NPF_${month}.csv`;
+    csv = 'Employee Name,NIC/ID,NPF Employer Contribution (Rs75)\n';
+    csv += rows.map(r=>`"${r.emp.name}","${r.emp.nic||''}",75.00`).join('\n');
+    csv += `
+"TOTAL",,${(rows.length*75).toFixed(2)}`;
+
+  } else if(type === 'paye'){
+    filename = `PAYE_MRA_${month}.csv`;
+    csv = 'Employee Name,NIC/ID,Annual Salary,Monthly Gross,Monthly PAYE,Annual PAYE\n';
+    csv += rows.map(r=>
+      `"${r.emp.name}","${r.emp.nic||''}",${r.annual.toFixed(2)},${r.gross.toFixed(2)},${r.paye.toFixed(2)},${(r.paye*12).toFixed(2)}`
+    ).join('\n');
+    const totPaye = rows.reduce((s,r)=>s+r.paye,0);
+    csv += `
+"TOTAL",,,,,${(totPaye*12).toFixed(2)}`;
+
+  } else if(type === 'summary'){
+    filename = `Payroll_Summary_${month}.csv`;
+    csv = 'Employee,Dept,Gross Pay,Emp PRGF,Emp NSF,Emp NPS,PAYE,Total Deductions,Net Pay,Employer PRGF,Employer NSF,Employer NPS,NPF,Total Employer Cost\n';
+    csv += rows.map(r=>`"${r.emp.name}","${r.emp.dept||''}",${r.gross.toFixed(2)},${r.prgfEmp.toFixed(2)},${r.nsfEmp.toFixed(2)},${r.npsEmp.toFixed(2)},${r.paye.toFixed(2)},${(r.totalEmpDeductions+r.paye).toFixed(2)},${r.netPay.toFixed(2)},${r.prgfEr.toFixed(2)},${r.nsfEr.toFixed(2)},${r.npsEr.toFixed(2)},${r.npfEr.toFixed(2)},${(r.gross+r.totalErContrib).toFixed(2)}`).join('\n');
+    const tot = (k) => rows.reduce((s,r)=>s+(r[k]||0),0);
+    csv += `
+"TOTAL","",${tot('gross').toFixed(2)},${tot('prgfEmp').toFixed(2)},${tot('nsfEmp').toFixed(2)},${tot('npsEmp').toFixed(2)},${tot('paye').toFixed(2)},${rows.reduce((s,r)=>s+r.totalEmpDeductions+r.paye,0).toFixed(2)},${tot('netPay').toFixed(2)},${tot('prgfEr').toFixed(2)},${tot('nsfEr').toFixed(2)},${tot('npsEr').toFixed(2)},${(rows.length*75).toFixed(2)},${rows.reduce((s,r)=>s+r.gross+r.totalErContrib,0).toFixed(2)}`;
+  }
+
+  // Download CSV
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+  toast('Downloaded: '+filename,'success');
+}
+
+async function sendPayslipEmail(rowIdx){
+  const row = _payrollData[rowIdx];
+  if(!row){ toast('Payroll data not found.','error'); return; }
+  const emp = row.emp;
+  if(!emp.email){ toast(emp.name+' has no email address on file.','error'); return; }
+
+  const gross = (row.overridePeriodPay??row.periodPay) + (row.overrideOTPay??row.otPay) - (row.overrideDeduct??row.leaveDeduct);
+  const s = calcStatutory(gross, row.annual||0);
+  const {from, to, payDate} = _payrollPeriod || {};
+  const period = from&&to ? fDate(from)+' – '+fDate(to) : 'This month';
+  const payDateStr = payDate ? fDate(payDate) : '';
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+      <div style="background:#1E1445;padding:20px 24px;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <h2 style="color:#C9A84C;margin:0;font-size:22px">SolentraHR</h2>
+          <p style="color:#CADCFC;margin:4px 0 0;font-size:13px">Payslip — ${period}</p>
+        </div>
+        <div style="text-align:right">
+          <div style="color:#fff;font-size:13px;font-weight:600">${emp.name}</div>
+          <div style="color:#CADCFC;font-size:12px">${emp.dept||''}</div>
+          ${payDateStr?`<div style="color:#C9A84C;font-size:12px;margin-top:4px">Pay date: ${payDateStr}</div>`:''}
+        </div>
+      </div>
+      <div style="background:#f9f9f9;padding:24px;border:1px solid #e5e7eb;border-radius:0 0 8px 8px">
+
+        <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+          <tr style="background:#1E1445"><th style="padding:8px 12px;color:#C9A84C;text-align:left;font-size:12px">EARNINGS</th><th style="padding:8px 12px;color:#C9A84C;text-align:right;font-size:12px">AMOUNT (Rs)</th></tr>
+          <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:8px 12px;font-size:13px">Basic Salary</td><td style="padding:8px 12px;text-align:right;font-size:13px">${(row.overridePeriodPay??row.periodPay).toFixed(2)}</td></tr>
+          ${(row.overrideOTPay??row.otPay)>0?`<tr style="border-bottom:1px solid #e5e7eb"><td style="padding:8px 12px;font-size:13px">Overtime (${row.otMins?Math.round(row.otMins/60*10)/10:'0'}h)</td><td style="padding:8px 12px;text-align:right;font-size:13px">${(row.overrideOTPay??row.otPay).toFixed(2)}</td></tr>`:''}
+          <tr style="background:#f0f4f8"><td style="padding:8px 12px;font-weight:700;font-size:13px">Gross Pay</td><td style="padding:8px 12px;text-align:right;font-weight:700;font-size:13px">${gross.toFixed(2)}</td></tr>
+        </table>
+
+        <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+          <tr style="background:#1E1445"><th style="padding:8px 12px;color:#C9A84C;text-align:left;font-size:12px">DEDUCTIONS</th><th style="padding:8px 12px;color:#C9A84C;text-align:right;font-size:12px">AMOUNT (Rs)</th></tr>
+          <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:8px 12px;font-size:13px">PRGF (3%)</td><td style="padding:8px 12px;text-align:right;font-size:13px">${s.prgfEmp.toFixed(2)}</td></tr>
+          <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:8px 12px;font-size:13px">NSF (1%, max Rs50)</td><td style="padding:8px 12px;text-align:right;font-size:13px">${s.nsfEmp.toFixed(2)}</td></tr>
+          <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:8px 12px;font-size:13px">NPS (3%)</td><td style="padding:8px 12px;text-align:right;font-size:13px">${s.npsEmp.toFixed(2)}</td></tr>
+          ${s.paye>0?`<tr style="border-bottom:1px solid #e5e7eb"><td style="padding:8px 12px;font-size:13px">PAYE (Income Tax)</td><td style="padding:8px 12px;text-align:right;font-size:13px">${s.paye.toFixed(2)}</td></tr>`:''}
+          ${(row.overrideDeduct??row.leaveDeduct)>0?`<tr style="border-bottom:1px solid #e5e7eb"><td style="padding:8px 12px;font-size:13px">Leave Deduction${row.leaveNote?' ('+row.leaveNote+')':''}</td><td style="padding:8px 12px;text-align:right;font-size:13px">${(row.overrideDeduct??row.leaveDeduct).toFixed(2)}</td></tr>`:''}
+          <tr style="background:#fee2e2"><td style="padding:8px 12px;font-weight:700;font-size:13px">Total Deductions</td><td style="padding:8px 12px;text-align:right;font-weight:700;font-size:13px;color:#DC2626">${(s.totalEmpDeductions+s.paye+(row.overrideDeduct??row.leaveDeduct)).toFixed(2)}</td></tr>
+        </table>
+
+        <div style="background:#1E1445;border-radius:8px;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <span style="color:#CADCFC;font-size:14px">NET PAY</span>
+          <span style="color:#C9A84C;font-size:24px;font-weight:800">Rs ${s.netPay.toFixed(2)}</span>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
+          <tr style="background:#f0f4f8"><th colspan="2" style="padding:8px 12px;color:#1E1445;text-align:left;font-size:12px;font-weight:600">EMPLOYER CONTRIBUTIONS</th></tr>
+          <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px 12px;font-size:12px;color:#6b7280">PRGF (6%)</td><td style="padding:6px 12px;text-align:right;font-size:12px;color:#6b7280">${s.prgfEr.toFixed(2)}</td></tr>
+          <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px 12px;font-size:12px;color:#6b7280">NSF (2.5%)</td><td style="padding:6px 12px;text-align:right;font-size:12px;color:#6b7280">${s.nsfEr.toFixed(2)}</td></tr>
+          <tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px 12px;font-size:12px;color:#6b7280">NPS (6%)</td><td style="padding:6px 12px;text-align:right;font-size:12px;color:#6b7280">${s.npsEr.toFixed(2)}</td></tr>
+          <tr><td style="padding:6px 12px;font-size:12px;color:#6b7280">NPF (flat)</td><td style="padding:6px 12px;text-align:right;font-size:12px;color:#6b7280">75.00</td></tr>
+        </table>
+
+        <div style="border-top:1px solid #e5e7eb;padding-top:16px;font-size:11px;color:#9ca3af;text-align:center">
+          This payslip is generated automatically by SolentraHR. Please contact HR for any queries.
+        </div>
+      </div>
+    </div>`;
+
+  showLoader('Sending payslip…');
+  await sendEmail({ to: emp.email, subject: `Payslip — ${period} — ${emp.name}`, html }).catch(()=>{});
+  hideLoader();
+  toast('Payslip sent to '+emp.email,'success');
+}
+
+async function sendAllPayslips(testEmail){
+  if(!_payrollData||!_payrollData.length){ toast('Run payroll first.','error'); return; }
+  const withEmail = _payrollData.filter(r=>r.emp.email||testEmail);
+  if(!withEmail.length){ toast('No employees have email addresses.','error'); return; }
+
+  // Test mode — send all to one address
+  if(testEmail){
+    if(!confirm(`TEST MODE: Send all ${_payrollData.length} payslips to ${testEmail}?`)) return;
+    showLoader('Sending test payslips…');
+    let sent=0;
+    for(let i=0;i<_payrollData.length;i++){
+      await sendPayslipEmailTo(i, testEmail).catch(()=>{});
+      sent++;
+    }
+    hideLoader();
+    toast(`Test: sent ${sent} payslips to ${testEmail}!`,'success');
+    return;
+  }
+
+  // Normal mode
+  const noEmail = _payrollData.filter(r=>!r.emp.email);
+  if(!confirm(`Send payslips to ${withEmail.length} employee${withEmail.length>1?'s':''}?${noEmail.length?' ('+noEmail.length+' skipped — no email)':''}`)){ return; }
+  showLoader('Sending payslips…');
+  let sent=0;
+  for(let i=0;i<_payrollData.length;i++){
+    if(!_payrollData[i].emp.email) continue;
+    await sendPayslipEmail(i).catch(()=>{});
+    sent++;
+  }
+  hideLoader();
+  toast(`Sent ${sent} payslip${sent>1?'s':''}!`,'success');
+}
+
+async function sendPayslipEmailTo(rowIdx, overrideEmail){
+  const row = _payrollData[rowIdx];
+  if(!row) return;
+  const emp = row.emp;
+  const gross = (row.overridePeriodPay??row.periodPay) + (row.overrideOTPay??row.otPay) - (row.overrideDeduct??row.leaveDeduct);
+  const s = calcStatutory(gross, row.annual||0);
+  const {from, to, payDate} = _payrollPeriod || {};
+  const period = from&&to ? fDate(from)+' – '+fDate(to) : 'This month';
+  const payDateStr = payDate ? fDate(payDate) : '';
+  const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+    <div style="background:#1E1445;padding:16px 20px;border-radius:8px 8px 0 0">
+      <h2 style="color:#C9A84C;margin:0;font-size:20px">SolentraHR</h2>
+      <p style="color:#CADCFC;margin:4px 0 0;font-size:12px">TEST PAYSLIP — ${period}</p>
+      ${overrideEmail?'<p style="color:#EF4444;font-size:11px;margin:4px 0 0">⚠ TEST MODE — Actual recipient would be: '+(emp.email||'no email')+'</p>':''}
+    </div>
+    <div style="background:#f9f9f9;padding:20px;border:1px solid #e5e7eb;border-radius:0 0 8px 8px">
+      <p style="font-weight:700">${emp.name} — ${emp.dept||''}</p>
+      <table style="width:100%;font-size:13px;border-collapse:collapse">
+        <tr><td style="padding:5px 0;color:#6b7280">Gross Pay</td><td style="text-align:right;font-weight:600">Rs ${gross.toFixed(2)}</td></tr>
+        <tr><td style="padding:5px 0;color:#6b7280">PRGF (3%)</td><td style="text-align:right">- Rs ${s.prgfEmp.toFixed(2)}</td></tr>
+        <tr><td style="padding:5px 0;color:#6b7280">NSF (1%)</td><td style="text-align:right">- Rs ${s.nsfEmp.toFixed(2)}</td></tr>
+        <tr><td style="padding:5px 0;color:#6b7280">NPS (3%)</td><td style="text-align:right">- Rs ${s.npsEmp.toFixed(2)}</td></tr>
+        ${s.paye>0?`<tr><td style="padding:5px 0;color:#6b7280">PAYE</td><td style="text-align:right">- Rs ${s.paye.toFixed(2)}</td></tr>`:''}
+        <tr style="border-top:2px solid #1E1445"><td style="padding:8px 0;font-weight:700">Net Pay</td><td style="text-align:right;font-weight:700;font-size:16px;color:#1E1445">Rs ${s.netPay.toFixed(2)}</td></tr>
+      </table>
+    </div>
+  </div>`;
+  await sendEmail({ to: overrideEmail || emp.email, subject: `${overrideEmail?'[TEST] ':''}Payslip — ${period} — ${emp.name}`, html });
+}
+
 // ── LEAVE TYPES MANAGEMENT ────────────────────────────────────────────────────
 // ── HR sets employee PIN directly ────────────────────────────────────────────
 // ── Handle QR code scanned from employee mobile screen ───────────────────────
@@ -22795,6 +23061,7 @@ function renderPayrollTable(rows,settings){
       <td style="padding:10px 12px">
         <div style="font-size:10px;color:var(--text3)">HOD: ${row.hodValidatedBy}</div>
         <input id="pay-note-${idx}" class="fi" placeholder="Note…" style="width:110px;padding:3px 6px;font-size:11px;margin-top:3px" value="${row.hrNote||''}">
+        ${row.emp.email?`<button class="btn btn-xs" onclick="sendPayslipEmail(${idx})" style="margin-top:4px;font-size:10px">📧 Payslip</button>`:''}
       </td>
     </tr>`;
   }).join('');
