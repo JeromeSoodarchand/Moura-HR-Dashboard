@@ -20369,18 +20369,18 @@ async function submitLeaveRequest(){
   const from   = document.getElementById('lv-from')?.value;
   const to     = document.getElementById('lv-to')?.value;
   const reason = document.getElementById('lv-reason')?.value||'';
-  if(!empId||!from||!to){ toast('Please fill all required fields.','error'); return; }
-  if(to<from){ toast('End date must be after start date.','error'); return; }
+  if(!empId||!from||!to){ toast('Please fill all required fields.','error'); _submittingLeave=false; return; }
+  if(to<from){ toast('End date must be after start date.','error'); _submittingLeave=false; return; }
 
   const days = countWorkingDays(from, to);
-  if(days===0){ toast('No working days in selected range.','error'); return; }
+  if(days===0){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
 
   // Check balance for tracked types
   if(['annual','sick','casual'].includes(type)){
     const b = getEmpBalance(empId);
     const rem = {annual:b.remAnnual, sick:b.remSick, casual:b.remCasual}[type];
     if(days>rem){
-      if(!confirm(`This request is for ${days} days but only ${rem} days remain. Submit anyway?`)) return;
+      if(!confirm(`This request is for ${days} days but only ${rem} days remain. Submit anyway?`)){ _submittingLeave=false; return; }
     }
   }
 
@@ -20390,7 +20390,7 @@ async function submitLeaveRequest(){
     r.status==='approved'&&
     r.fromDate<=to&&r.toDate>=from
   );
-  if(overlap){ toast('Employee already has approved leave overlapping these dates.','error'); return; }
+  if(overlap){ toast('Employee already has approved leave overlapping these dates.','error'); _submittingLeave=false; return; }
 
   // Determine if requester is a HOD (manager role)
   const requesterUser = getUsers().find(u=>
