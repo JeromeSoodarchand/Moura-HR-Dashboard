@@ -24151,11 +24151,15 @@ function renderLeaveTable(){
         <button class="btn btn-xs" onclick="openEditLeaveModal('${req.id}')">&#9998; Edit</button>
         <button class="btn btn-xs btn-danger" onclick="cancelLeaveRequest('${req.id}')">&#x2715; Cancel</button>`;
     }
-    // HR/Admin can cancel or edit any leave on behalf of employee
-    if(!actionBtns && canEdit() && (req.status==='pending'||req.status==='approved')){
-      actionBtns = `
-        ${req.status==='pending'?`<button class="btn btn-xs" onclick="openEditLeaveModal('${req.id}')">&#9998; Edit</button>`:''}
-        <button class="btn btn-xs btn-danger" onclick="hrCancelLeave('${req.id}')">&#x2715; Cancel</button>`;
+    // HR/Admin can always cancel (append to existing buttons or set new)
+    if(canEdit() && (req.status==='pending'||req.status==='approved')){
+      const cancelBtn = `<button class="btn btn-xs btn-danger" onclick="hrCancelLeave('${req.id}')" style="margin-left:4px">&#x2715; Cancel</button>`;
+      const editBtn = req.status==='pending' ? `<button class="btn btn-xs" onclick="openEditLeaveModal('${req.id}')">&#9998; Edit</button>` : '';
+      if(!actionBtns){
+        actionBtns = editBtn + cancelBtn;
+      } else {
+        actionBtns += cancelBtn;
+      }
     }
 
     // Stage indicator
@@ -24478,14 +24482,13 @@ This will restore the leave balance.`)) return;
       }
     }
 
-    // Delete auto-created attendance records for leave days
+    // Delete auto-created attendance records for leave days (match by date range)
     if(sbReady()){
       await _sb.from('attendance')
         .delete()
         .eq('emp_id', String(req.empId))
         .gte('date', req.fromDate)
         .lte('date', req.toDate)
-        .eq('notes', (getLEAVE_TYPES()[req.type]?.label||req.type) + ' — approved leave')
         .catch(()=>{});
     }
 
