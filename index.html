@@ -24151,6 +24151,12 @@ function renderLeaveTable(){
         <button class="btn btn-xs" onclick="openEditLeaveModal('${req.id}')">&#9998; Edit</button>
         <button class="btn btn-xs btn-danger" onclick="cancelLeaveRequest('${req.id}')">&#x2715; Cancel</button>`;
     }
+    // HR/Admin can cancel or edit any leave on behalf of employee
+    if(!actionBtns && canEdit() && (req.status==='pending'||req.status==='approved')){
+      actionBtns = `
+        ${req.status==='pending'?`<button class="btn btn-xs" onclick="openEditLeaveModal('${req.id}')">&#9998; Edit</button>`:''}
+        <button class="btn btn-xs btn-danger" onclick="hrCancelLeave('${req.id}')">&#x2715; Cancel</button>`;
+    }
 
     // Stage indicator
     let stageHtml = '';
@@ -24437,6 +24443,65 @@ async function autoCreateAccountForNewEmployee(emp){
 // ── CONSOLIDATED showPage hook (replaces 4 separate overrides) ───────────────
 
 // ── EMPLOYEE LEAVE CANCEL / EDIT ─────────────────────────────────────────────
+async function hrCancelLeave(reqId){
+  const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
+  if(!req) return;
+  const emp = gE(req.empId);
+  const empName = emp ? emp.name : 'this employee';
+  if(!confirm(`Cancel leave for ${empName}?
+
+From: ${fDate(req.fromDate)}
+To: ${fDate(req.toDate)}
+Status: ${req.status}
+
+This will restore the leave balance.`)) return;
+
+  const note = prompt('Reason for cancellation (optional):') || '';
+
+  showLoader('Cancelling…');
+  try{
+    // Update status
+    req.status    = 'cancelled';
+    req.hodStatus = 'cancelled';
+    req.hrStatus  = 'cancelled';
+    req.reviewNote = (req.reviewNote ? req.reviewNote + ' | ' : '') + 'Cancelled by HR' + (note ? ': ' + note : '');
+    req.updatedAt  = new Date().toISOString();
+    await dbSaveLeaveRequest(req);
+
+    // Restore leave balance if was approved
+    if(req.status === 'approved' || req.hodStatus === 'approved'){
+      const bal = _leaveBalances.find(b=>String(b.empId)===String(req.empId));
+      if(bal && ['annual','sick','casual'].includes(req.type)){
+        const field = req.type === 'annual' ? 'usedAnnual' : req.type === 'sick' ? 'usedSick' : 'usedCasual';
+        bal[field] = Math.max(0, (parseFloat(bal[field])||0) - (parseFloat(req.days)||0));
+        await dbSaveLeaveBalance(bal).catch(()=>{});
+      }
+    }
+
+    // Delete auto-created attendance records for leave days
+    if(sbReady()){
+      await _sb.from('attendance')
+        .delete()
+        .eq('emp_id', String(req.empId))
+        .gte('date', req.fromDate)
+        .lte('date', req.toDate)
+        .eq('notes', (getLEAVE_TYPES()[req.type]?.label||req.type) + ' — approved leave')
+        .catch(()=>{});
+    }
+
+    const idx = _leaveRequests.findIndex(r=>String(r.id)===String(reqId));
+    if(idx>=0) _leaveRequests[idx] = req;
+    S.set('leaveRequests', _leaveRequests);
+    dbAddAudit(CU.name, `Cancelled leave for ${empName}: ${fDate(req.fromDate)} – ${fDate(req.toDate)}`);
+    toast('Leave cancelled successfully.', 'success');
+  } catch(e){
+    toast('Failed to cancel: ' + (e.message||e), 'error');
+  }
+  hideLoader();
+  _leaveRequests = await dbGetLeaveRequests();
+  renderLeave();
+}
+
 async function cancelLeaveRequest(reqId){
   const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
   if(!req) return;
