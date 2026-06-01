@@ -20368,6 +20368,7 @@ async function submitLeaveRequest(){
   _submittingLeave = true;
   console.log('[SUBMIT] proceeding with submission');
   const empId  = document.getElementById('lv-emp')?.value;
+  console.log('[SUBMIT] empId=', empId, 'from=', document.getElementById('lv-from')?.value, 'to=', document.getElementById('lv-to')?.value);
   const type   = document.getElementById('lv-type')?.value;
   const from   = document.getElementById('lv-from')?.value;
   const to     = document.getElementById('lv-to')?.value;
