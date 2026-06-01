@@ -20247,7 +20247,7 @@ async function renderLeave(){
   // Only run if no modal is open to avoid disrupting form submissions
   if(_leaveRequests && sbReady() && !document.getElementById('mb')?.classList.contains('open')){
     const cutoff = new Date(Date.now()-7*24*60*60*1000).toISOString().slice(0,10);
-    const recentApproved = _leaveRequests.filter(r=>r.status==='approved'&&r.toDate>=cutoff);
+    const recentApproved = _leaveRequests.filter(r=>r.status==='approved'&&r.toDate>=cutoff&&r.hodStatus!=='cancelled'&&r.hrStatus!=='cancelled');
     for(const req of recentApproved){
       await createLeaveAttendanceRecords(req).catch(()=>{});
     }
