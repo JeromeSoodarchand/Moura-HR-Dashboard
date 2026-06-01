@@ -19875,7 +19875,9 @@ async function dbSaveLeaveRequest(req){
     } else {
       delete row.id;
       // Insert and get the real Supabase ID back
+      console.log('[LEAVE INSERT] Attempting insert with row:', JSON.stringify(row));
       const {data:insData, error:insError} = await _sb.from('leave_requests').insert(row).select('id');
+      console.log('[LEAVE INSERT] Result - data:', insData, 'error:', insError);
       if(insError){ console.error('Insert leave error:',insError); toast('Leave save error: '+insError.message,'error'); return req; }
       // Update local record with real Supabase ID
       const realId = insData?.[0]?.id;
