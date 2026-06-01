@@ -24621,7 +24621,11 @@ This will restore the leave balance.`)) return;
 
     // Restore leave balance if was approved
     if(wasApproved){
-      const bal = _leaveBalances.find(b=>String(b.empId)===String(req.empId));
+      // Ensure balances are loaded
+      if(!_leaveBalances || !_leaveBalances.length){
+        _leaveBalances = await dbGetLeaveBalances().catch(()=>[]);
+      }
+      const bal = (_leaveBalances||[]).find(b=>String(b.empId)===String(req.empId));
       if(bal && ['annual','sick','casual'].includes(req.type)){
         const field = req.type === 'annual' ? 'usedAnnual' : req.type === 'sick' ? 'usedSick' : 'usedCasual';
         bal[field] = Math.max(0, (parseFloat(bal[field])||0) - (parseFloat(req.days)||0));
