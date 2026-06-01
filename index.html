@@ -24592,8 +24592,12 @@ async function autoCreateAccountForNewEmployee(emp){
 
 // ── EMPLOYEE LEAVE CANCEL / EDIT ─────────────────────────────────────────────
 async function hrCancelLeave(reqId){
+  // Ensure _leaveRequests is an array
+  if(!Array.isArray(_leaveRequests)){
+    _leaveRequests = await dbGetLeaveRequests().catch(()=>[]);
+  }
   const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
-  if(!req) return;
+  if(!req){ toast('Leave request not found. Please refresh.','error'); return; }
   const emp = gE(req.empId);
   const empName = emp ? emp.name : 'this employee';
   if(!confirm(`Cancel leave for ${empName}?
