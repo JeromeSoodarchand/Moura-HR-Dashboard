@@ -20107,7 +20107,8 @@ async function renderLeave(){
   [_leaveRequests, _leaveBalances] = await Promise.all([dbGetLeaveRequests(), dbGetLeaveBalances()]);
   renderLeaveMetrics();
   // Auto-create attendance records for recently approved leaves (catches email approvals)
-  if(_leaveRequests && sbReady()){
+  // Only run if no modal is open to avoid disrupting form submissions
+  if(_leaveRequests && sbReady() && !document.getElementById('mb')?.classList.contains('open')){
     const cutoff = new Date(Date.now()-7*24*60*60*1000).toISOString().slice(0,10);
     const recentApproved = _leaveRequests.filter(r=>r.status==='approved'&&r.toDate>=cutoff);
     for(const req of recentApproved){
@@ -20362,8 +20363,10 @@ function updateLeaveDays(){
 }
 
 async function submitLeaveRequest(){
-  if(_submittingLeave){ toast('Already submitting, please wait…','info'); return; }
+  console.log('[SUBMIT] called, _submittingLeave=', _submittingLeave);
+  if(_submittingLeave){ toast('Already submitting, please wait…','info'); _submittingLeave=false; return; }
   _submittingLeave = true;
+  console.log('[SUBMIT] proceeding with submission');
   const empId  = document.getElementById('lv-emp')?.value;
   const type   = document.getElementById('lv-type')?.value;
   const from   = document.getElementById('lv-from')?.value;
