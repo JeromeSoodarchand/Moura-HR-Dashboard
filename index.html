@@ -19982,9 +19982,9 @@ function getEmpBalance(empId){
   return {
     annual: bal.annual, sick: bal.sick, casual: bal.casual,
     usedAnnual: used.annual, usedSick: used.sick, usedCasual: used.casual,
-    remAnnual: Math.max(0,bal.annual-used.annual),
-    remSick:   Math.max(0,bal.sick-used.sick),
-    remCasual: Math.max(0,bal.casual-used.casual),
+    remAnnual: Math.max(0,bal.annual-(parseFloat(used.annual)||0)),
+    remSick:   Math.max(0,bal.sick-(parseFloat(used.sick)||0)),
+    remCasual: Math.max(0,bal.casual-(parseFloat(used.casual)||0)),
   };
 }
 
@@ -20294,7 +20294,7 @@ function renderLeaveBalances(){
       <td><div style="font-size:12px">${b.remAnnual}/${b.annual} rem</div>${bar(b.usedAnnual,b.annual)}</td>
       <td><div style="font-size:12px">${b.remSick}/${b.sick} rem</div>${bar(b.usedSick,b.sick)}</td>
       <td><div style="font-size:12px">${b.remCasual}/${b.casual} rem</div>${bar(b.usedCasual,b.casual)}</td>
-      <td class="tm">${b.usedAnnual+b.usedSick+b.usedCasual} days</td>
+      <td class="tm">${(parseFloat(b.usedAnnual)||0)+(parseFloat(b.usedSick)||0)+(parseFloat(b.usedCasual)||0)} days</td>
       <td>${canEdit()?`<button class="btn btn-xs" onclick="openEditBalance('${emp.id}')">Edit</button>`:'—'}</td>
     </tr>`;
   }).join('');
