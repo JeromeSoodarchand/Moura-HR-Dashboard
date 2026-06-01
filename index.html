@@ -13518,6 +13518,7 @@ async function boot(){
       if(_pinEmp) { _pinUser.name = _pinEmp.name; _pinUser.empId = _pinEmp.id; }
       CU = _pinUser;
       await applyStoredBranding();
+ensureFamilyMedicalLeaveType();
       showEmployeeClockInScreen(CU);
       return;
     }
@@ -19057,6 +19058,128 @@ async function sendPayslipEmailTo(rowIdx, overrideEmail){
 }
 
 
+
+// ── MAURITIUS SICK LEAVE COMPLIANCE ──────────────────────────────────────────
+
+function calcSickLeaveEntitlement(emp){
+  // Workers' Rights Act 2019 — Mauritius
+  // < 6 months: 0 days
+  // 6-11 months: 1 day per completed month (max 6)
+  // 12+ months: 15 days per year (carries over)
+  if(!emp || !emp.start) return 15; // default if no start date
+  const start = new Date(emp.start + 'T00:00:00');
+  const today = new Date();
+  const monthsEmployed = (today.getFullYear() - start.getFullYear()) * 12 +
+    (today.getMonth() - start.getMonth());
+  if(monthsEmployed < 6) return 0;
+  if(monthsEmployed < 12) return Math.min(monthsEmployed - 5, 6); // 1 day per month after 6th
+  return 15; // full entitlement after 12 months
+}
+
+function getSickLeaveCarryover(empId){
+  // Get accumulated unused sick leave from previous years
+  // Stored in leave_balances as sick_carryover field
+  const bal = _leaveBalances?.find(b=>String(b.empId)===String(empId));
+  return parseFloat(bal?.sickCarryover||0);
+}
+
+function getTotalSickLeaveBalance(emp){
+  if(!emp) return 15;
+  const annual = calcSickLeaveEntitlement(emp);
+  const carryover = getSickLeaveCarryover(emp.id);
+  return annual + carryover;
+}
+
+function checkThreeDayRule(req){
+  // If sick leave > 3 consecutive working days, medical certificate required
+  if(req.type !== 'sick') return false;
+  const days = parseInt(req.days)||0;
+  return days > 3;
+}
+
+function getFamilyMedicalLeaveEligibility(emp){
+  // Employees earning ≤ Rs 50,000/month are eligible for Family Medical Leave
+  // Up to 10 days per year
+  if(!emp || !emp.salary) return false;
+  const monthly = parseFloat(emp.salary?.amount)||0;
+  const freq = emp.salary?.frequency||'monthly';
+  let monthlyAmount = monthly;
+  if(freq === 'annual') monthlyAmount = monthly / 12;
+  if(freq === 'weekly') monthlyAmount = monthly * 52 / 12;
+  return monthlyAmount <= 50000;
+}
+
+function renderSickLeaveWarnings(req){
+  const warnings = [];
+  if(checkThreeDayRule(req)){
+    warnings.push('⚠ Medical certificate required (>3 consecutive days)');
+  }
+  return warnings;
+}
+
+// Override getEmpBalance to use Mauritius-compliant sick leave
+const _origGetEmpBalance = getEmpBalance;
+function getEmpBalance(empId){
+  const bal = _origGetEmpBalance(empId);
+  if(!bal) return bal;
+  // Override sick leave with Mauritius-compliant calculation
+  const emp = gE(empId);
+  if(emp){
+    const entitlement = getTotalSickLeaveBalance(emp);
+    bal.sick = entitlement;
+    bal.remSick = Math.max(0, entitlement - (parseFloat(bal.usedSick)||0));
+  }
+  return bal;
+}
+
+// Add family medical leave type if not already present
+function ensureFamilyMedicalLeaveType(){
+  const settings = getSettings();
+  const types = settings.leaveTypes || [];
+  if(!types.find(t=>t.key==='family_medical')){
+    types.push({
+      key:'family_medical',
+      label:'Family Medical Leave',
+      color:'#7C3AED',
+      bg:'#EDE9FE',
+      maxDays:10,
+      paid:true,
+      protected:true,
+      note:'For employees earning ≤ Rs 50,000/month. Max 10 days/year.'
+    });
+    settings.leaveTypes = types;
+    dbSetSetting('leaveTypes', types).catch(()=>{});
+  }
+}
+
+// Year-end sick leave carryover — run at start of new year
+async function processSickLeaveCarryover(){
+  if(!sbReady()) return;
+  const currentYear = new Date().getFullYear();
+  const lastRunKey = 'sickLeaveCarryoverYear';
+  const lastRun = parseInt(S.get(lastRunKey, 0));
+  if(lastRun >= currentYear) return; // already ran this year
+
+  const emps = getEmps();
+  for(const emp of emps){
+    if(emp.status === 'offboarded') continue;
+    const bal = _leaveBalances?.find(b=>String(b.empId)===String(emp.id));
+    if(!bal) continue;
+    const entitlement = calcSickLeaveEntitlement(emp);
+    const used = parseFloat(bal.usedSick)||0;
+    const unused = Math.max(0, entitlement - used);
+    // Add unused to carryover (no upper limit per Mauritius law)
+    const currentCarryover = parseFloat(bal.sickCarryover||0);
+    bal.sickCarryover = currentCarryover + unused;
+    // Reset used sick leave for new year
+    bal.usedSick = 0;
+    // Save to Supabase
+    await dbSaveLeaveBalance(bal).catch(()=>{});
+  }
+  S.set(lastRunKey, currentYear);
+  console.log('[Sick Leave] Year-end carryover processed for', emps.length, 'employees');
+}
+
 // ── MISSING FUNCTIONS (referenced but not yet defined) ───────────────────────
 
 function calcWorkingDays(fromStr, toStr){
@@ -20292,7 +20415,11 @@ function renderLeaveBalances(){
         <div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.dept||''}</div></div>
       </div></td>
       <td><div style="font-size:12px">${b.remAnnual}/${b.annual} rem</div>${bar(b.usedAnnual,b.annual)}</td>
-      <td><div style="font-size:12px">${b.remSick}/${b.sick} rem</div>${bar(b.usedSick,b.sick)}</td>
+      <td>
+        <div style="font-size:12px">${b.remSick}/${b.sick} rem</div>
+        ${bar(b.usedSick,b.sick)}
+        ${(()=>{const e=gE(b.empId);const m=e?Math.floor((new Date()-new Date(e.start+'T00:00:00'))/(1000*60*60*24*30)):12;return m<12?`<div style="font-size:10px;color:var(--amber)">${m<6?'Not yet eligible':'Accruing ('+Math.min(m-5,6)+'d)'}</div>`:''})()}
+      </td>
       <td><div style="font-size:12px">${b.remCasual}/${b.casual} rem</div>${bar(b.usedCasual,b.casual)}</td>
       <td class="tm">${(parseFloat(b.usedAnnual)||0)+(parseFloat(b.usedSick)||0)+(parseFloat(b.usedCasual)||0)} days</td>
       <td>${canEdit()?`<button class="btn btn-xs" onclick="openEditBalance('${emp.id}')">Edit</button>`:'—'}</td>
@@ -20391,6 +20518,22 @@ async function submitLeaveRequest(){
 
   const days = countWorkingDays(from, to);
   if(days===0){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
+
+  // Mauritius 3-day rule — medical certificate required for sick leave > 3 days
+  if(type==='sick' && days > 3){
+    if(!confirm(`Medical certificate required\n\nSick leave of ${days} days exceeds 3 consecutive working days.\nA medical certificate must be provided to HR.\n\nContinue submitting?`)){
+      _submittingLeave=false; return;
+    }
+  }
+
+  // Family medical leave eligibility check
+  if(type==='family_medical'){
+    const emp2 = gE(empId);
+    if(emp2 && !getFamilyMedicalLeaveEligibility(emp2)){
+      toast('Family Medical Leave is only available for employees earning ≤ Rs 50,000/month.','error');
+      _submittingLeave=false; return;
+    }
+  }
 
   // Check balance for tracked types
   if(['annual','sick','casual'].includes(type)){
@@ -24116,6 +24259,7 @@ function renderLeaveTable(){
     const c   = emp ? aColor(emp.name) : '#888';
     const ds  = getRequestDisplayStatus(req);
     const canApprove = canApproveRequest(req);
+    const medCertRequired = req.type==='sick' && parseInt(req.days)>3;
 
     // What action buttons to show?
     let actionBtns = '';
@@ -24464,6 +24608,9 @@ This will restore the leave balance.`)) return;
 
   showLoader('Cancelling…');
   try{
+    // Save original status before changing
+    const wasApproved = req.status === 'approved';
+
     // Update status
     req.status    = 'cancelled';
     req.hodStatus = 'cancelled';
@@ -24473,7 +24620,7 @@ This will restore the leave balance.`)) return;
     await dbSaveLeaveRequest(req);
 
     // Restore leave balance if was approved
-    if(req.status === 'approved' || req.hodStatus === 'approved'){
+    if(wasApproved){
       const bal = _leaveBalances.find(b=>String(b.empId)===String(req.empId));
       if(bal && ['annual','sick','casual'].includes(req.type)){
         const field = req.type === 'annual' ? 'usedAnnual' : req.type === 'sick' ? 'usedSick' : 'usedCasual';
@@ -24484,12 +24631,13 @@ This will restore the leave balance.`)) return;
 
     // Delete auto-created attendance records for leave days (match by date range)
     if(sbReady()){
-      await _sb.from('attendance')
+      const {error:delErr} = await _sb.from('attendance')
         .delete()
         .eq('emp_id', String(req.empId))
         .gte('date', req.fromDate)
-        .lte('date', req.toDate)
-        .catch(()=>{});
+        .lte('date', req.toDate);
+      if(delErr) console.warn('[Cancel] Attendance delete error:', delErr.message || delErr);
+      else console.log('[Cancel] Attendance records deleted for leave period');
     }
 
     const idx = _leaveRequests.findIndex(r=>String(r.id)===String(reqId));
