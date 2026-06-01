@@ -20363,16 +20363,15 @@ function updateLeaveDays(){
 }
 
 async function submitLeaveRequest(){
-  console.log('[SUBMIT] called, _submittingLeave=', _submittingLeave);
-  if(_submittingLeave){ toast('Already submitting, please wait…','info'); _submittingLeave=false; return; }
-  _submittingLeave = true;
-  console.log('[SUBMIT] proceeding with submission');
+  // Capture ALL form values immediately before any async operations can rebuild the DOM
   const empId  = document.getElementById('lv-emp')?.value;
-  console.log('[SUBMIT] empId=', empId, 'from=', document.getElementById('lv-from')?.value, 'to=', document.getElementById('lv-to')?.value);
   const type   = document.getElementById('lv-type')?.value;
   const from   = document.getElementById('lv-from')?.value;
   const to     = document.getElementById('lv-to')?.value;
   const reason = document.getElementById('lv-reason')?.value||'';
+  console.log('[SUBMIT] called empId=',empId,'from=',from,'to=',to,'_submitting=',_submittingLeave);
+  if(_submittingLeave){ toast('Already submitting, please wait…','info'); _submittingLeave=false; return; }
+  _submittingLeave = true;
   if(!empId||!from||!to){ toast('Please fill all required fields.','error'); _submittingLeave=false; return; }
   if(to<from){ toast('End date must be after start date.','error'); _submittingLeave=false; return; }
 
