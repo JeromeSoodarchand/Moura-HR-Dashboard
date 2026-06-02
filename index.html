@@ -20127,33 +20127,54 @@ function leaveTypeBadge(type){
 
 // ── Render ────────────────────────────────────────────────────────────────────
 
-function renderManagerLeaveCalendar(){
+async function renderManagerLeaveCalendar(){
   const el = document.getElementById('mgr-leave-cal');
   const body = document.getElementById('mgr-leave-cal-body');
   if(!el) return;
-  // Only relevant for HOD/manager — admin/hr see everything already
-  if(!CU || CU.role==='admin' || CU.role==='hr'){ el.style.display='none'; return; }
+
+  // Visible to HODs, managers, HR and admin — not regular employees
+  const isManager = CU && (CU.role==='admin'||CU.role==='hr'||CU.role==='hod'||CU.role==='manager'||_findHodEmp()?.isHOD);
+  if(!isManager){ el.style.display='none'; return; }
   el.style.display='';
 
+  // Update title
+  const title = el.querySelector('.ct');
+  if(title) title.textContent = '🌐 Group Manager Leave Calendar — All Companies';
+
   const users = getUsers();
-  const allEmps = getEmps().filter(e=>e.status!=='offboarded');
+
+  // Load employees from ALL companies for cross-company visibility
+  let allEmps = getEmps().filter(e=>e.status!=='offboarded');
+
+  // If Supabase is available, load managers from all companies
+  if(sbReady()){
+    try{
+      const {data} = await _sb.from('employees')
+        .select('id, name, dept, role, status, company_id, clock_mode, is_hod, is_senior_hod, user_id')
+        .neq('status','offboarded')
+        .in('clock_mode',['hod']);
+      if(data && data.length){
+        // Merge with existing — avoid duplicates
+        data.forEach(r=>{
+          if(!allEmps.find(e=>String(e.id)===String(r.id))){
+            allEmps.push({
+              id:r.id, name:r.name, dept:r.dept, role:r.role,
+              status:r.status, companyId:r.company_id,
+              clockMode:r.clock_mode, isHOD:r.is_hod, isSeniorHOD:r.is_senior_hod,
+              userId:r.user_id
+            });
+          }
+        });
+      }
+    } catch(e){ console.warn('[GroupCal] Could not load cross-company managers:', e); }
+  }
+
   const hodEmp = CU.empId ? gE(CU.empId) : null;
 
-  // isAdminOrHR helper
-  const isAdminOrHR = (e) => {
-    const u = users.find(u=>
-      (u.empId && String(u.empId)===String(e.id))||
-      (e.userId && String(u.id)===String(e.userId))||
-      (u.email&&e.email&&u.email.toLowerCase()===e.email.toLowerCase()&&(u.role==='admin'||u.role==='hr'))
-    );
-    return u && (u.role==='admin'||u.role==='hr');
-  };
-
-  // Get other HODs (excluding self and admin/hr)
+  // Get all HODs/managers across all companies
   const otherHODs = allEmps.filter(e=>
-    (e.isHOD||e.isSeniorHOD||e.clockMode==='hod') &&
-    !isAdminOrHR(e) &&
-    String(e.id) !== String(hodEmp?.id)
+    (e.isHOD||e.isSeniorHOD||e.clockMode==='hod'||e.role==='hod'||e.role==='manager') &&
+    e.status!=='offboarded'
   );
 
   if(!otherHODs.length){
@@ -20167,7 +20188,30 @@ function renderManagerLeaveCalendar(){
   const toDate   = new Date(now.getFullYear(), now.getMonth()+2, 0).toISOString().slice(0,10);
 
   const hodIds = new Set(otherHODs.map(e=>String(e.id)));
-  const relevantLeaves = (_leaveRequests||[]).filter(r=>
+
+  // Load leave requests from ALL companies for cross-company visibility
+  let allLeaves = [...(_leaveRequests||[])];
+  if(sbReady()){
+    try{
+      const {data} = await _sb.from('leave_requests')
+        .select('*')
+        .in('status',['approved'])
+        .gte('to_date', fromDate)
+        .lte('from_date', toDate);
+      if(data && data.length){
+        data.forEach(r=>{
+          const mapped = {
+            id:r.id, empId:r.emp_id, type:r.type,
+            fromDate:r.from_date, toDate:r.to_date,
+            days:r.days, status:r.status, companyId:r.company_id
+          };
+          if(!allLeaves.find(l=>String(l.id)===String(r.id))) allLeaves.push(mapped);
+        });
+      }
+    } catch(e){ console.warn('[GroupCal] Could not load cross-company leaves:', e); }
+  }
+
+  const relevantLeaves = allLeaves.filter(r=>
     hodIds.has(String(r.empId)) &&
     r.status==='approved' &&
     r.toDate >= fromDate &&
@@ -20183,7 +20227,8 @@ function renderManagerLeaveCalendar(){
   relevantLeaves.forEach(r=>{
     const emp = otherHODs.find(e=>String(e.id)===String(r.empId));
     if(!emp) return;
-    if(!byEmp[emp.id]) byEmp[emp.id] = {name: emp.name, role: emp.role, dept: emp.dept, dates:[]};
+    const companyName = _companiesCache?.find(c=>c.id===emp.companyId)?.name || '';
+    if(!byEmp[emp.id]) byEmp[emp.id] = {name: emp.name, role: emp.role, dept: emp.dept, company: companyName, dates:[]};
     // Expand date range
     let d = new Date(r.fromDate+'T00:00:00');
     const end = new Date(r.toDate+'T00:00:00');
