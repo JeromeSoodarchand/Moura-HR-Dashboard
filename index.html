@@ -684,9 +684,11 @@ async function renderCompanyMgmt(){
       </div>
       <select onchange="setCompanyAccessMode(${c.id}, this.value)"
         style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer">
-        <option value="full_kiosk" ${(getSettings().companyAccessModes||{})[c.id]==='full_kiosk'||!(getSettings().companyAccessModes||{})[c.id]?'selected':''}>🖥 Full Kiosk</option>
-        <option value="leave_portal" ${(getSettings().companyAccessModes||{})[c.id]==='leave_portal'?'selected':''}>📱 Leave Portal</option>
-        <option value="full_platform" ${(getSettings().companyAccessModes||{})[c.id]==='full_platform'?'selected':''}>🌐 Full Platform</option>
+        ${(()=>{const _m=(getSettings().companyAccessModes||{})[String(c.id)]||'full_kiosk';return[
+          ['full_kiosk','🖥 Full Kiosk'],
+          ['leave_portal','📱 Leave Portal'],
+          ['full_platform','🌐 Full Platform']
+        ].map(([v,l])=>`<option value="${v}" ${_m===v?'selected':''}>${l}</option>`).join('');})()}
       </select>
       <button onclick="editCompanyName(${c.id},'${c.name.replace(/'/g,"\'")}')" class="btn btn-xs">✎ Rename</button>
       <button onclick="deleteCompany(${c.id},'${c.name.replace(/'/g,"\'")}')" class="btn btn-xs btn-danger">✕</button>
@@ -702,10 +704,16 @@ async function setCompanyAccessMode(companyId, mode){
   const settings = getSettings();
   if(!settings.companyAccessModes) settings.companyAccessModes = {};
   settings.companyAccessModes[String(companyId)] = mode;
+  // Save to Supabase and update local cache
   await dbSetSetting('companyAccessModes', settings.companyAccessModes);
-  S.set('settings', settings);
-  const modeLabels = { full_kiosk:'Full Kiosk', leave_portal:'Leave Portal (HODs)', full_platform:'Full Platform' };
+  // Update the global settings cache directly
+  const cached = S.get('settings', {});
+  cached.companyAccessModes = settings.companyAccessModes;
+  S.set('settings', cached);
+  const modeLabels = { full_kiosk:'🖥 Full Kiosk', leave_portal:'📱 Leave Portal (HODs)', full_platform:'🌐 Full Platform' };
   toast('Access mode set to: ' + (modeLabels[mode]||mode), 'success');
+  // Re-render to show updated selection
+  renderCompanyMgmt();
 }
 
 async function addCompany(){
@@ -970,7 +978,8 @@ function getCompanyAccessMode(companyId){
   // 'leave_portal'  — mobile leave portal for HODs only
   const settings = getSettings();
   const modes = settings.companyAccessModes || {};
-  return modes[String(companyId)] || 'full_kiosk'; // default: full kiosk
+  // Try string key first, then numeric
+  return modes[String(companyId)] || modes[companyId] || 'full_kiosk';
 }
 
 function shouldShowMobilePortal(user, emp){
