@@ -682,6 +682,12 @@ async function renderCompanyMgmt(){
         <div style="font-size:13px;font-weight:600">${c.name}</div>
         <div style="font-size:11px;color:var(--text3)">ID: ${c.id} · slug: ${c.slug||'—'}</div>
       </div>
+      <select onchange="setCompanyAccessMode(${c.id}, this.value)"
+        style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer">
+        <option value="full_kiosk" ${(getSettings().companyAccessModes||{})[c.id]==='full_kiosk'||!(getSettings().companyAccessModes||{})[c.id]?'selected':''}>🖥 Full Kiosk</option>
+        <option value="leave_portal" ${(getSettings().companyAccessModes||{})[c.id]==='leave_portal'?'selected':''}>📱 Leave Portal</option>
+        <option value="full_platform" ${(getSettings().companyAccessModes||{})[c.id]==='full_platform'?'selected':''}>🌐 Full Platform</option>
+      </select>
       <button onclick="editCompanyName(${c.id},'${c.name.replace(/'/g,"\'")}')" class="btn btn-xs">✎ Rename</button>
       <button onclick="deleteCompany(${c.id},'${c.name.replace(/'/g,"\'")}')" class="btn btn-xs btn-danger">✕</button>
     </div>
@@ -690,6 +696,16 @@ async function renderCompanyMgmt(){
       <input id="new-company-name" class="fi" placeholder="New company name" style="flex:1">
       <button class="btn btn-primary" onclick="addCompany()">+ Add Company</button>
     </div>`;
+}
+
+async function setCompanyAccessMode(companyId, mode){
+  const settings = getSettings();
+  if(!settings.companyAccessModes) settings.companyAccessModes = {};
+  settings.companyAccessModes[String(companyId)] = mode;
+  await dbSetSetting('companyAccessModes', settings.companyAccessModes);
+  S.set('settings', settings);
+  const modeLabels = { full_kiosk:'Full Kiosk', leave_portal:'Leave Portal (HODs)', full_platform:'Full Platform' };
+  toast('Access mode set to: ' + (modeLabels[mode]||mode), 'success');
 }
 
 async function addCompany(){
@@ -938,6 +954,275 @@ function base64ToBuffer(b64){
   const buf = new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
   return buf.buffer;
+}
+
+
+// ── EMPLOYEE MOBILE SELF-SERVICE PORTAL ──────────────────────────────────────
+function isMobileDevice(){
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+    window.innerWidth < 768;
+}
+
+function getCompanyAccessMode(companyId){
+  // Access modes per company — stored in settings
+  // 'full_platform' — full HR platform
+  // 'full_kiosk'    — clock-in + leave (tablet kiosk)
+  // 'leave_portal'  — mobile leave portal for HODs only
+  const settings = getSettings();
+  const modes = settings.companyAccessModes || {};
+  return modes[String(companyId)] || 'full_kiosk'; // default: full kiosk
+}
+
+function shouldShowMobilePortal(user, emp){
+  // Show mobile portal based on company access mode setting
+  if(!isMobileDevice()) return false;
+  if(!emp) return false;
+  if(user.role === 'admin' || user.role === 'hr') return false; // HR/admin always get full platform
+  const mode = getCompanyAccessMode(_COMPANY_ID);
+  if(mode === 'full_platform') return false; // Full platform — no portal
+  if(mode === 'full_kiosk') return false;    // Kiosk mode — clock-in screen
+  if(mode === 'leave_portal'){
+    // Only HODs/managers get the portal
+    if(user.role === 'hod' || user.role === 'manager') return true;
+    if(emp.isHOD || emp.isSeniorHOD || emp.clockMode === 'hod') return true;
+    return false;
+  }
+  return false;
+}
+
+async function showMobilePortal(user, emp){
+  // Hide the main app, show mobile portal
+  const main = document.getElementById('main-app');
+  if(main) main.style.display = 'none';
+  const sidebar = document.getElementById('sidebar');
+  if(sidebar) sidebar.style.display = 'none';
+
+  // Create or show portal container
+  let portal = document.getElementById('mobile-portal');
+  if(!portal){
+    portal = document.createElement('div');
+    portal.id = 'mobile-portal';
+    portal.style.cssText = 'position:fixed;inset:0;background:#1E1445;overflow-y:auto;z-index:9999;font-family:Arial,sans-serif';
+    document.body.appendChild(portal);
+  }
+  portal.style.display = 'block';
+
+  // Load leave data
+  let leaveReqs = [], groupMgrLeaves = [];
+  try{
+    const [reqs] = await Promise.all([dbGetLeaveRequests()]);
+    leaveReqs = reqs.filter(r=>String(r.empId)===String(emp.id))
+      .sort((a,b)=>new Date(b.createdAt||b.updatedAt||0)-new Date(a.createdAt||a.updatedAt||0))
+      .slice(0,10);
+
+    // Load group manager leaves from ALL companies
+    const now = new Date();
+    const fromDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+    const toDate   = new Date(now.getFullYear(), now.getMonth()+2, 0).toISOString().slice(0,10);
+    if(sbReady()){
+      const {data:allLeaves} = await _sb.from('leave_requests')
+        .select('id, emp_id, type, from_date, to_date, days, status')
+        .eq('status','approved')
+        .gte('to_date', fromDate)
+        .lte('from_date', toDate);
+
+      if(allLeaves){
+        // Get all HOD employees across all companies
+        const {data:allEmps} = await _sb.from('employees')
+          .select('id, name, dept, company_id, clock_mode')
+          .eq('clock_mode','hod')
+          .neq('status','offboarded');
+
+        const hodIds = new Set((allEmps||[]).map(e=>String(e.id)));
+        const hodMap = {};
+        (allEmps||[]).forEach(e=>{ hodMap[String(e.id)] = e; });
+        const companies = _companiesCache || [];
+
+        groupMgrLeaves = allLeaves
+          .filter(r=>hodIds.has(String(r.emp_id)) && String(r.emp_id)!==String(emp.id))
+          .map(r=>({
+            ...r,
+            empName: hodMap[String(r.emp_id)]?.name || 'Unknown',
+            dept: hodMap[String(r.emp_id)]?.dept || '',
+            companyName: companies.find(c=>c.id===hodMap[String(r.emp_id)]?.company_id)?.name || '',
+          }))
+          .sort((a,b)=>a.from_date.localeCompare(b.from_date));
+      }
+    }
+  } catch(e){ console.warn('[MobilePortal]', e); }
+
+  const b = getEmpBalance(emp.id);
+  const initials = emp.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+
+  portal.innerHTML = `
+    <div style="background:linear-gradient(135deg,#1E1445,#2C2070);padding:24px 20px 20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div>
+          <div style="font-size:22px;font-weight:800;color:#C9A84C">SolentraHR</div>
+          <div style="font-size:12px;color:#CADCFC">Employee Portal</div>
+        </div>
+        <button onclick="mobilePortalLogout()" style="background:rgba(255,255,255,0.1);color:#CADCFC;border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer">Sign Out</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:52px;height:52px;border-radius:50%;background:#C9A84C;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:#1E1445;flex-shrink:0">${initials}</div>
+        <div>
+          <div style="font-size:18px;font-weight:700;color:#fff">${emp.name}</div>
+          <div style="font-size:13px;color:#CADCFC">${emp.dept||''} · ${emp.role||''}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Leave Balances -->
+    <div style="padding:16px 20px">
+      <div style="font-size:13px;font-weight:700;color:#C9A84C;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Leave Balance</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px">
+        ${[
+          {label:'Annual', rem:b?.remAnnual??20, total:b?.annual??20, color:'#1E1445'},
+          {label:'Sick', rem:b?.remSick??15, total:b?.sick??15, color:'#059669'},
+          {label:'Casual', rem:b?.remCasual??10, total:b?.casual??10, color:'#7C3AED'},
+        ].map(c=>`
+          <div style="background:#fff;border-radius:12px;padding:14px;text-align:center">
+            <div style="font-size:24px;font-weight:800;color:${c.color}">${c.rem}</div>
+            <div style="font-size:10px;color:#6B7280;margin-top:2px">of ${c.total}</div>
+            <div style="font-size:11px;font-weight:600;color:#374151;margin-top:4px">${c.label}</div>
+          </div>`).join('')}
+      </div>
+
+      <!-- New Leave Request Button -->
+      <button onclick="mobileShowLeaveForm()" style="width:100%;background:#059669;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:20px">
+        + New Leave Request
+      </button>
+
+      <!-- Group Manager Leave Calendar -->
+      <div style="font-size:13px;font-weight:700;color:#C9A84C;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">🌐 Group Manager Leave — This Month</div>
+      ${groupMgrLeaves.length === 0
+        ? '<div style="color:#6B7280;font-size:13px;margin-bottom:20px;text-align:center;padding:12px;background:#F9FAFB;border-radius:10px">No other managers on leave this month</div>'
+        : `<div style="margin-bottom:20px">${groupMgrLeaves.slice(0,8).map(r=>`
+          <div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;border-left:3px solid #1E1445">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div>
+                <div style="font-size:14px;font-weight:700;color:#1E1445">${r.empName}</div>
+                <div style="font-size:12px;color:#6B7280;margin-top:2px">${r.companyName}${r.dept?' · '+r.dept:''}</div>
+                <div style="font-size:13px;color:#374151;margin-top:4px">${fDate(r.from_date)} – ${fDate(r.to_date)} (${r.days}d)</div>
+              </div>
+              <div style="background:#EDE9FE;color:#7C3AED;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap">${(r.type||'').toUpperCase()}</div>
+            </div>
+          </div>`).join('')}</div>`
+      }
+
+      <!-- Leave History -->
+      <div style="font-size:13px;font-weight:700;color:#C9A84C;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">My Leave History</div>
+      ${leaveReqs.length === 0
+        ? '<div style="color:#6B7280;font-size:14px;text-align:center;padding:20px">No leave requests yet</div>'
+        : leaveReqs.map(r=>{
+            const statusColor = r.status==='approved'?'#059669':r.status==='rejected'?'#DC2626':'#D97706';
+            const typeLabel = getLEAVE_TYPES()[r.type]?.label || r.type;
+            return `<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:10px">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between">
+                <div>
+                  <div style="font-size:14px;font-weight:700;color:#1E1445">${typeLabel}</div>
+                  <div style="font-size:13px;color:#6B7280;margin-top:3px">${fDate(r.fromDate)} – ${fDate(r.toDate)} (${r.days}d)</div>
+                  ${r.reason?`<div style="font-size:12px;color:#9CA3AF;margin-top:4px">${r.reason}</div>`:''}
+                </div>
+                <div style="background:${statusColor};color:#fff;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;margin-left:10px">${r.status.toUpperCase()}</div>
+              </div>
+              ${r.reviewNote?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #F3F4F6;font-size:12px;color:#6B7280">Note: ${r.reviewNote}</div>`:''}
+            </div>`;
+          }).join('')
+      }
+    </div>
+
+    <!-- Leave Form Modal -->
+    <div id="mobile-leave-form" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10000;overflow-y:auto">
+      <div style="background:#fff;border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;padding:24px;max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <div style="font-size:18px;font-weight:700;color:#1E1445">New Leave Request</div>
+          <button onclick="document.getElementById('mobile-leave-form').style.display='none'" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6B7280">×</button>
+        </div>
+        <div style="margin-bottom:16px">
+          <label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:6px">Leave Type</label>
+          <select id="mlv-type" style="width:100%;padding:12px;border:1px solid #E5E7EB;border-radius:10px;font-size:15px;color:#374151;background:#fff">
+            ${Object.entries(getLEAVE_TYPES()).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+          <div>
+            <label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:6px">From</label>
+            <input type="date" id="mlv-from" style="width:100%;padding:12px;border:1px solid #E5E7EB;border-radius:10px;font-size:15px;color:#374151">
+          </div>
+          <div>
+            <label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:6px">To</label>
+            <input type="date" id="mlv-to" style="width:100%;padding:12px;border:1px solid #E5E7EB;border-radius:10px;font-size:15px;color:#374151">
+          </div>
+        </div>
+        <div style="margin-bottom:20px">
+          <label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:6px">Reason (optional)</label>
+          <textarea id="mlv-reason" rows="3" style="width:100%;padding:12px;border:1px solid #E5E7EB;border-radius:10px;font-size:15px;color:#374151;resize:none" placeholder="Enter reason..."></textarea>
+        </div>
+        <button onclick="mobileSubmitLeave('${emp.id}')" style="width:100%;background:#1E1445;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:700;cursor:pointer">
+          Submit Request
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function mobileShowLeaveForm(){
+  const form = document.getElementById('mobile-leave-form');
+  if(form) form.style.display = 'block';
+  // Set default dates
+  const today = todayStr();
+  const fromEl = document.getElementById('mlv-from');
+  const toEl = document.getElementById('mlv-to');
+  if(fromEl && !fromEl.value) fromEl.value = today;
+  if(toEl && !toEl.value) toEl.value = today;
+}
+
+async function mobileSubmitLeave(empId){
+  const type   = document.getElementById('mlv-type')?.value;
+  const from   = document.getElementById('mlv-from')?.value;
+  const to     = document.getElementById('mlv-to')?.value;
+  const reason = document.getElementById('mlv-reason')?.value||'';
+  if(!from||!to){ alert('Please select from and to dates.'); return; }
+  if(to < from){ alert('End date must be after start date.'); return; }
+  const days = countWorkingDays(from, to);
+  if(days === 0){ alert('No working days in selected range.'); return; }
+
+  const btn = event.target;
+  btn.textContent = 'Submitting...';
+  btn.disabled = true;
+
+  try{
+    const req = {
+      id: Date.now(),
+      empId, type, fromDate: from, toDate: to,
+      days, reason, status: 'pending',
+      hodStatus: 'pending', hrStatus: 'pending',
+      companyId: _COMPANY_ID,
+      updatedAt: new Date().toISOString(),
+    };
+    const saved = await dbSaveLeaveRequest(req);
+    notifyHODofLeaveRequest(saved||req).catch(()=>{});
+    // Close form
+    document.getElementById('mobile-leave-form').style.display = 'none';
+    // Refresh portal
+    const user = CU;
+    const emp = gE(empId);
+    await showMobilePortal(user, emp);
+    alert('Leave request submitted successfully!');
+  } catch(e){
+    alert('Failed to submit: ' + (e.message||e));
+    btn.textContent = 'Submit Request';
+    btn.disabled = false;
+  }
+}
+
+function mobilePortalLogout(){
+  const portal = document.getElementById('mobile-portal');
+  if(portal) portal.style.display = 'none';
+  const main = document.getElementById('main-app');
+  if(main) main.style.display = '';
+  doLogout();
 }
 
 // ── CROSS-BROWSER COMPATIBILITY POLYFILLS ────────────────────────────────────
@@ -13582,9 +13867,13 @@ ensureFamilyMedicalLeaveType();
       } else if(CU.role==='hod'||CU.role==='manager'){
         loadAndRenderDashboard();
       } else if(_rCM==='qr'||_rCM==='hod'||_rCM==='simple'){
-        showEmployeeClockInScreen(CU);
+        const _emp = CU.empId ? gE(CU.empId) : null;
+        if(shouldShowMobilePortal(CU, _emp)){ showMobilePortal(CU, _emp); }
+        else showEmployeeClockInScreen(CU);
       } else {
-        showEmployeeClockInScreen(CU);
+        const _emp2 = CU.empId ? gE(CU.empId) : null;
+        if(shouldShowMobilePortal(CU, _emp2)){ showMobilePortal(CU, _emp2); }
+        else showEmployeeClockInScreen(CU);
       }
       return;
     }
@@ -13895,10 +14184,18 @@ async function doLogin(){
     // HOD/Manager go straight to dashboard — they can clock in from the attendance page
     loadAndRenderDashboard();
   } else if(_dLoginCM==='qr'||_dLoginCM==='hod'||_dLoginCM==='simple'){
-    // Employee with mobile clock-in enabled — show clock-in screen
-    showEmployeeClockInScreen(user);
+    // Employee — check if they should see mobile portal
+    if(shouldShowMobilePortal(user, _dLoginEmp)){
+      showMobilePortal(user, _dLoginEmp);
+    } else {
+      showEmployeeClockInScreen(user);
+    }
   } else {
-    showEmployeeClockInScreen(user);
+    if(shouldShowMobilePortal(user, _dLoginEmp)){
+      showMobilePortal(user, _dLoginEmp);
+    } else {
+      showEmployeeClockInScreen(user);
+    }
   }
 }
 
@@ -19126,8 +19423,9 @@ function getEmpBalance(empId){
   const emp = gE(empId);
   if(emp){
     const entitlement = getTotalSickLeaveBalance(emp);
-    bal.sick = entitlement;
-    bal.remSick = Math.max(0, entitlement - (parseFloat(bal.usedSick)||0));
+    const carryover = parseFloat(bal.sickCarryover||0);
+    bal.sick = entitlement + carryover;
+    bal.remSick = Math.max(0, bal.sick - (parseFloat(bal.usedSick)||0));
   }
   return bal;
 }
@@ -20015,7 +20313,6 @@ async function dbSaveLeaveRequest(req){
           .limit(1);
         realId = fetched?.[0]?.id;
       }
-      console.log('[LEAVE INSERT] Real ID:', realId);
       if(realId){
         req = {...req, id: realId};
         // Update localStorage — replace the temp Date.now() ID with real Supabase ID
@@ -20049,7 +20346,7 @@ async function dbGetLeaveBalances(){
     const out = {};
     data.forEach(r=>{
       if(companyEmpIds.includes(String(r.emp_id))){
-        out[r.emp_id]={annual:r.annual||20,sick:r.sick||15,casual:r.casual||10};
+        out[r.emp_id]={annual:r.annual||20,sick:r.sick||15,casual:r.casual||10,sickCarryover:r.sick_carryover||0};
       }
     });
     S.set('leaveBalances', out);
@@ -20072,8 +20369,9 @@ async function dbSaveLeaveBalance(empId, balances){
     const ann = bal?.annual ?? bal?.annual?.entitlement ?? null;
     const sick = bal?.sick ?? bal?.sick?.entitlement ?? null;
     const cas  = bal?.casual ?? bal?.casual?.entitlement ?? null;
+    const carryover = bal?.sickCarryover ?? 0;
     await _sb.from('leave_balances').upsert(
-      {emp_id:eid, annual:ann, sick:sick, casual:cas, updated_at:new Date().toISOString()},
+      {emp_id:eid, annual:ann, sick:sick, casual:cas, sick_carryover:carryover, updated_at:new Date().toISOString()},
       {onConflict:'emp_id'}
     );
   } catch(e){ console.error('Save leave balance error:',e); }
@@ -20301,7 +20599,7 @@ async function renderLeave(){
   renderLeaveCalendar();
   renderLeaveTable();
   renderLeaveBalances();
-  renderManagerLeaveCalendar();
+  renderManagerLeaveCalendar().catch(e=>console.warn("[MgrCal]",e));
 }
 
 function renderLeaveMetrics(){
@@ -20555,7 +20853,6 @@ async function submitLeaveRequest(){
   const from   = document.getElementById('lv-from')?.value;
   const to     = document.getElementById('lv-to')?.value;
   const reason = document.getElementById('lv-reason')?.value||'';
-  console.log('[SUBMIT] called empId=',empId,'from=',from,'to=',to,'_submitting=',_submittingLeave);
   if(_submittingLeave){ toast('Already submitting, please wait…','info'); _submittingLeave=false; return; }
   _submittingLeave = true;
   if(!empId||!from||!to){ toast('Please fill all required fields.','error'); _submittingLeave=false; return; }
@@ -23202,7 +23499,7 @@ async function confirmAndRunPayroll(){
     // Only deduct for absent days (no attendance + no approved leave)
     let leaveDeduct=0,leaveNote='';
     // Count approved leave days in period (informational only — no deduction)
-    const approvedLeaveRecs = leaveRecs.filter(r=>String(r.empId)===String(emp.id)&&r.status==='approved');
+    const approvedLeaveRecs = (Array.isArray(leaveRecs)?leaveRecs:[]).filter(r=>String(r.empId)===String(emp.id)&&r.status==='approved');
     approvedLeaveRecs.forEach(req=>{
       let days=0,cur=new Date(req.fromDate+'T00:00:00');
       const end=new Date(req.toDate+'T00:00:00'),ps=new Date(from+'T00:00:00'),pe=new Date(to+'T00:00:00');
@@ -24671,14 +24968,15 @@ This will restore the leave balance.`)) return;
     // Restore leave balance if was approved
     if(wasApproved){
       // Ensure balances are loaded
-      if(!_leaveBalances || !_leaveBalances.length){
-        _leaveBalances = await dbGetLeaveBalances().catch(()=>[]);
+      if(!_leaveBalances){
+        _leaveBalances = await dbGetLeaveBalances().catch(()=>({}));
       }
-      const bal = (_leaveBalances||[]).find(b=>String(b.empId)===String(req.empId));
+      const empBalKey = String(req.empId);
+      const bal = _leaveBalances[empBalKey];
       if(bal && ['annual','sick','casual'].includes(req.type)){
         const field = req.type === 'annual' ? 'usedAnnual' : req.type === 'sick' ? 'usedSick' : 'usedCasual';
         bal[field] = Math.max(0, (parseFloat(bal[field])||0) - (parseFloat(req.days)||0));
-        await dbSaveLeaveBalance(bal).catch(()=>{});
+        await dbSaveLeaveBalance(req.empId, bal).catch(()=>{});
       }
     }
 
