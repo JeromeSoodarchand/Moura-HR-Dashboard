@@ -983,15 +983,14 @@ function getCompanyAccessMode(companyId){
 }
 
 function shouldShowMobilePortal(user, emp){
-  // Show mobile portal based on company access mode setting
-  if(!isMobileDevice()) return false;
+  // Based purely on company access mode — no device detection
   if(!emp) return false;
   if(user.role === 'admin' || user.role === 'hr') return false; // HR/admin always get full platform
   const mode = getCompanyAccessMode(_COMPANY_ID);
-  if(mode === 'full_platform') return false; // Full platform — no portal
-  if(mode === 'full_kiosk') return false;    // Kiosk mode — clock-in screen
+  if(mode === 'full_platform') return false; // Full platform for everyone
+  if(mode === 'full_kiosk') return false;    // Kiosk tablet mode
   if(mode === 'leave_portal'){
-    // Only HODs/managers get the portal
+    // Only HODs/managers get the portal — regular employees get clock-in screen
     if(user.role === 'hod' || user.role === 'manager') return true;
     if(emp.isHOD || emp.isSeniorHOD || emp.clockMode === 'hod') return true;
     return false;
@@ -1011,7 +1010,7 @@ async function showMobilePortal(user, emp){
   if(!portal){
     portal = document.createElement('div');
     portal.id = 'mobile-portal';
-    portal.style.cssText = 'position:fixed;inset:0;background:#1E1445;overflow-y:auto;z-index:9999;font-family:Arial,sans-serif';
+    portal.style.cssText = 'position:fixed;inset:0;background:#F4F5F9;overflow-y:auto;z-index:9999;font-family:Arial,sans-serif';
     document.body.appendChild(portal);
   }
   portal.style.display = 'block';
@@ -1064,6 +1063,7 @@ async function showMobilePortal(user, emp){
   const initials = emp.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
 
   portal.innerHTML = `
+    <div style="max-width:680px;margin:0 auto;min-height:100vh;background:#fff;box-shadow:0 0 40px rgba(0,0,0,0.1)">
     <div style="background:linear-gradient(135deg,#1E1445,#2C2070);padding:24px 20px 20px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
         <div>
@@ -1140,6 +1140,8 @@ async function showMobilePortal(user, emp){
           }).join('')
       }
     </div>
+
+    </div><!-- end max-width wrapper -->
 
     <!-- Leave Form Modal -->
     <div id="mobile-leave-form" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10000;overflow-y:auto">
