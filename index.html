@@ -14225,10 +14225,14 @@ async function doLogin(){
     // Admin/HR always go straight to dashboard
     loadAndRenderDashboard();
   } else if(user.role==='hod'||user.role==='manager'){
-    // HOD/Manager — check if their company uses leave portal
+    // HOD/Manager — show loading screen immediately to prevent dashboard flash
+    const _appEl = document.getElementById('app');
+    if(_appEl){ _appEl.style.display='none'; }
+    showLoader('Loading…');
     const _hodModes = await loadGlobalAccessModes().catch(()=>({}));
     const _hodMode = _hodModes[String(_COMPANY_ID)] || _hodModes[_COMPANY_ID] || 'full_kiosk';
-    console.log('[Login] HOD company:', _COMPANY_ID, 'mode:', _hodMode);
+    hideLoader();
+    if(_appEl){ _appEl.style.display='flex'; _appEl.style.flexDirection='row'; }
     if(_hodMode === 'leave_portal'){
       showMobilePortal(user, _dLoginEmp);
     } else {
