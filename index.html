@@ -1104,7 +1104,14 @@ async function showMobilePortal(user, emp){
     }
   } catch(e){ console.warn('[MobilePortal]', e); }
 
-  const b = getEmpBalance(emp.id);
+  // Ensure leave data is loaded before calling getEmpBalance
+  if(!_leaveBalances){
+    try{ _leaveBalances = await dbGetLeaveBalances(); } catch(e){ _leaveBalances = {}; }
+  }
+  if(!_leaveRequests){
+    try{ _leaveRequests = await dbGetLeaveRequests(); } catch(e){ _leaveRequests = []; }
+  }
+  const b = getEmpBalance(emp.id) || {remAnnual:20,annual:20,remSick:15,sick:15,remCasual:10,casual:10};
   const initials = emp.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
 
   portal.innerHTML = `
