@@ -13921,10 +13921,18 @@ ensureFamilyMedicalLeaveType();
       if(CU.role==='admin'||CU.role==='hr'){
         loadAndRenderDashboard();
       } else if(CU.role==='hod'||CU.role==='manager'){
-        await loadGlobalAccessModes().catch(()=>{});
-        const _rHodEmp = CU.empId ? gE(CU.empId) : null;
-        if(shouldShowMobilePortal(CU, _rHodEmp)){ showMobilePortal(CU, _rHodEmp); }
-        else loadAndRenderDashboard();
+        // Use session-stored access mode for instant routing — no flash
+        const _rSess = SS.get('session') || {};
+        const _rMode = _rSess.accessMode || S.get('globalAccessModes',{})[String(_COMPANY_ID)] || 'full_kiosk';
+        if(_rMode === 'leave_portal'){
+          // Keep app hidden, show portal directly
+          const _rApp = document.getElementById('app');
+          if(_rApp) _rApp.style.display = 'none';
+          const _rHodEmp = CU.empId ? gE(CU.empId) : null;
+          showMobilePortal(CU, _rHodEmp);
+        } else {
+          loadAndRenderDashboard();
+        }
       } else if(_rCM==='qr'||_rCM==='hod'||_rCM==='simple'){
         const _emp = CU.empId ? gE(CU.empId) : null;
         if(shouldShowMobilePortal(CU, _emp)){ showMobilePortal(CU, _emp); }
@@ -14193,7 +14201,8 @@ async function doLogin(){
   _COMPANY_ID = _loginCompanyId;
   CU.companyId = _loginCompanyId;
   CU.loginMethod = 'password'; // Password login — full HR platform access
-  SS.set('session',{userId:user.id, username:user.username, companyId:_loginCompanyId, loginAt:new Date().toISOString(), loginMethod:'password'});
+  const _sessionMode = (S.get('globalAccessModes',{})[String(_loginCompanyId)] || 'full_kiosk');
+  SS.set('session',{userId:user.id, username:user.username, companyId:_loginCompanyId, loginAt:new Date().toISOString(), loginMethod:'password', accessMode:_sessionMode});
   addAudit(user.name,'Logged in');
 
   // Clear ALL caches so previous company data doesn't bleed through
@@ -14210,8 +14219,9 @@ async function doLogin(){
   document.getElementById('login-screen').style.display='none';
 
   // Check access mode BEFORE showing app to prevent flash
-  const _preCheckModes = S.get('globalAccessModes', {});
-  const _preCheckMode = _preCheckModes[String(_COMPANY_ID)] || _preCheckModes[_COMPANY_ID] || 'full_kiosk';
+  // Use session-stored mode (set at login time) for instant check
+  const _savedSess = SS.get('session') || {};
+  const _preCheckMode = _savedSess.accessMode || S.get('globalAccessModes',{})[String(_COMPANY_ID)] || 'full_kiosk';
   const _isPortalUser = (_preCheckMode === 'leave_portal') &&
     (user.role === 'hod' || user.role === 'manager');
 
