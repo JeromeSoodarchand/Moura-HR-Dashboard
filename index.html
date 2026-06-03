@@ -1059,6 +1059,7 @@ async function showMobilePortal(user, emp){
     document.body.appendChild(portal);
   }
   portal.style.display = 'block';
+  document.body.style.visibility = 'visible'; // ensure body is visible
 
   // Load leave data
   let leaveReqs = [], groupMgrLeaves = [];
@@ -13936,7 +13937,12 @@ ensureFamilyMedicalLeaveType();
           const _rApp = document.getElementById('app');
           if(_rApp) _rApp.style.display = 'none';
           const _rHodEmp = CU.empId ? gE(CU.empId) : null;
-          showMobilePortal(CU, _rHodEmp);
+          showMobilePortal(CU, _rHodEmp).catch(e=>{
+            // If portal fails, fall back to dashboard
+            console.warn('[Portal] Error:', e);
+            if(_rApp) _rApp.style.display = 'flex';
+            loadAndRenderDashboard();
+          });
         } else {
           loadAndRenderDashboard();
         }
