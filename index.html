@@ -684,7 +684,7 @@ async function renderCompanyMgmt(){
       </div>
       <select onchange="setCompanyAccessMode(${c.id}, this.value)"
         style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer">
-        ${(()=>{const _m=(getSettings().companyAccessModes||{})[String(c.id)]||'full_kiosk';return[
+        ${(()=>{const _m=S.get('globalAccessModes',{})[String(c.id)]||'full_kiosk';return[
           ['full_kiosk','🖥 Full Kiosk'],
           ['leave_portal','📱 Leave Portal'],
           ['full_platform','🌐 Full Platform']
