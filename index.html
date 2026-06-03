@@ -14240,15 +14240,12 @@ async function doLogin(){
     // Admin/HR always go straight to dashboard
     loadAndRenderDashboard();
   } else if(user.role==='hod'||user.role==='manager'){
-    // HOD/Manager — hide entire UI while checking access mode to prevent flash
-    document.body.style.visibility = 'hidden';
-    const _hodModes = await loadGlobalAccessModes().catch(()=>({}));
-    const _hodMode = _hodModes[String(_COMPANY_ID)] || _hodModes[_COMPANY_ID] || 'full_kiosk';
+    // HOD/Manager — use cached modes first (already loaded at startup)
+    const _cachedModes = S.get('globalAccessModes', {});
+    const _hodMode = _cachedModes[String(_COMPANY_ID)] || _cachedModes[_COMPANY_ID] || 'full_kiosk';
     if(_hodMode === 'leave_portal'){
-      await showMobilePortal(user, _dLoginEmp);
-      document.body.style.visibility = 'visible';
+      showMobilePortal(user, _dLoginEmp);
     } else {
-      document.body.style.visibility = 'visible';
       loadAndRenderDashboard();
     }
   } else if(_dLoginCM==='qr'||_dLoginCM==='hod'||_dLoginCM==='simple'){
@@ -18205,8 +18202,8 @@ function copyInviteMessage(){
 
 
 initSupabase();
-// Load global access modes after short delay to allow Supabase to init
-setTimeout(()=>loadGlobalAccessModes().catch(()=>{}), 1000);
+// Load global access modes immediately — needed before any login routing
+loadGlobalAccessModes().catch(()=>{});
 // Cache version — increment this to force clear stale caches on all browsers
 const _CACHE_VERSION = '2';
 if(localStorage.getItem('pdhr_cache_version') !== _CACHE_VERSION){
