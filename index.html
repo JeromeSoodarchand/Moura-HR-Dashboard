@@ -14220,10 +14220,8 @@ async function doLogin(){
   S.set('org','');
   document.getElementById('login-screen').style.display='none';
 
-  // Check access mode BEFORE showing app to prevent flash
-  // Use session-stored mode (set at login time) for instant check
-  const _savedSess = SS.get('session') || {};
-  const _preCheckMode = _savedSess.accessMode || S.get('globalAccessModes',{})[String(_COMPANY_ID)] || 'full_kiosk';
+  // Check access mode BEFORE showing app — use freshly loaded modes
+  const _preCheckMode = _sessionMode; // already fetched above via loadGlobalAccessModes
   const _isPortalUser = (_preCheckMode === 'leave_portal') &&
     (user.role === 'hod' || user.role === 'manager');
 
