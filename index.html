@@ -701,19 +701,51 @@ async function renderCompanyMgmt(){
 }
 
 async function setCompanyAccessMode(companyId, mode){
-  const settings = getSettings();
-  if(!settings.companyAccessModes) settings.companyAccessModes = {};
-  settings.companyAccessModes[String(companyId)] = mode;
-  // Save to Supabase and update local cache
-  await dbSetSetting('companyAccessModes', settings.companyAccessModes);
-  // Update the global settings cache directly
-  const cached = S.get('settings', {});
-  cached.companyAccessModes = settings.companyAccessModes;
-  S.set('settings', cached);
+  // Load current global access modes
+  let modes = S.get('globalAccessModes', {});
+  modes[String(companyId)] = mode;
+
+  // Save globally (company_id=0 means global/super-admin setting)
+  if(sbReady()){
+    try{
+      await _sb.from('company_settings').delete().eq('key','companyAccessModes').eq('company_id',0);
+      await _sb.from('company_settings').insert({
+        key:'companyAccessModes',
+        value: JSON.stringify(modes),
+        company_id: 0,
+        updated_at: new Date().toISOString()
+      });
+    } catch(e){ console.warn('Access mode save error:', e); }
+  }
+
+  // Update local cache
+  S.set('globalAccessModes', modes);
+
   const modeLabels = { full_kiosk:'🖥 Full Kiosk', leave_portal:'📱 Leave Portal (HODs)', full_platform:'🌐 Full Platform' };
   toast('Access mode set to: ' + (modeLabels[mode]||mode), 'success');
-  // Re-render to show updated selection
   renderCompanyMgmt();
+}
+
+async function loadGlobalAccessModes(){
+  // Load global access modes from Supabase (company_id=0)
+  // Return cached value immediately if Supabase not ready
+  const cached = S.get('globalAccessModes',{});
+  if(!sbReady()) return cached;
+  try{
+    const {data} = await _sb.from('company_settings')
+      .select('value')
+      .eq('key','companyAccessModes')
+      .eq('company_id',0)
+      .limit(1);
+    if(data && data[0]){
+      const modes = JSON.parse(data[0].value||'{}');
+      S.set('globalAccessModes', modes);
+      return modes;
+    }
+  } catch(e){
+    // Silently fall back to cache — not critical at startup
+  }
+  return cached;
 }
 
 async function addCompany(){
@@ -972,13 +1004,11 @@ function isMobileDevice(){
 }
 
 function getCompanyAccessMode(companyId){
-  // Access modes per company — stored in settings
+  // Access modes per company — stored globally (company_id=0)
   // 'full_platform' — full HR platform
   // 'full_kiosk'    — clock-in + leave (tablet kiosk)
-  // 'leave_portal'  — mobile leave portal for HODs only
-  const settings = getSettings();
-  const modes = settings.companyAccessModes || {};
-  // Try string key first, then numeric
+  // 'leave_portal'  — leave portal for HODs only
+  const modes = S.get('globalAccessModes', {});
   return modes[String(companyId)] || modes[companyId] || 'full_kiosk';
 }
 
@@ -14196,12 +14226,14 @@ async function doLogin(){
     loadAndRenderDashboard();
   } else if(_dLoginCM==='qr'||_dLoginCM==='hod'||_dLoginCM==='simple'){
     // Employee — check if they should see mobile portal
+    await loadGlobalAccessModes().catch(()=>{});
     if(shouldShowMobilePortal(user, _dLoginEmp)){
       showMobilePortal(user, _dLoginEmp);
     } else {
       showEmployeeClockInScreen(user);
     }
   } else {
+    await loadGlobalAccessModes().catch(()=>{});
     if(shouldShowMobilePortal(user, _dLoginEmp)){
       showMobilePortal(user, _dLoginEmp);
     } else {
@@ -18146,6 +18178,8 @@ function copyInviteMessage(){
 
 
 initSupabase();
+// Load global access modes after short delay to allow Supabase to init
+setTimeout(()=>loadGlobalAccessModes().catch(()=>{}), 1000);
 // Cache version — increment this to force clear stale caches on all browsers
 const _CACHE_VERSION = '2';
 if(localStorage.getItem('pdhr_cache_version') !== _CACHE_VERSION){
