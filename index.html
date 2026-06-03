@@ -1029,10 +1029,16 @@ function shouldShowMobilePortal(user, emp){
 }
 
 async function showMobilePortal(user, emp){
-  // If emp not found, try loading from Supabase
+  // If emp not found, load directly from Supabase without triggering full render
   if(!emp && user.empId){
-    await loadAndRenderEmployees().catch(()=>{});
-    emp = gE(user.empId);
+    try{
+      if(sbReady()){
+        const {data} = await _sb.from('employees').select('*').eq('id', user.empId).limit(1);
+        if(data && data[0]) emp = rowToEmp(data[0]);
+      }
+    } catch(e){}
+    // Also try from cache
+    if(!emp) emp = gE(user.empId);
   }
   // Fallback emp object if still not found
   if(!emp){
@@ -14234,17 +14240,15 @@ async function doLogin(){
     // Admin/HR always go straight to dashboard
     loadAndRenderDashboard();
   } else if(user.role==='hod'||user.role==='manager'){
-    // HOD/Manager — show loading screen immediately to prevent dashboard flash
-    const _appEl = document.getElementById('app');
-    if(_appEl){ _appEl.style.display='none'; }
-    showLoader('Loading…');
+    // HOD/Manager — hide entire UI while checking access mode to prevent flash
+    document.body.style.visibility = 'hidden';
     const _hodModes = await loadGlobalAccessModes().catch(()=>({}));
     const _hodMode = _hodModes[String(_COMPANY_ID)] || _hodModes[_COMPANY_ID] || 'full_kiosk';
-    hideLoader();
-    if(_appEl){ _appEl.style.display='flex'; _appEl.style.flexDirection='row'; }
     if(_hodMode === 'leave_portal'){
-      showMobilePortal(user, _dLoginEmp);
+      await showMobilePortal(user, _dLoginEmp);
+      document.body.style.visibility = 'visible';
     } else {
+      document.body.style.visibility = 'visible';
       loadAndRenderDashboard();
     }
   } else if(_dLoginCM==='qr'||_dLoginCM==='hod'||_dLoginCM==='simple'){
