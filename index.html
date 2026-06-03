@@ -1029,6 +1029,15 @@ function shouldShowMobilePortal(user, emp){
 }
 
 async function showMobilePortal(user, emp){
+  // If emp not found, try loading from Supabase
+  if(!emp && user.empId){
+    await loadAndRenderEmployees().catch(()=>{});
+    emp = gE(user.empId);
+  }
+  // Fallback emp object if still not found
+  if(!emp){
+    emp = { id: user.empId||user.id, name: user.name||user.username||'Employee', dept: '', role: user.role||'' };
+  }
   // Hide the main app, show mobile portal
   const main = document.getElementById('main-app');
   if(main) main.style.display = 'none';
