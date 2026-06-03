@@ -13906,7 +13906,10 @@ ensureFamilyMedicalLeaveType();
       if(CU.role==='admin'||CU.role==='hr'){
         loadAndRenderDashboard();
       } else if(CU.role==='hod'||CU.role==='manager'){
-        loadAndRenderDashboard();
+        await loadGlobalAccessModes().catch(()=>{});
+        const _rHodEmp = CU.empId ? gE(CU.empId) : null;
+        if(shouldShowMobilePortal(CU, _rHodEmp)){ showMobilePortal(CU, _rHodEmp); }
+        else loadAndRenderDashboard();
       } else if(_rCM==='qr'||_rCM==='hod'||_rCM==='simple'){
         const _emp = CU.empId ? gE(CU.empId) : null;
         if(shouldShowMobilePortal(CU, _emp)){ showMobilePortal(CU, _emp); }
@@ -14222,8 +14225,13 @@ async function doLogin(){
     // Admin/HR always go straight to dashboard
     loadAndRenderDashboard();
   } else if(user.role==='hod'||user.role==='manager'){
-    // HOD/Manager go straight to dashboard — they can clock in from the attendance page
-    loadAndRenderDashboard();
+    // HOD/Manager — check if their company uses leave portal
+    await loadGlobalAccessModes().catch(()=>{});
+    if(shouldShowMobilePortal(user, _dLoginEmp)){
+      showMobilePortal(user, _dLoginEmp);
+    } else {
+      loadAndRenderDashboard();
+    }
   } else if(_dLoginCM==='qr'||_dLoginCM==='hod'||_dLoginCM==='simple'){
     // Employee — check if they should see mobile portal
     await loadGlobalAccessModes().catch(()=>{});
