@@ -14208,7 +14208,18 @@ async function doLogin(){
   S.set('companySettings',{});
   S.set('org','');
   document.getElementById('login-screen').style.display='none';
-  const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
+
+  // Check access mode BEFORE showing app to prevent flash
+  const _preCheckModes = S.get('globalAccessModes', {});
+  const _preCheckMode = _preCheckModes[String(_COMPANY_ID)] || _preCheckModes[_COMPANY_ID] || 'full_kiosk';
+  const _isPortalUser = (_preCheckMode === 'leave_portal') &&
+    (user.role === 'hod' || user.role === 'manager');
+
+  const app=document.getElementById('app');
+  if(!_isPortalUser){
+    app.style.display='flex';app.style.flexDirection='row';
+  }
+
   const org=S.get('org','');
   const _nel=document.getElementById('org-name-nav');
   if(_nel)_nel.textContent=org;
