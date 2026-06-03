@@ -14211,6 +14211,7 @@ async function doLogin(){
   // Load fresh modes from Supabase before saving session
   const _freshModes = await loadGlobalAccessModes().catch(()=>S.get('globalAccessModes',{}));
   const _sessionMode = _freshModes[String(_loginCompanyId)] || _freshModes[_loginCompanyId] || 'full_kiosk';
+  console.log('[Login] companyId:', _loginCompanyId, 'freshModes:', _freshModes, 'sessionMode:', _sessionMode);
   SS.set('session',{userId:user.id, username:user.username, companyId:_loginCompanyId, loginAt:new Date().toISOString(), loginMethod:'password', accessMode:_sessionMode});
   addAudit(user.name,'Logged in');
 
