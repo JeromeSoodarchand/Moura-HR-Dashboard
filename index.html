@@ -1074,10 +1074,11 @@ async function showMobilePortal(user, emp){
     const fromDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
     const toDate   = new Date(now.getFullYear(), now.getMonth()+2, 0).toISOString().slice(0,10);
     if(sbReady()){
+      const _todayISO = new Date().toISOString().slice(0,10);
       const {data:allLeaves} = await _sb.from('leave_requests')
         .select('id, emp_id, type, from_date, to_date, days, status')
         .eq('status','approved')
-        .gte('to_date', fromDate)
+        .gte('to_date', _todayISO)  // only today and future
         .lte('from_date', toDate);
 
       if(allLeaves){
@@ -20595,10 +20596,11 @@ async function renderManagerLeaveCalendar(){
   let allLeaves = [...(_leaveRequests||[])];
   if(sbReady()){
     try{
+      const _today2 = new Date().toISOString().slice(0,10);
       const {data} = await _sb.from('leave_requests')
         .select('*')
         .in('status',['approved'])
-        .gte('to_date', fromDate)
+        .gte('to_date', _today2)
         .lte('from_date', toDate);
       if(data && data.length){
         data.forEach(r=>{
@@ -20613,10 +20615,11 @@ async function renderManagerLeaveCalendar(){
     } catch(e){ console.warn('[GroupCal] Could not load cross-company leaves:', e); }
   }
 
+  const todayISO = new Date().toISOString().slice(0,10);
   const relevantLeaves = allLeaves.filter(r=>
     hodIds.has(String(r.empId)) &&
     r.status==='approved' &&
-    r.toDate >= fromDate &&
+    r.toDate >= todayISO &&  // only current and future leaves
     r.fromDate <= toDate
   );
 
