@@ -26440,6 +26440,18 @@ function renderUserAuditSummary(){
         .then(r => console.log('[SW] Registered'))
         .catch(e => console.log('[SW] Error:', e));
     }
+
+    // Force hide sidebar on mobile — runs continuously
+    if(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || window.innerWidth < 768){
+      const _forceMobile = () => {
+        const sb = document.getElementById('sidebar');
+        if(sb && sb.style.display !== 'none') sb.style.display = 'none';
+        const mn = document.getElementById('mobile-bottom-nav');
+        if(mn && mn.style.display === 'none') mn.style.display = 'flex';
+      };
+      // Run immediately and on any DOM changes
+      setInterval(_forceMobile, 300);
+    }
   </script>
 </body>
 </html>
