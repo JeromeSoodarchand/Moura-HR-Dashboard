@@ -5,6 +5,13 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SolentraHR">
+  <meta name="theme-color" content="#1E1445">
+  <link rel="manifest" href="/manifest.json">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -15117,6 +15124,13 @@ function canEdit(){return hasPerm('edit_employees')||hasPerm('add_employees');}
 function canEditAtt(){return hasPerm('edit_attendance');}
 
 function applyPermissions(){
+  // Always hide sidebar and show mobile nav on mobile devices
+  if(isMobileDevice()){
+    const _sbEl = document.getElementById('sidebar');
+    if(_sbEl) _sbEl.style.display = 'none';
+    const _mnEl = document.getElementById('mobile-bottom-nav');
+    if(_mnEl) _mnEl.style.display = 'flex';
+  }
   const r=CU._displayRole||CU.role;
   const _rd=document.getElementById('rd');if(_rd){_rd.textContent=r[0].toUpperCase()+r.slice(1);_rd.className='role-badge role-'+(CU._displayRole?'manager':CU.role);}
   const _ud=document.getElementById('ud');if(_ud)_ud.textContent=CU.name;
@@ -18560,13 +18574,15 @@ function copyInviteMessage(){
 }
 
 
-// Cache bust — force reload if version mismatch
-const _APP_VERSION = '1780760793';
+// Cache bust — force reload once if version mismatch
+const _APP_VERSION = '1780761207';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
-if(_storedVersion && _storedVersion !== _APP_VERSION){
+if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
+  sessionStorage.setItem('_reloaded','1');
   localStorage.setItem('pdhr_app_version', _APP_VERSION);
   location.reload(true);
 } else {
+  sessionStorage.removeItem('_reloaded');
   localStorage.setItem('pdhr_app_version', _APP_VERSION);
 }
 
@@ -21617,7 +21633,8 @@ function openFullHRPlatform(){
   const app = document.getElementById('app');
   if(app){ app.style.display='flex'; app.style.flexDirection='row'; }
   const sb = document.getElementById('sidebar');
-  if(sb) sb.style.display='';
+  // Never restore sidebar on mobile
+  if(sb) sb.style.display = isMobileDevice() ? 'none' : '';
   // Restore mobile bottom nav (only on mobile)
   const _mn = document.getElementById('mobile-bottom-nav');
   if(_mn) _mn.style.display = isMobileDevice() ? 'flex' : 'none';
@@ -26417,5 +26434,12 @@ function renderUserAuditSummary(){
       <div class="mob-nav-label">Sign Out</div>
     </div>
   </div>
+  <script>
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('/sw.js')
+        .then(r => console.log('[SW] Registered'))
+        .catch(e => console.log('[SW] Error:', e));
+    }
+  </script>
 </body>
 </html>
