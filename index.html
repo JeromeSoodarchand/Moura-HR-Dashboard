@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -21989,13 +21992,28 @@ function stopKioskClock(){
 }
 
 function initPinTouchEvents(){
-  // Add touchstart listeners to all pin-btn elements for instant response
+  // Remove any existing listeners by cloning buttons
   document.querySelectorAll('.pin-btn').forEach(btn=>{
+    const clone = btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+  });
+  // Add fresh touchstart listeners
+  document.querySelectorAll('.pin-btn').forEach(btn=>{
+    // touchstart for instant response
     btn.addEventListener('touchstart', function(e){
       e.preventDefault();
-      const onclick = btn.getAttribute('onclick');
-      if(onclick) eval(onclick);
+      e.stopPropagation();
+      const d = btn.getAttribute('data-digit');
+      if(d === 'del') kioskPinDel();
+      else if(d !== null) kioskPin(d);
+      // Visual feedback
+      btn.style.background = 'rgba(201,168,76,0.3)';
+      setTimeout(()=>{ btn.style.background = ''; }, 150);
     }, {passive:false});
+    // Fallback click
+    btn.addEventListener('click', function(e){
+      e.preventDefault();
+    });
   });
 }
 
@@ -26165,15 +26183,15 @@ function renderUserAuditSummary(){
         <div class="kiosk-dot" id="kd3"></div>
       </div>
       <div class="pin-grid">
-        <button class="pin-btn" onclick="kioskPin('1')"><span>1</span></button>
-        <button class="pin-btn" onclick="kioskPin('2')"><span>2</span><span class="pin-sub">ABC</span></button>
-        <button class="pin-btn" onclick="kioskPin('3')"><span>3</span><span class="pin-sub">DEF</span></button>
-        <button class="pin-btn" onclick="kioskPin('4')"><span>4</span><span class="pin-sub">GHI</span></button>
-        <button class="pin-btn" onclick="kioskPin('5')"><span>5</span><span class="pin-sub">JKL</span></button>
-        <button class="pin-btn" onclick="kioskPin('6')"><span>6</span><span class="pin-sub">MNO</span></button>
-        <button class="pin-btn" onclick="kioskPin('7')"><span>7</span><span class="pin-sub">PQRS</span></button>
-        <button class="pin-btn" onclick="kioskPin('8')"><span>8</span><span class="pin-sub">TUV</span></button>
-        <button class="pin-btn" onclick="kioskPin('9')"><span>9</span><span class="pin-sub">WXYZ</span></button>
+        <button class="pin-btn" data-digit="1"<span>1</span></button>
+        <button class="pin-btn" data-digit="2"<span>2</span><span class="pin-sub">ABC</span></button>
+        <button class="pin-btn" data-digit="3"<span>3</span><span class="pin-sub">DEF</span></button>
+        <button class="pin-btn" data-digit="4"<span>4</span><span class="pin-sub">GHI</span></button>
+        <button class="pin-btn" data-digit="5"<span>5</span><span class="pin-sub">JKL</span></button>
+        <button class="pin-btn" data-digit="6"<span>6</span><span class="pin-sub">MNO</span></button>
+        <button class="pin-btn" data-digit="7"<span>7</span><span class="pin-sub">PQRS</span></button>
+        <button class="pin-btn" data-digit="8"<span>8</span><span class="pin-sub">TUV</span></button>
+        <button class="pin-btn" data-digit="9"<span>9</span><span class="pin-sub">WXYZ</span></button>
         <button class="pin-btn pin-del" onclick="kioskDel()">⌫</button>
         <button class="pin-btn pin-zero" onclick="kioskPin('0')">0</button>
         <button class="pin-btn pin-ok" onclick="kioskSubmit()">✓</button>
