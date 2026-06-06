@@ -21150,8 +21150,7 @@ async function showEmployeeClockInScreen(user){
   // Get today's attendance record for this employee — force fresh fetch
   let openRec = null;
   try{
-    // Clear attendance cache to force fresh Supabase query
-    S.set('attendance', []);
+    // Force fresh Supabase query without clearing cache
     const todayRecs = await dbGetAttendance(todayStr(), todayStr());
     _attendance = todayRecs;
     if(emp){
