@@ -645,6 +645,78 @@ html {
   .sidebar, .nav-actions, .btn, button { display: none !important; }
   .main-content { margin: 0 !important; }
 }
+
+/* ── MOBILE RESPONSIVE ──────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  #sidebar {
+    display: none !important;
+  }
+  #content {
+    margin-left: 0 !important;
+    padding: 8px !important;
+    width: 100% !important;
+  }
+  .mobile-nav {
+    display: flex !important;
+  }
+  .card {
+    border-radius: 10px !important;
+    margin-bottom: 10px !important;
+  }
+  .table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  table {
+    min-width: 600px;
+  }
+  /* Employee clock-in screen */
+  #emp-overlay {
+    padding: 12px !important;
+  }
+  .pin-grid {
+    max-width: 320px !important;
+    margin: 0 auto !important;
+  }
+  .pin-btn {
+    min-height: 72px !important;
+    font-size: 28px !important;
+    touch-action: manipulation !important;
+  }
+  /* QR Scanner */
+  #qr-overlay video {
+    max-height: 60vh !important;
+    width: 100% !important;
+  }
+  /* Hide non-essential columns on mobile */
+  .hide-mobile { display: none !important; }
+  /* Make buttons easier to tap */
+  .btn { min-height: 40px !important; touch-action: manipulation !important; }
+  .btn-primary { min-height: 44px !important; }
+}
+
+/* Mobile bottom nav */
+#mobile-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: #fff;
+  border-top: 1px solid #E5E7EB;
+  z-index: 1000;
+  padding: 6px 0 16px;
+}
+@media (max-width: 768px) {
+  #mobile-bottom-nav { display: flex !important; }
+  #content { padding-bottom: 80px !important; }
+}
+.mob-nav-item {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; gap: 2px; cursor: pointer;
+  touch-action: manipulation; padding: 4px 0;
+}
+.mob-nav-icon { font-size: 22px; }
+.mob-nav-label { font-size: 9px; color: #9CA3AF; font-weight: 600; }
+.mob-nav-item.active .mob-nav-label { color: #1E1445; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -14182,29 +14254,13 @@ ensureFamilyMedicalLeaveType();
         return;
       }
       const _app=document.getElementById('app');
-      // Only show app immediately for desktop users
-      if(!isMobileDevice()){
-        _app.style.display='flex';_app.style.flexDirection='row';
-      }
+      _app.style.display='flex';_app.style.flexDirection='row';
       applyPermissions();applyAttEditorPerm();
       await applyStoredBranding();initInactivityTracking();startAutoClockTimer();
       assignMissingEmpNos().catch(()=>{});
-      // Route on restore — mobile always gets portal
       const _rEmp = _findHodEmp();
       const _rCM  = _rEmp?.clockMode||'kiosk';
-      if(isMobileDevice()){
-        const _rEmpMob = CU.empId ? gE(CU.empId) : null;
-        showMobilePortal(CU, _rEmpMob).catch(e=>{
-          // Show error on screen so we can debug on mobile
-          document.body.style.visibility='visible';
-          document.body.innerHTML += `<div style="position:fixed;inset:0;background:#fff;z-index:99999;padding:20px;font-family:Arial">
-            <h2 style="color:red">Portal Error</h2>
-            <p>${e.message||e}</p>
-            <p>${e.stack||''}</p>
-            <button onclick="location.reload()" style="padding:12px 24px;margin-top:16px;font-size:16px">Reload</button>
-          </div>`;
-        });
-      } else if(CU.role==='admin'||CU.role==='hr'){
+      if(CU.role==='admin'||CU.role==='hr'){
         loadAndRenderDashboard();
       } else if(CU.role==='hod'||CU.role==='manager'){
         if(false){
@@ -14511,10 +14567,7 @@ async function doLogin(){
   document.getElementById('login-screen').style.display='none';
 
   const app=document.getElementById('app');
-  // On mobile, keep app hidden until portal shows
-  if(!isMobileDevice()){
-    app.style.display='flex';app.style.flexDirection='row';
-  }
+  app.style.display='flex';app.style.flexDirection='row';
 
   const org=S.get('org','');
   const _nel=document.getElementById('org-name-nav');
@@ -14543,12 +14596,6 @@ async function doLogin(){
   if(_dLoginEmp && !CU.empId){ CU.empId = _dLoginEmp.id; }
   if(_dLoginEmp && _dLoginEmp.userId && !CU.id) CU.id = _dLoginEmp.userId;
   const _dLoginCM = _dLoginEmp?.clockMode||'kiosk';
-  // Mobile users always get the mobile portal
-  if(isMobileDevice()){
-    showMobilePortal(user, _dLoginEmp);
-    return;
-  }
-  // Desktop routing
   if(user.role==='admin'||user.role==='hr'){
     loadAndRenderDashboard();
   } else if(user.role==='hod'||user.role==='manager'){
@@ -15132,7 +15179,12 @@ const PAGE_TITLES={dashboard:'Dashboard',attendance:'Attendance',employees:'Empl
 function showPage(id,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('page-'+id).classList.add('active');el.classList.add('active');
+  document.getElementById('page-'+id).classList.add('active');
+  if(el) el.classList.add('active');
+  // Update mobile bottom nav
+  document.querySelectorAll('.mob-nav-item').forEach(n=>n.classList.remove('active'));
+  const mn = document.getElementById('mob-nav-'+id);
+  if(mn) mn.classList.add('active');
   const heading=document.getElementById('page-heading');
   if(heading)heading.textContent=PAGE_TITLES[id]||id;
   const loaders={dashboard:loadAndRenderDashboard,employees:loadAndRenderEmployees,onboarding:loadAndRenderOnboarding,events:loadAndRenderEvents,training:loadAndRenderTraining,offboarding:loadAndRenderOffboarding,analytics:loadAndRenderAnalytics,usermgmt:loadAndRenderUserMgmt,settings:()=>{renderSettings();renderJobTitles();renderCustomEventTypes();populateKioskLeaveEmpSelect();renderLeaveTypes();renderChecklistDefaults(getSettings().checklistDefaults||[]);}};
@@ -26314,5 +26366,28 @@ function renderUserAuditSummary(){
 </div>
 
 
+  <!-- Mobile Bottom Navigation -->
+  <div id="mobile-bottom-nav">
+    <div class="mob-nav-item active" onclick="showPage('dashboard',this)" id="mob-nav-dashboard">
+      <div class="mob-nav-icon">🏠</div>
+      <div class="mob-nav-label">Home</div>
+    </div>
+    <div class="mob-nav-item" onclick="showPage('attendance',this)" id="mob-nav-attendance">
+      <div class="mob-nav-icon">⏱</div>
+      <div class="mob-nav-label">Clock</div>
+    </div>
+    <div class="mob-nav-item" onclick="showPage('leave',this)" id="mob-nav-leave">
+      <div class="mob-nav-icon">📅</div>
+      <div class="mob-nav-label">Leave</div>
+    </div>
+    <div class="mob-nav-item" onclick="showPage('employees',this)" id="mob-nav-employees">
+      <div class="mob-nav-icon">👥</div>
+      <div class="mob-nav-label">Team</div>
+    </div>
+    <div class="mob-nav-item" onclick="doLogout()" id="mob-nav-signout">
+      <div class="mob-nav-icon">🚪</div>
+      <div class="mob-nav-label">Sign Out</div>
+    </div>
+  </div>
 </body>
 </html>
