@@ -21512,9 +21512,9 @@ async function showEmployeeClockInScreen(user){
     document.body.appendChild(_empOv);
   }
   _empOv.style.display = 'flex';
-  // Hide mobile bottom nav on clock-in screen
+  // Hide mobile bottom nav on clock-in screen (mobile only)
   const _mobNav = document.getElementById('mobile-bottom-nav');
-  if(_mobNav) _mobNav.style.display = 'none';
+  if(_mobNav && isMobileDevice()) _mobNav.style.display = 'none';
   // Init touch events after render
   setTimeout(initPinTouchEvents, 100);
 
@@ -21608,9 +21608,9 @@ function openFullHRPlatform(){
   if(app){ app.style.display='flex'; app.style.flexDirection='row'; }
   const sb = document.getElementById('sidebar');
   if(sb) sb.style.display='';
-  // Restore mobile bottom nav
+  // Restore mobile bottom nav (only on mobile)
   const _mn = document.getElementById('mobile-bottom-nav');
-  if(_mn) _mn.style.display = '';
+  if(_mn) _mn.style.display = isMobileDevice() ? 'flex' : 'none';
   applyPermissions();
   applyStoredBranding();
   loadAndRenderDashboard();
