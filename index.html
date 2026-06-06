@@ -14182,33 +14182,27 @@ ensureFamilyMedicalLeaveType();
         return;
       }
       const _app=document.getElementById('app');
-      _app.style.display='flex';_app.style.flexDirection='row';
+      // Only show app immediately for desktop users
+      if(!isMobileDevice()){
+        _app.style.display='flex';_app.style.flexDirection='row';
+      }
       applyPermissions();applyAttEditorPerm();
       await applyStoredBranding();initInactivityTracking();startAutoClockTimer();
-  assignMissingEmpNos().catch(()=>{});
-      // Route on restore — same logic as fresh login
+      assignMissingEmpNos().catch(()=>{});
+      // Route on restore — mobile always gets portal
       const _rEmp = _findHodEmp();
       const _rCM  = _rEmp?.clockMode||'kiosk';
-      if(CU.role==='admin'||CU.role==='hr'){
-        if(isMobileDevice()){
-          const _rApp = document.getElementById('app');
-          if(_rApp) _rApp.style.display = 'none';
-          const _rEmp2 = CU.empId ? gE(CU.empId) : null;
-          showMobilePortal(CU, _rEmp2).catch(()=>{ if(_rApp) _rApp.style.display='flex'; loadAndRenderDashboard(); });
-        } else {
+      if(isMobileDevice()){
+        const _rEmpMob = CU.empId ? gE(CU.empId) : null;
+        showMobilePortal(CU, _rEmpMob).catch(e=>{
+          console.warn('[Portal] Error:', e);
+          _app.style.display='flex'; _app.style.flexDirection='row';
           loadAndRenderDashboard();
-        }
+        });
+      } else if(CU.role==='admin'||CU.role==='hr'){
+        loadAndRenderDashboard();
       } else if(CU.role==='hod'||CU.role==='manager'){
-        if(isMobileDevice()){
-          const _rApp = document.getElementById('app');
-          if(_rApp) _rApp.style.display = 'none';
-          const _rHodEmp = CU.empId ? gE(CU.empId) : null;
-          showMobilePortal(CU, _rHodEmp).catch(e=>{
-            console.warn('[Portal] Error:', e);
-            if(_rApp) _rApp.style.display = 'flex';
-            loadAndRenderDashboard();
-          });
-        } else {
+        if(false){
           const _rSess = SS.get('session') || {};
           const _rMode = _rSess.accessMode || S.get('globalAccessModes',{})[String(_COMPANY_ID)] || 'full_kiosk';
           if(_rMode === 'leave_portal'){
