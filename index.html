@@ -1182,19 +1182,13 @@ function getCompanyAccessMode(companyId){
 }
 
 function shouldShowMobilePortal(user, emp){
-  // Based purely on company access mode — no device detection
-  if(!emp) return false;
-  if(user.role === 'admin' || user.role === 'hr') return false; // HR/admin always get full platform
-  const mode = getCompanyAccessMode(_COMPANY_ID);
-  if(mode === 'full_platform') return false; // Full platform for everyone
-  if(mode === 'full_kiosk') return false;    // Kiosk tablet mode
-  if(mode === 'leave_portal'){
-    // Only HODs/managers get the portal — regular employees get clock-in screen
-    if(user.role === 'hod' || user.role === 'manager') return true;
-    if(emp.isHOD || emp.isSeniorHOD || emp.clockMode === 'hod') return true;
-    return false;
-  }
-  return false;
+  // Show mobile portal for ALL users on mobile devices
+  // Exception: HR/Admin on desktop get full platform
+  if(!isMobileDevice()) return false;
+  if(!user) return false;
+  // HR/Admin can choose — they get a button to switch to full platform
+  // Everyone on mobile gets the portal
+  return true;
 }
 
 async function showMobilePortal(user, emp){
@@ -1396,7 +1390,10 @@ async function renderMobilePortal(user, emp, isHOD, tab){
           <div class="mp-logo">SolentraHR</div>
           <div class="mp-logo-sub">Employee Portal</div>
         </div>
-        <button class="mp-signout-btn" onclick="mobilePortalLogout()">Sign Out</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${(user.role==='admin'||user.role==='hr')?`<button class="mp-signout-btn" onclick="mpOpenFullPlatform()" style="background:rgba(201,168,76,0.2);border-color:rgba(201,168,76,0.5);color:#C9A84C">Full Platform</button>`:''}
+          <button class="mp-signout-btn" onclick="mobilePortalLogout()">Sign Out</button>
+        </div>
       </div>
       <div class="mp-user-pill">
         <div class="mp-avatar">${initials}</div>
@@ -1535,6 +1532,14 @@ async function mpApproveLeave(reqId, approve){
 
 
 
+
+function mpOpenFullPlatform(){
+  const portal = document.getElementById('mobile-portal');
+  if(portal) portal.style.display = 'none';
+  const appEl = document.getElementById('app');
+  if(appEl){ appEl.style.display = 'flex'; appEl.style.flexDirection = 'row'; }
+  loadAndRenderDashboard();
+}
 
 function mobilePortalLogout(){
   const portal = document.getElementById('mobile-portal');
@@ -14182,24 +14187,38 @@ ensureFamilyMedicalLeaveType();
       const _rEmp = _findHodEmp();
       const _rCM  = _rEmp?.clockMode||'kiosk';
       if(CU.role==='admin'||CU.role==='hr'){
-        loadAndRenderDashboard();
+        if(isMobileDevice()){
+          const _rApp = document.getElementById('app');
+          if(_rApp) _rApp.style.display = 'none';
+          const _rEmp2 = CU.empId ? gE(CU.empId) : null;
+          showMobilePortal(CU, _rEmp2).catch(()=>{ if(_rApp) _rApp.style.display='flex'; loadAndRenderDashboard(); });
+        } else {
+          loadAndRenderDashboard();
+        }
       } else if(CU.role==='hod'||CU.role==='manager'){
-        // Use session-stored access mode for instant routing — no flash
-        const _rSess = SS.get('session') || {};
-        const _rMode = _rSess.accessMode || S.get('globalAccessModes',{})[String(_COMPANY_ID)] || 'full_kiosk';
-        if(_rMode === 'leave_portal'){
-          // Keep app hidden, show portal directly
+        if(isMobileDevice()){
           const _rApp = document.getElementById('app');
           if(_rApp) _rApp.style.display = 'none';
           const _rHodEmp = CU.empId ? gE(CU.empId) : null;
           showMobilePortal(CU, _rHodEmp).catch(e=>{
-            // If portal fails, fall back to dashboard
             console.warn('[Portal] Error:', e);
             if(_rApp) _rApp.style.display = 'flex';
             loadAndRenderDashboard();
           });
         } else {
-          loadAndRenderDashboard();
+          const _rSess = SS.get('session') || {};
+          const _rMode = _rSess.accessMode || S.get('globalAccessModes',{})[String(_COMPANY_ID)] || 'full_kiosk';
+          if(_rMode === 'leave_portal'){
+            const _rApp = document.getElementById('app');
+            if(_rApp) _rApp.style.display = 'none';
+            const _rHodEmp = CU.empId ? gE(CU.empId) : null;
+            showMobilePortal(CU, _rHodEmp).catch(e=>{
+              if(_rApp) _rApp.style.display = 'flex';
+              loadAndRenderDashboard();
+            });
+          } else {
+            loadAndRenderDashboard();
+          }
         }
       } else if(_rCM==='qr'||_rCM==='hod'||_rCM==='simple'){
         const _emp = CU.empId ? gE(CU.empId) : null;
@@ -14489,13 +14508,9 @@ async function doLogin(){
   S.set('org','');
   document.getElementById('login-screen').style.display='none';
 
-  // Check access mode BEFORE showing app — use freshly loaded modes
-  const _preCheckMode = _sessionMode; // already fetched above via loadGlobalAccessModes
-  const _isPortalUser = (_preCheckMode === 'leave_portal') &&
-    (user.role === 'hod' || user.role === 'manager');
-
   const app=document.getElementById('app');
-  if(!_isPortalUser){
+  // On mobile, keep app hidden until portal shows
+  if(!isMobileDevice()){
     app.style.display='flex';app.style.flexDirection='row';
   }
 
@@ -14526,11 +14541,15 @@ async function doLogin(){
   if(_dLoginEmp && !CU.empId){ CU.empId = _dLoginEmp.id; }
   if(_dLoginEmp && _dLoginEmp.userId && !CU.id) CU.id = _dLoginEmp.userId;
   const _dLoginCM = _dLoginEmp?.clockMode||'kiosk';
+  // Mobile users always get the mobile portal
+  if(isMobileDevice()){
+    showMobilePortal(user, _dLoginEmp);
+    return;
+  }
+  // Desktop routing
   if(user.role==='admin'||user.role==='hr'){
-    // Admin/HR always go straight to dashboard
     loadAndRenderDashboard();
   } else if(user.role==='hod'||user.role==='manager'){
-    // HOD/Manager — use cached modes first (already loaded at startup)
     const _cachedModes = S.get('globalAccessModes', {});
     const _hodMode = _cachedModes[String(_COMPANY_ID)] || _cachedModes[_COMPANY_ID] || 'full_kiosk';
     if(_hodMode === 'leave_portal'){
@@ -14539,20 +14558,9 @@ async function doLogin(){
       loadAndRenderDashboard();
     }
   } else if(_dLoginCM==='qr'||_dLoginCM==='hod'||_dLoginCM==='simple'){
-    // Employee — check if they should see mobile portal
-    await loadGlobalAccessModes().catch(()=>{});
-    if(shouldShowMobilePortal(user, _dLoginEmp)){
-      showMobilePortal(user, _dLoginEmp);
-    } else {
-      showEmployeeClockInScreen(user);
-    }
+    showEmployeeClockInScreen(user);
   } else {
-    await loadGlobalAccessModes().catch(()=>{});
-    if(shouldShowMobilePortal(user, _dLoginEmp)){
-      showMobilePortal(user, _dLoginEmp);
-    } else {
-      showEmployeeClockInScreen(user);
-    }
+    showEmployeeClockInScreen(user);
   }
 }
 
