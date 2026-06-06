@@ -648,7 +648,7 @@ html {
 
 /* ── MOBILE RESPONSIVE ──────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .sidebar {
+  .sidebar, #sidebar {
     display: none !important;
   }
   .app-body {
@@ -656,7 +656,7 @@ html {
     width: 100% !important;
   }
   .main-content {
-    padding: 10px 12px !important;
+    padding: 10px 12px 80px !important;
   }
   #content {
     margin-left: 0 !important;
@@ -18559,6 +18559,16 @@ function copyInviteMessage(){
   });
 }
 
+
+// Cache bust — force reload if version mismatch
+const _APP_VERSION = '1780760793';
+const _storedVersion = localStorage.getItem('pdhr_app_version');
+if(_storedVersion && _storedVersion !== _APP_VERSION){
+  localStorage.setItem('pdhr_app_version', _APP_VERSION);
+  location.reload(true);
+} else {
+  localStorage.setItem('pdhr_app_version', _APP_VERSION);
+}
 
 initSupabase();
 // Load global access modes immediately — needed before any login routing
