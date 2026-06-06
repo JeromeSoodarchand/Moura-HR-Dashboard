@@ -349,7 +349,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 .kiosk-dot.error{background:var(--red);border-color:var(--red)}
 .kiosk-dot.success{background:#25D366;border-color:#25D366}
 .pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.pin-btn{aspect-ratio:1;border:none;border-radius:14px;background:rgba(255,255,255,0.08);color:#fff;font-size:22px;font-weight:500;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+.pin-btn{aspect-ratio:1;border:none;border-radius:14px;background:rgba(255,255,255,0.08);color:#fff;font-size:22px;font-weight:500;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;touch-action:manipulation;min-height:64px}
 .pin-btn:hover{background:rgba(255,255,255,0.14)}
 .pin-btn:active{transform:scale(.93);background:rgba(255,255,255,0.2)}
 .pin-btn.pin-zero{grid-column:2}
@@ -1700,7 +1700,7 @@ tbody tr:hover td{background:var(--bg2);cursor:pointer}
 .kiosk-dot.error{background:var(--red);border-color:var(--red)}
 .kiosk-dot.success{background:#25D366;border-color:#25D366}
 .pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.pin-btn{aspect-ratio:1;border:none;border-radius:14px;background:rgba(255,255,255,0.08);color:#fff;font-size:22px;font-weight:500;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+.pin-btn{aspect-ratio:1;border:none;border-radius:14px;background:rgba(255,255,255,0.08);color:#fff;font-size:22px;font-weight:500;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;touch-action:manipulation;min-height:64px}
 .pin-btn:hover{background:rgba(255,255,255,0.14)}
 .pin-btn:active{transform:scale(.93);background:rgba(255,255,255,0.2)}
 .pin-btn.pin-zero{grid-column:2}
@@ -21147,9 +21147,11 @@ async function showEmployeeClockInScreen(user){
       (user.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===user.phone.replace(/[^0-9]/g,''))
     );
 
-  // Get today's attendance record for this employee
+  // Get today's attendance record for this employee — force fresh fetch
   let openRec = null;
   try{
+    // Clear attendance cache to force fresh Supabase query
+    S.set('attendance', []);
     const todayRecs = await dbGetAttendance(todayStr(), todayStr());
     _attendance = todayRecs;
     if(emp){
@@ -21183,6 +21185,8 @@ async function showEmployeeClockInScreen(user){
     document.body.appendChild(_empOv);
   }
   _empOv.style.display = 'flex';
+  // Init touch events after render
+  setTimeout(initPinTouchEvents, 100);
 
   const loc = _attLocations.length===1 ? _attLocations[0] : null;
   const locName = openRec?.location || loc?.name || '';
@@ -21723,8 +21727,20 @@ function stopKioskClock(){
   if(_kioskClockTimer){clearInterval(_kioskClockTimer);_kioskClockTimer=null;}
 }
 
+function initPinTouchEvents(){
+  // Add touchstart listeners to all pin-btn elements for instant response
+  document.querySelectorAll('.pin-btn').forEach(btn=>{
+    btn.addEventListener('touchstart', function(e){
+      e.preventDefault();
+      const onclick = btn.getAttribute('onclick');
+      if(onclick) eval(onclick);
+    }, {passive:false});
+  });
+}
+
 function kioskPin(d){
   if(_kioskPin.length>=4) return;
+  if(navigator.vibrate) navigator.vibrate(10);
   _kioskPin+=d;
   updateKioskDots();
   if(_kioskPin.length===4) setTimeout(kioskSubmit,300);
