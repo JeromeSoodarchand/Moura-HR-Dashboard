@@ -13,6 +13,175 @@
 <meta http-equiv="Expires" content="0">
 <title>SolentraHR</title>
 <style>
+/* ── MOBILE RESPONSIVE PORTAL ──────────────────────────────────────────────── */
+#mobile-portal {
+  position: fixed; inset: 0; z-index: 9999;
+  background: #F4F5F9; overflow-y: auto;
+  font-family: Arial, sans-serif;
+  display: none;
+}
+.mp-header {
+  background: linear-gradient(135deg,#1E1445,#2C2070);
+  padding: 48px 20px 20px;
+}
+.mp-logo { font-size: 22px; font-weight: 800; color: #C9A84C; }
+.mp-logo-sub { font-size: 11px; color: #CADCFC; }
+.mp-user-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.12); border-radius: 20px;
+  padding: 6px 14px 6px 6px; margin-top: 12px;
+}
+.mp-avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: #C9A84C; display: flex; align-items: center;
+  justify-content: center; font-size: 11px; font-weight: 800; color: #1E1445;
+  flex-shrink: 0;
+}
+.mp-user-name { font-size: 12px; color: #fff; font-weight: 600; }
+.mp-content { padding: 20px 16px 100px; max-width: 520px; margin: 0 auto; }
+.mp-section-title {
+  font-size: 11px; font-weight: 700; color: #6B7280;
+  text-transform: uppercase; letter-spacing: .08em;
+  margin: 20px 0 10px;
+}
+.mp-clock-card {
+  background: #1E1445; border-radius: 14px; padding: 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 4px;
+}
+.mp-clock-label { font-size: 11px; color: #CADCFC; margin-bottom: 2px; }
+.mp-clock-time { font-size: 22px; font-weight: 700; color: #fff; }
+.mp-clock-elapsed { font-size: 11px; color: #CADCFC; margin-top: 2px; }
+.mp-clock-btn {
+  background: #059669; color: #fff; border: none; border-radius: 10px;
+  padding: 12px 18px; font-size: 13px; font-weight: 700; cursor: pointer;
+  touch-action: manipulation; min-width: 90px; text-align: center;
+}
+.mp-clock-btn.out { background: #DC2626; }
+.mp-clock-btn.disabled { background: #6B7280; cursor: not-allowed; }
+.mp-bal-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 4px;
+}
+.mp-bal-card {
+  background: #fff; border-radius: 10px; padding: 12px 8px;
+  text-align: center; border: 0.5px solid #E5E7EB;
+}
+.mp-bal-num { font-size: 24px; font-weight: 800; color: #1E1445; }
+.mp-bal-used { font-size: 10px; color: #9CA3AF; }
+.mp-bal-label { font-size: 10px; font-weight: 700; color: #6B7280; margin-top: 2px; }
+.mp-new-leave-btn {
+  width: 100%; background: #059669; color: #fff; border: none;
+  border-radius: 12px; padding: 14px; font-size: 14px; font-weight: 700;
+  cursor: pointer; margin-bottom: 4px; touch-action: manipulation;
+}
+.mp-leave-row {
+  background: #fff; border-radius: 10px; padding: 12px 14px;
+  margin-bottom: 8px; display: flex; align-items: center;
+  justify-content: space-between; border: 0.5px solid #E5E7EB;
+}
+.mp-leave-type { font-size: 11px; font-weight: 700; color: #C9A84C; }
+.mp-leave-dates { font-size: 12px; color: #374151; margin-top: 2px; }
+.mp-badge {
+  padding: 3px 10px; border-radius: 20px; font-size: 10px;
+  font-weight: 700; white-space: nowrap; flex-shrink: 0; margin-left: 8px;
+}
+.mp-badge.pending { background: #FEF3C7; color: #92400E; }
+.mp-badge.approved { background: #D1FAE5; color: #065F46; }
+.mp-badge.rejected { background: #FEE2E2; color: #991B1B; }
+.mp-badge.cancelled { background: #F3F4F6; color: #6B7280; }
+.mp-group-card {
+  background: #fff; border-radius: 10px; padding: 12px 14px;
+  margin-bottom: 8px; border-left: 3px solid #1E1445;
+  border-top: 0.5px solid #E5E7EB; border-right: 0.5px solid #E5E7EB;
+  border-bottom: 0.5px solid #E5E7EB;
+}
+.mp-group-name { font-size: 13px; font-weight: 700; color: #1E1445; }
+.mp-group-co { font-size: 10px; color: #9CA3AF; }
+.mp-group-dates { font-size: 12px; color: #374151; margin-top: 3px; }
+.mp-empty { font-size: 13px; color: #9CA3AF; text-align: center; padding: 16px; }
+.mp-nav {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: #fff; border-top: 0.5px solid #E5E7EB;
+  display: flex; justify-content: space-around; padding: 8px 0 20px;
+  z-index: 10000; max-width: 520px; margin: 0 auto;
+}
+.mp-nav-item {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 3px; cursor: pointer; flex: 1; touch-action: manipulation;
+}
+.mp-nav-icon { font-size: 22px; }
+.mp-nav-label { font-size: 9px; color: #9CA3AF; font-weight: 600; }
+.mp-nav-item.active .mp-nav-label { color: #1E1445; }
+.mp-signout-btn {
+  background: rgba(255,255,255,0.12); color: #CADCFC;
+  border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
+  padding: 7px 14px; font-size: 12px; cursor: pointer;
+  touch-action: manipulation;
+}
+.mp-form-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  z-index: 10001; display: flex; align-items: flex-end;
+}
+.mp-form-sheet {
+  background: #fff; border-radius: 20px 20px 0 0;
+  padding: 24px 20px 40px; width: 100%; max-width: 520px;
+  margin: 0 auto; max-height: 90vh; overflow-y: auto;
+}
+.mp-form-title {
+  font-size: 18px; font-weight: 700; color: #1E1445; margin-bottom: 20px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.mp-form-close {
+  background: none; border: none; font-size: 24px;
+  cursor: pointer; color: #6B7280; touch-action: manipulation;
+}
+.mp-form-label { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; display: block; }
+.mp-form-group { margin-bottom: 16px; }
+.mp-form-input {
+  width: 100%; padding: 12px 14px; border: 1px solid #E5E7EB;
+  border-radius: 10px; font-size: 15px; color: #374151;
+  font-family: Arial, sans-serif; box-sizing: border-box;
+}
+.mp-form-select {
+  width: 100%; padding: 12px 14px; border: 1px solid #E5E7EB;
+  border-radius: 10px; font-size: 15px; color: #374151;
+  background: #fff; font-family: Arial, sans-serif; box-sizing: border-box;
+}
+.mp-type-row { display: flex; gap: 8px; }
+.mp-type-btn {
+  flex: 1; padding: 10px; border-radius: 8px;
+  border: 1px solid #E5E7EB; background: #fff;
+  font-size: 12px; font-weight: 600; color: #6B7280; cursor: pointer;
+  touch-action: manipulation;
+}
+.mp-type-btn.active { background: #1E1445; color: #C9A84C; border-color: #1E1445; }
+.mp-submit-btn {
+  width: 100%; background: #1E1445; color: #fff; border: none;
+  border-radius: 12px; padding: 16px; font-size: 16px; font-weight: 700;
+  cursor: pointer; margin-top: 8px; touch-action: manipulation;
+}
+.mp-approve-btn {
+  background: #059669; color: #fff; border: none; border-radius: 6px;
+  padding: 6px 10px; font-size: 11px; font-weight: 700; cursor: pointer;
+  touch-action: manipulation; margin-left: 6px;
+}
+.mp-reject-btn {
+  background: #DC2626; color: #fff; border: none; border-radius: 6px;
+  padding: 6px 10px; font-size: 11px; font-weight: 700; cursor: pointer;
+  touch-action: manipulation; margin-left: 4px;
+}
+.mp-team-row {
+  background: #fff; border-radius: 10px; padding: 12px 14px;
+  margin-bottom: 8px; border: 0.5px solid #E5E7EB;
+}
+.mp-team-name { font-size: 13px; font-weight: 700; color: #1E1445; }
+.mp-team-role { font-size: 11px; color: #9CA3AF; margin-top: 2px; }
+.mp-pending-badge {
+  display: inline-block; background: #FEF3C7; color: #92400E;
+  font-size: 10px; font-weight: 700; padding: 2px 8px;
+  border-radius: 20px; margin-top: 4px;
+}
+
 *{box-sizing:border-box;margin:0;padding:0}
 
 :root{
@@ -1029,7 +1198,7 @@ function shouldShowMobilePortal(user, emp){
 }
 
 async function showMobilePortal(user, emp){
-  // If emp not found, load directly from Supabase without triggering full render
+  // Load employee if missing
   if(!emp && user.empId){
     try{
       if(sbReady()){
@@ -1037,194 +1206,250 @@ async function showMobilePortal(user, emp){
         if(data && data[0]) emp = rowToEmp(data[0]);
       }
     } catch(e){}
-    // Also try from cache
     if(!emp) emp = gE(user.empId);
   }
-  // Fallback emp object if still not found
-  if(!emp){
-    emp = { id: user.empId||user.id, name: user.name||user.username||'Employee', dept: '', role: user.role||'' };
-  }
-  // Hide the main app, show mobile portal
-  const main = document.getElementById('main-app');
-  if(main) main.style.display = 'none';
-  const sidebar = document.getElementById('sidebar');
-  if(sidebar) sidebar.style.display = 'none';
+  if(!emp) emp = {id:user.empId||user.id, name:user.name||user.username||'Employee', dept:'', role:user.role||''};
 
-  // Create or show portal container
+  // Hide main app
+  const appEl = document.getElementById('app');
+  if(appEl) appEl.style.display = 'none';
+
+  // Create portal container
   let portal = document.getElementById('mobile-portal');
   if(!portal){
     portal = document.createElement('div');
     portal.id = 'mobile-portal';
-    portal.style.cssText = 'position:fixed;inset:0;background:#F4F5F9;overflow-y:auto;z-index:9999;font-family:Arial,sans-serif';
     document.body.appendChild(portal);
   }
   portal.style.display = 'block';
-  document.body.style.visibility = 'visible'; // ensure body is visible
+  document.body.style.visibility = 'visible';
 
-  // Load leave data
-  let leaveReqs = [], groupMgrLeaves = [];
-  try{
-    const [reqs] = await Promise.all([dbGetLeaveRequests()]);
-    leaveReqs = reqs.filter(r=>String(r.empId)===String(emp.id))
-      .sort((a,b)=>new Date(b.createdAt||b.updatedAt||0)-new Date(a.createdAt||a.updatedAt||0))
-      .slice(0,10);
+  // Load data
+  if(!_leaveBalances) _leaveBalances = await dbGetLeaveBalances().catch(()=>({}));
+  if(!_leaveRequests || !_leaveRequests.length) _leaveRequests = await dbGetLeaveRequests().catch(()=>[]);
+  if(!_attendance || !_attendance.length) _attendance = await dbGetAttendance(todayStr(), todayStr()).catch(()=>[]);
 
-    // Load group manager leaves from ALL companies
-    const now = new Date();
-    const fromDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
-    const toDate   = new Date(now.getFullYear(), now.getMonth()+2, 0).toISOString().slice(0,10);
-    if(sbReady()){
-      const _todayISO = new Date().toISOString().slice(0,10);
-      const {data:allLeaves} = await _sb.from('leave_requests')
-        .select('id, emp_id, type, from_date, to_date, days, status')
-        .eq('status','approved')
-        .gte('to_date', _todayISO)  // only today and future
-        .lte('from_date', toDate);
-
-      if(allLeaves){
-        // Get all HOD employees across all companies
-        const {data:allEmps} = await _sb.from('employees')
-          .select('id, name, dept, company_id, clock_mode')
-          .eq('clock_mode','hod')
-          .neq('status','offboarded');
-
-        const hodIds = new Set((allEmps||[]).map(e=>String(e.id)));
-        const hodMap = {};
-        (allEmps||[]).forEach(e=>{ hodMap[String(e.id)] = e; });
-        const companies = _companiesCache || [];
-
-        groupMgrLeaves = allLeaves
-          .filter(r=>hodIds.has(String(r.emp_id)) && String(r.emp_id)!==String(emp.id))
-          .map(r=>({
-            ...r,
-            empName: hodMap[String(r.emp_id)]?.name || 'Unknown',
-            dept: hodMap[String(r.emp_id)]?.dept || '',
-            companyName: companies.find(c=>c.id===hodMap[String(r.emp_id)]?.company_id)?.name || '',
-          }))
-          .sort((a,b)=>a.from_date.localeCompare(b.from_date));
-      }
-    }
-  } catch(e){ console.warn('[MobilePortal]', e); }
-
-  // Ensure leave data is loaded before calling getEmpBalance
-  if(!_leaveBalances){
-    try{ _leaveBalances = await dbGetLeaveBalances(); } catch(e){ _leaveBalances = {}; }
-  }
-  if(!_leaveRequests){
-    try{ _leaveRequests = await dbGetLeaveRequests(); } catch(e){ _leaveRequests = []; }
-  }
-  const b = getEmpBalance(emp.id) || {remAnnual:20,annual:20,remSick:15,sick:15,remCasual:10,casual:10};
+  const isHOD = user.role==='hod'||user.role==='manager'||user.role==='admin'||user.role==='hr';
   const initials = emp.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
 
-  portal.innerHTML = `
-    <div style="max-width:680px;margin:0 auto;min-height:100vh;background:#fff;box-shadow:0 0 40px rgba(0,0,0,0.1)">
-    <div style="background:linear-gradient(135deg,#1E1445,#2C2070);padding:24px 20px 20px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <div>
-          <div style="font-size:22px;font-weight:800;color:#C9A84C">SolentraHR</div>
-          <div style="font-size:12px;color:#CADCFC">Employee Portal</div>
-        </div>
-        <button onclick="mobilePortalLogout()" style="background:rgba(255,255,255,0.1);color:#CADCFC;border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer">Sign Out</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="width:52px;height:52px;border-radius:50%;background:#C9A84C;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:#1E1445;flex-shrink:0">${initials}</div>
-        <div>
-          <div style="font-size:18px;font-weight:700;color:#fff">${emp.name}</div>
-          <div style="font-size:13px;color:#CADCFC">${emp.dept||''} · ${emp.role||''}</div>
-        </div>
-      </div>
-    </div>
+  await renderMobilePortal(user, emp, isHOD, 'home');
+}
 
-    <!-- Leave Balances -->
-    <div style="padding:16px 20px">
-      <div style="font-size:13px;font-weight:700;color:#C9A84C;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Leave Balance</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px">
-        ${[
-          {label:'Annual', rem:b?.remAnnual??20, total:b?.annual??20, color:'#1E1445'},
-          {label:'Sick', rem:b?.remSick??15, total:b?.sick??15, color:'#059669'},
-          {label:'Casual', rem:b?.remCasual??10, total:b?.casual??10, color:'#7C3AED'},
-        ].map(c=>`
-          <div style="background:#fff;border-radius:12px;padding:14px;text-align:center">
-            <div style="font-size:24px;font-weight:800;color:${c.color}">${c.rem}</div>
-            <div style="font-size:10px;color:#6B7280;margin-top:2px">of ${c.total}</div>
-            <div style="font-size:11px;font-weight:600;color:#374151;margin-top:4px">${c.label}</div>
+let _mpTab = 'home';
+let _mpLeaveFormType = 'annual';
+
+async function renderMobilePortal(user, emp, isHOD, tab){
+  _mpTab = tab;
+  const portal = document.getElementById('mobile-portal');
+  if(!portal) return;
+
+  const b = getEmpBalance(emp.id) || {remAnnual:20,annual:20,remSick:15,sick:15,remCasual:10,casual:10,usedAnnual:0,usedSick:0,usedCasual:0};
+  const initials = emp.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+
+  // Today's attendance
+  const todayRecs = (_attendance||[]).filter(r=>String(r.empId)===String(emp.id)&&r.date===todayStr());
+  const openRec = todayRecs.find(r=>!r.clockOut);
+  const isClockedIn = !!openRec;
+
+  // My leave requests
+  const myLeaves = (_leaveRequests||[])
+    .filter(r=>String(r.empId)===String(emp.id))
+    .sort((a,b)=>new Date(b.updatedAt||b.createdAt||0)-new Date(a.updatedAt||a.createdAt||0))
+    .slice(0,8);
+
+  // Group manager leaves (HOD only)
+  let groupLeaves = [];
+  if(isHOD && sbReady()){
+    try{
+      const today = todayStr();
+      const {data:allLeaves} = await _sb.from('leave_requests')
+        .select('id,emp_id,type,from_date,to_date,days,status')
+        .eq('status','approved').gte('to_date',today);
+      const {data:allEmps} = await _sb.from('employees')
+        .select('id,name,dept,company_id,clock_mode').eq('clock_mode','hod').neq('status','offboarded');
+      if(allLeaves && allEmps){
+        const hodMap = {};
+        allEmps.forEach(e=>{ hodMap[String(e.id)]=e; });
+        const cos = _companiesCache||[];
+        groupLeaves = allLeaves
+          .filter(r=>hodMap[String(r.emp_id)] && String(r.emp_id)!==String(emp.id))
+          .map(r=>({...r, empName:hodMap[String(r.emp_id)]?.name||'', companyName:cos.find(c=>c.id===hodMap[String(r.emp_id)]?.company_id)?.name||''}))
+          .sort((a,b)=>a.from_date.localeCompare(b.from_date)).slice(0,5);
+      }
+    } catch(e){}
+  }
+
+  // Team pending leaves (HOD only)
+  let teamPending = [];
+  if(isHOD){
+    teamPending = (_leaveRequests||[]).filter(r=>r.status==='pending'&&String(r.empId)!==String(emp.id)).slice(0,5);
+  }
+
+  const fmtShort = s => s ? new Date(s+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : '';
+  const leaveLabel = t => getLEAVE_TYPES()[t]?.label || t || '';
+  const elapsed = openRec ? calcDuration(openRec.clockIn, new Date().toISOString()) : '';
+
+  // Build content based on tab
+  let tabContent = '';
+
+  if(tab === 'home'){
+    tabContent = `
+      <div class="mp-section-title">Today's attendance</div>
+      <div class="mp-clock-card">
+        <div>
+          <div class="mp-clock-label">${isClockedIn ? 'Clocked in since' : 'Not clocked in yet'}</div>
+          <div class="mp-clock-time">${isClockedIn ? new Date(openRec.clockIn).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '--:--'}</div>
+          ${isClockedIn&&elapsed?`<div class="mp-clock-elapsed">${elapsed} on site</div>`:''}
+        </div>
+        <button class="mp-clock-btn ${isClockedIn?'out':''}" onclick="mpClockAction('${emp.id}','${openRec?.id||''}','${isClockedIn}')">
+          ${isClockedIn ? 'Clock Out' : 'Clock In'}
+        </button>
+      </div>
+
+      <div class="mp-section-title">Leave balance</div>
+      <div class="mp-bal-grid">
+        <div class="mp-bal-card"><div class="mp-bal-num">${b.remAnnual}</div><div class="mp-bal-used">${parseFloat(b.usedAnnual)||0} used</div><div class="mp-bal-label">Annual</div></div>
+        <div class="mp-bal-card"><div class="mp-bal-num">${b.remSick}</div><div class="mp-bal-used">${parseFloat(b.usedSick)||0} used</div><div class="mp-bal-label">Sick</div></div>
+        <div class="mp-bal-card"><div class="mp-bal-num">${b.remCasual}</div><div class="mp-bal-used">${parseFloat(b.usedCasual)||0} used</div><div class="mp-bal-label">Casual</div></div>
+      </div>
+      <button class="mp-new-leave-btn" onclick="mpShowLeaveForm()">+ New Leave Request</button>
+
+      ${isHOD && groupLeaves.length ? `
+        <div class="mp-section-title">🌐 Managers on leave</div>
+        ${groupLeaves.map(r=>`
+          <div class="mp-group-card">
+            <div class="mp-group-name">${r.empName}</div>
+            <div class="mp-group-co">${r.companyName}</div>
+            <div class="mp-group-dates">${fmtShort(r.from_date)} – ${fmtShort(r.to_date)} (${r.days}d)</div>
           </div>`).join('')}
-      </div>
+      ` : ''}
 
-      <!-- New Leave Request Button -->
-      <button onclick="mobileShowLeaveForm()" style="width:100%;background:#059669;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:20px">
-        + New Leave Request
-      </button>
-
-      <!-- Group Manager Leave Calendar -->
-      <div style="font-size:13px;font-weight:700;color:#C9A84C;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">🌐 Group Manager Leave — This Month</div>
-      ${groupMgrLeaves.length === 0
-        ? '<div style="color:#6B7280;font-size:13px;margin-bottom:20px;text-align:center;padding:12px;background:#F9FAFB;border-radius:10px">No other managers on leave this month</div>'
-        : `<div style="margin-bottom:20px">${groupMgrLeaves.slice(0,8).map(r=>`
-          <div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;border-left:3px solid #1E1445">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start">
-              <div>
-                <div style="font-size:14px;font-weight:700;color:#1E1445">${r.empName}</div>
-                <div style="font-size:12px;color:#6B7280;margin-top:2px">${r.companyName}${r.dept?' · '+r.dept:''}</div>
-                <div style="font-size:13px;color:#374151;margin-top:4px">${fDate(r.from_date)} – ${fDate(r.to_date)} (${r.days}d)</div>
-              </div>
-              <div style="background:#EDE9FE;color:#7C3AED;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap">${(r.type||'').toUpperCase()}</div>
+      <div class="mp-section-title">My recent requests</div>
+      ${myLeaves.length===0
+        ? '<div class="mp-empty">No leave requests yet</div>'
+        : myLeaves.map(r=>`
+          <div class="mp-leave-row">
+            <div>
+              <div class="mp-leave-type">${leaveLabel(r.type)}</div>
+              <div class="mp-leave-dates">${fmtShort(r.fromDate)} – ${fmtShort(r.toDate)} · ${r.days}d</div>
             </div>
-          </div>`).join('')}</div>`
-      }
+            <span class="mp-badge ${r.status}">${r.status.toUpperCase()}</span>
+          </div>`).join('')}
+    `;
+  } else if(tab === 'team' && isHOD){
+    tabContent = `
+      <div class="mp-section-title">Pending approvals</div>
+      ${teamPending.length===0
+        ? '<div class="mp-empty">No pending leave requests</div>'
+        : teamPending.map(r=>{
+          const e = gE(r.empId);
+          return `<div class="mp-team-row">
+            <div class="mp-team-name">${e?.name||r.empId}</div>
+            <div class="mp-team-role">${leaveLabel(r.type)} · ${fmtShort(r.fromDate)} – ${fmtShort(r.toDate)} (${r.days}d)</div>
+            <div style="margin-top:6px">
+              <button class="mp-approve-btn" onclick="mpApproveLeave('${r.id}',true)">✓ Approve</button>
+              <button class="mp-reject-btn" onclick="mpApproveLeave('${r.id}',false)">✕ Reject</button>
+            </div>
+          </div>`;}).join('')}
 
-      <!-- Leave History -->
-      <div style="font-size:13px;font-weight:700;color:#C9A84C;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">My Leave History</div>
-      ${leaveReqs.length === 0
-        ? '<div style="color:#6B7280;font-size:14px;text-align:center;padding:20px">No leave requests yet</div>'
-        : leaveReqs.map(r=>{
-            const statusColor = r.status==='approved'?'#059669':r.status==='rejected'?'#DC2626':'#D97706';
-            const typeLabel = getLEAVE_TYPES()[r.type]?.label || r.type;
-            return `<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:10px">
-              <div style="display:flex;align-items:flex-start;justify-content:space-between">
-                <div>
-                  <div style="font-size:14px;font-weight:700;color:#1E1445">${typeLabel}</div>
-                  <div style="font-size:13px;color:#6B7280;margin-top:3px">${fDate(r.fromDate)} – ${fDate(r.toDate)} (${r.days}d)</div>
-                  ${r.reason?`<div style="font-size:12px;color:#9CA3AF;margin-top:4px">${r.reason}</div>`:''}
-                </div>
-                <div style="background:${statusColor};color:#fff;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;margin-left:10px">${r.status.toUpperCase()}</div>
-              </div>
-              ${r.reviewNote?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #F3F4F6;font-size:12px;color:#6B7280">Note: ${r.reviewNote}</div>`:''}
-            </div>`;
-          }).join('')
-      }
+      <div class="mp-section-title">🌐 Group manager calendar</div>
+      ${groupLeaves.length===0
+        ? '<div class="mp-empty">No managers on leave</div>'
+        : groupLeaves.map(r=>`
+          <div class="mp-group-card">
+            <div class="mp-group-name">${r.empName}</div>
+            <div class="mp-group-co">${r.companyName}</div>
+            <div class="mp-group-dates">${fmtShort(r.from_date)} – ${fmtShort(r.to_date)} (${r.days}d)</div>
+          </div>`).join('')}
+    `;
+  } else if(tab === 'leave'){
+    tabContent = `
+      <div class="mp-section-title">Leave balance</div>
+      <div class="mp-bal-grid">
+        <div class="mp-bal-card"><div class="mp-bal-num">${b.remAnnual}</div><div class="mp-bal-used">${parseFloat(b.usedAnnual)||0} used</div><div class="mp-bal-label">Annual</div></div>
+        <div class="mp-bal-card"><div class="mp-bal-num">${b.remSick}</div><div class="mp-bal-used">${parseFloat(b.usedSick)||0} used</div><div class="mp-bal-label">Sick</div></div>
+        <div class="mp-bal-card"><div class="mp-bal-num">${b.remCasual}</div><div class="mp-bal-used">${parseFloat(b.usedCasual)||0} used</div><div class="mp-bal-label">Casual</div></div>
+      </div>
+      <button class="mp-new-leave-btn" onclick="mpShowLeaveForm()">+ New Leave Request</button>
+
+      <div class="mp-section-title">All my requests</div>
+      ${(_leaveRequests||[]).filter(r=>String(r.empId)===String(emp.id)).length===0
+        ? '<div class="mp-empty">No leave requests yet</div>'
+        : (_leaveRequests||[]).filter(r=>String(r.empId)===String(emp.id))
+            .sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0))
+            .map(r=>`
+          <div class="mp-leave-row">
+            <div>
+              <div class="mp-leave-type">${leaveLabel(r.type)}</div>
+              <div class="mp-leave-dates">${fmtShort(r.fromDate)} – ${fmtShort(r.toDate)} · ${r.days}d</div>
+              ${r.reviewNote?`<div style="font-size:11px;color:#9CA3AF;margin-top:3px">${r.reviewNote}</div>`:''}
+            </div>
+            <span class="mp-badge ${r.status}">${r.status.toUpperCase()}</span>
+          </div>`).join('')}
+    `;
+  }
+
+  portal.innerHTML = `
+    <div class="mp-header">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="mp-logo">SolentraHR</div>
+          <div class="mp-logo-sub">Employee Portal</div>
+        </div>
+        <button class="mp-signout-btn" onclick="mobilePortalLogout()">Sign Out</button>
+      </div>
+      <div class="mp-user-pill">
+        <div class="mp-avatar">${initials}</div>
+        <span class="mp-user-name">${emp.name} · ${(()=>{return _companiesCache?.find(c=>c.id===_COMPANY_ID)?.name||'';})()}</span>
+      </div>
     </div>
 
-    </div><!-- end max-width wrapper -->
+    <div class="mp-content">${tabContent}</div>
 
-    <!-- Leave Form Modal -->
-    <div id="mobile-leave-form" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10000;overflow-y:auto">
-      <div style="background:#fff;border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;padding:24px;max-height:90vh;overflow-y:auto">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-          <div style="font-size:18px;font-weight:700;color:#1E1445">New Leave Request</div>
-          <button onclick="document.getElementById('mobile-leave-form').style.display='none'" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6B7280">×</button>
+    <div class="mp-nav" style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:0.5px solid #E5E7EB;display:flex;justify-content:space-around;padding:8px 0 20px;z-index:10000">
+      <div class="mp-nav-item ${tab==='home'?'active':''}" onclick="renderMobilePortal(${JSON.stringify(user).replace(/"/g,'&quot;')},${JSON.stringify(emp).replace(/"/g,'&quot;')},${isHOD},'home')" style="display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;flex:1;touch-action:manipulation">
+        <div style="font-size:22px">🏠</div>
+        <div style="font-size:9px;color:${tab==='home'?'#1E1445':'#9CA3AF'};font-weight:600">Home</div>
+      </div>
+      <div class="mp-nav-item ${tab==='leave'?'active':''}" onclick="renderMobilePortal(${JSON.stringify(user).replace(/"/g,'&quot;')},${JSON.stringify(emp).replace(/"/g,'&quot;')},${isHOD},'leave')" style="display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;flex:1;touch-action:manipulation">
+        <div style="font-size:22px">📅</div>
+        <div style="font-size:9px;color:${tab==='leave'?'#1E1445':'#9CA3AF'};font-weight:600">Leave</div>
+      </div>
+      ${isHOD?`<div class="mp-nav-item ${tab==='team'?'active':''}" onclick="renderMobilePortal(${JSON.stringify(user).replace(/"/g,'&quot;')},${JSON.stringify(emp).replace(/"/g,'&quot;')},${isHOD},'team')" style="display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;flex:1;touch-action:manipulation">
+        <div style="font-size:22px">👥</div>
+        <div style="font-size:9px;color:${tab==='team'?'#1E1445':'#9CA3AF'};font-weight:600">Team</div>
+      </div>`:''}
+    </div>
+
+    <div id="mp-leave-form-overlay" class="mp-form-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+      <div class="mp-form-sheet">
+        <div class="mp-form-title">
+          New Leave Request
+          <button class="mp-form-close" onclick="document.getElementById('mp-leave-form-overlay').style.display='none'">×</button>
         </div>
-        <div style="margin-bottom:16px">
-          <label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:6px">Leave Type</label>
-          <select id="mlv-type" style="width:100%;padding:12px;border:1px solid #E5E7EB;border-radius:10px;font-size:15px;color:#374151;background:#fff">
-            ${Object.entries(getLEAVE_TYPES()).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}
-          </select>
+        <div class="mp-form-group">
+          <label class="mp-form-label">Leave Type</label>
+          <div class="mp-type-row">
+            ${['annual','sick','casual'].map(t=>`
+              <button class="mp-type-btn ${_mpLeaveFormType===t?'active':''}" onclick="mpSetLeaveType('${t}',${JSON.stringify(user).replace(/"/g,'&quot;')},${JSON.stringify(emp).replace(/"/g,'&quot;')},${isHOD})">${t.charAt(0).toUpperCase()+t.slice(1)}</button>
+            `).join('')}
+          </div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" class="mp-form-group">
           <div>
-            <label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:6px">From</label>
-            <input type="date" id="mlv-from" style="width:100%;padding:12px;border:1px solid #E5E7EB;border-radius:10px;font-size:15px;color:#374151">
+            <label class="mp-form-label">From</label>
+            <input type="date" id="mp-lv-from" class="mp-form-input" value="${todayStr()}">
           </div>
           <div>
-            <label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:6px">To</label>
-            <input type="date" id="mlv-to" style="width:100%;padding:12px;border:1px solid #E5E7EB;border-radius:10px;font-size:15px;color:#374151">
+            <label class="mp-form-label">To</label>
+            <input type="date" id="mp-lv-to" class="mp-form-input" value="${todayStr()}">
           </div>
         </div>
-        <div style="margin-bottom:20px">
-          <label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:6px">Reason (optional)</label>
-          <textarea id="mlv-reason" rows="3" style="width:100%;padding:12px;border:1px solid #E5E7EB;border-radius:10px;font-size:15px;color:#374151;resize:none" placeholder="Enter reason..."></textarea>
+        <div class="mp-form-group">
+          <label class="mp-form-label">Reason (optional)</label>
+          <textarea id="mp-lv-reason" class="mp-form-input" rows="3" placeholder="Enter reason..." style="resize:none"></textarea>
         </div>
-        <button onclick="mobileSubmitLeave('${emp.id}')" style="width:100%;background:#1E1445;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:700;cursor:pointer">
+        <button class="mp-submit-btn" id="mp-submit-btn" onclick="mpSubmitLeave('${emp.id}',${JSON.stringify(user).replace(/"/g,'&quot;')},${JSON.stringify(emp).replace(/"/g,'&quot;')},${isHOD})">
           Submit Request
         </button>
       </div>
@@ -1232,55 +1457,84 @@ async function showMobilePortal(user, emp){
   `;
 }
 
-function mobileShowLeaveForm(){
-  const form = document.getElementById('mobile-leave-form');
-  if(form) form.style.display = 'block';
-  // Set default dates
-  const today = todayStr();
-  const fromEl = document.getElementById('mlv-from');
-  const toEl = document.getElementById('mlv-to');
-  if(fromEl && !fromEl.value) fromEl.value = today;
-  if(toEl && !toEl.value) toEl.value = today;
+function mpShowLeaveForm(){
+  const overlay = document.getElementById('mp-leave-form-overlay');
+  if(overlay) overlay.style.display = 'flex';
 }
 
-async function mobileSubmitLeave(empId){
-  const type   = document.getElementById('mlv-type')?.value;
-  const from   = document.getElementById('mlv-from')?.value;
-  const to     = document.getElementById('mlv-to')?.value;
-  const reason = document.getElementById('mlv-reason')?.value||'';
-  if(!from||!to){ alert('Please select from and to dates.'); return; }
+function mpSetLeaveType(type, user, emp, isHOD){
+  _mpLeaveFormType = type;
+  renderMobilePortal(user, emp, isHOD, _mpTab);
+  setTimeout(()=>{ mpShowLeaveForm(); }, 50);
+}
+
+async function mpClockAction(empId, recId, isClockedIn){
+  const btn = document.querySelector('.mp-clock-btn');
+  if(btn){ btn.textContent = '...'; btn.disabled = true; }
+  try{
+    if(isClockedIn === 'true' && recId){
+      await empClockOut(recId);
+    } else {
+      const loc = _attLocations?.[0];
+      await empClockIn(empId, loc?.id||'', loc?.name||'Mobile');
+    }
+    // Refresh attendance
+    _attendance = await dbGetAttendance(todayStr(), todayStr()).catch(()=>[]);
+    const user = CU;
+    const emp = gE(empId);
+    await renderMobilePortal(user, emp, user.role==='hod'||user.role==='manager'||user.role==='admin'||user.role==='hr', _mpTab);
+  } catch(e){
+    alert('Clock action failed: ' + (e.message||e));
+    if(btn){ btn.textContent = isClockedIn==='true'?'Clock Out':'Clock In'; btn.disabled=false; }
+  }
+}
+
+async function mpSubmitLeave(empId, user, emp, isHOD){
+  const from   = document.getElementById('mp-lv-from')?.value;
+  const to     = document.getElementById('mp-lv-to')?.value;
+  const reason = document.getElementById('mp-lv-reason')?.value||'';
+  if(!from||!to){ alert('Please select dates.'); return; }
   if(to < from){ alert('End date must be after start date.'); return; }
   const days = countWorkingDays(from, to);
-  if(days === 0){ alert('No working days in selected range.'); return; }
+  if(days===0){ alert('No working days in selected range.'); return; }
 
-  const btn = event.target;
-  btn.textContent = 'Submitting...';
-  btn.disabled = true;
+  const btn = document.getElementById('mp-submit-btn');
+  if(btn){ btn.textContent = 'Submitting...'; btn.disabled = true; }
 
   try{
     const req = {
-      id: Date.now(),
-      empId, type, fromDate: from, toDate: to,
-      days, reason, status: 'pending',
-      hodStatus: 'pending', hrStatus: 'pending',
-      companyId: _COMPANY_ID,
-      updatedAt: new Date().toISOString(),
+      id: Date.now(), empId, type: _mpLeaveFormType,
+      fromDate: from, toDate: to, days, reason,
+      status:'pending', hodStatus:'pending', hrStatus:'pending',
+      companyId: _COMPANY_ID, updatedAt: new Date().toISOString()
     };
     const saved = await dbSaveLeaveRequest(req);
     notifyHODofLeaveRequest(saved||req).catch(()=>{});
-    // Close form
-    document.getElementById('mobile-leave-form').style.display = 'none';
-    // Refresh portal
-    const user = CU;
-    const emp = gE(empId);
-    await showMobilePortal(user, emp);
-    alert('Leave request submitted successfully!');
+    document.getElementById('mp-leave-form-overlay').style.display = 'none';
+    _leaveRequests = await dbGetLeaveRequests().catch(()=>[]);
+    await renderMobilePortal(user, emp, isHOD, 'leave');
+    alert('Leave request submitted!');
   } catch(e){
-    alert('Failed to submit: ' + (e.message||e));
-    btn.textContent = 'Submit Request';
-    btn.disabled = false;
+    alert('Failed: ' + (e.message||e));
+    if(btn){ btn.textContent = 'Submit Request'; btn.disabled = false; }
   }
 }
+
+async function mpApproveLeave(reqId, approve){
+  if(!confirm(approve?'Approve this leave?':'Reject this leave?')) return;
+  await approveLeave(reqId, approve);
+  _leaveRequests = await dbGetLeaveRequests().catch(()=>[]);
+  const emp = gE(CU.empId);
+  const isHOD = CU.role==='hod'||CU.role==='manager'||CU.role==='admin'||CU.role==='hr';
+  await renderMobilePortal(CU, emp, isHOD, 'team');
+}
+
+
+
+
+
+
+
 
 function mobilePortalLogout(){
   const portal = document.getElementById('mobile-portal');
