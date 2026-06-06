@@ -21452,6 +21452,11 @@ function exportLeaveCSV(){
 
 
 async function showEmployeeClockInScreen(user){
+  // Admins and HR always go to dashboard, never clock-in screen
+  if(user && (user.role==='admin'||user.role==='hr')){
+    loadAndRenderDashboard();
+    return;
+  }
   // Ensure Supabase is connected for leave requests and attendance
   if(!sbReady()) ensureSB();
   // Load locations and employees if needed
@@ -21507,6 +21512,9 @@ async function showEmployeeClockInScreen(user){
     document.body.appendChild(_empOv);
   }
   _empOv.style.display = 'flex';
+  // Hide mobile bottom nav on clock-in screen
+  const _mobNav = document.getElementById('mobile-bottom-nav');
+  if(_mobNav) _mobNav.style.display = 'none';
   // Init touch events after render
   setTimeout(initPinTouchEvents, 100);
 
@@ -21600,6 +21608,9 @@ function openFullHRPlatform(){
   if(app){ app.style.display='flex'; app.style.flexDirection='row'; }
   const sb = document.getElementById('sidebar');
   if(sb) sb.style.display='';
+  // Restore mobile bottom nav
+  const _mn = document.getElementById('mobile-bottom-nav');
+  if(_mn) _mn.style.display = '';
   applyPermissions();
   applyStoredBranding();
   loadAndRenderDashboard();
