@@ -18451,7 +18451,11 @@ async function getGPSLocation(){
 function fmtTime(isoStr){ if(!isoStr)return '—'; return new Date(isoStr).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); }
 function calcDuration(ci,co){ if(!ci||!co)return null; return Math.round((new Date(co)-new Date(ci))/60000); }
 function fmtDuration(mins){ if(!mins)return '—'; const h=Math.floor(mins/60),m=mins%60; return h>0?h+'h '+m+'m':m+'m'; }
-function todayStr(){ return new Date().toISOString().slice(0,10); }
+function todayStr(){
+  // Use local date, not UTC — important for Mauritius (UTC+4)
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 function getEmployeeActiveRecord(empId){
   // Primary match: by empId
   const byId = _attendance.find(r=>String(r.empId)===String(empId)&&r.date===todayStr()&&!r.clockOut);
