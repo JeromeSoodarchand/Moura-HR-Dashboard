@@ -14195,9 +14195,14 @@ ensureFamilyMedicalLeaveType();
       if(isMobileDevice()){
         const _rEmpMob = CU.empId ? gE(CU.empId) : null;
         showMobilePortal(CU, _rEmpMob).catch(e=>{
-          console.warn('[Portal] Error:', e);
-          _app.style.display='flex'; _app.style.flexDirection='row';
-          loadAndRenderDashboard();
+          // Show error on screen so we can debug on mobile
+          document.body.style.visibility='visible';
+          document.body.innerHTML += `<div style="position:fixed;inset:0;background:#fff;z-index:99999;padding:20px;font-family:Arial">
+            <h2 style="color:red">Portal Error</h2>
+            <p>${e.message||e}</p>
+            <p>${e.stack||''}</p>
+            <button onclick="location.reload()" style="padding:12px 24px;margin-top:16px;font-size:16px">Reload</button>
+          </div>`;
         });
       } else if(CU.role==='admin'||CU.role==='hr'){
         loadAndRenderDashboard();
