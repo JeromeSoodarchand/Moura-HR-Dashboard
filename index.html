@@ -13907,7 +13907,7 @@ async function dbFindUser(username){
 }
 
 // ── AUDIT ──
-async function dbAddAudit(actor,action){
+async function dbAddAudit(actor,action,details){
   addAudit(actor,action); // always local
   if(!sbReady()) return;
   try{ await _sb.from('audit_log').insert({user_name:actor,action:action,company_id:_COMPANY_ID||1}); }
@@ -17319,7 +17319,8 @@ function getSettings(){
     {key:'paternity',label:'Paternity Leave',     color:'#7F77DD',bg:'#EEEDFE',maxDays:5,   paid:true, protected:false},
     {key:'unpaid',   label:'Unpaid Leave',        color:'#888780',bg:'#F1EFE8',maxDays:null,paid:false,protected:false},
     {key:'compassionate',label:'Compassionate Leave',color:'#D85A30',bg:'#FAECE7',maxDays:3,paid:true, protected:false},
-    {key:'employer_local', label:'Employer Local Leave', color:'#1E1445',bg:'#EEEDFE',maxDays:11, paid:true, protected:true}
+    {key:'employer_local', label:'Employer Local Leave', color:'#1E1445',bg:'#EEEDFE',maxDays:11, paid:true, protected:true},
+    {key:'permission', label:'Permission (< 3hrs)', color:'#6D28D9',bg:'#EDE9FE',maxDays:0, paid:true, protected:false}
   ];
   const _def={
     orgName:'',tagline:'Giving Comfort · Taking Care',
@@ -22795,6 +22796,11 @@ async function saveAttRecordEdit(recId, date, empId, reviewIdx){
   let rec = (_attendance||[]).find(r=>String(r.id)===String(recId));
   if(!rec){ toast('Record not found.','error'); return; }
 
+  // Capture old values for audit trail
+  const _oldClockIn  = rec.clockIn;
+  const _oldClockOut = rec.clockOut;
+  const _oldLocation = rec.location;
+
   rec.clockIn  = new Date(date+'T'+ciTime+':00').toISOString();
   rec.clockOut = coTime ? new Date(date+'T'+coTime+':00').toISOString() : null;
   rec.durationMinutes = rec.clockOut ? calcDuration(rec.clockIn,rec.clockOut) : null;
@@ -22812,7 +22818,10 @@ async function saveAttRecordEdit(recId, date, empId, reviewIdx){
     if(idx>=0) _attendance[idx] = saved||rec;
     hideLoader();
     toast('Record updated.','success');
-    dbAddAudit(CU.name,'Edited attendance: '+(gE(empId)?.name||empId)+' on '+date);
+    dbAddAudit(CU.name,'Edited attendance: '+(gE(empId)?.name||empId)+' on '+date,
+      JSON.stringify({employee:gE(empId)?.name||empId,date:date,
+        before:{clockIn:_oldClockIn,clockOut:_oldClockOut,location:_oldLocation},
+        after:{clockIn:rec.clockIn,clockOut:rec.clockOut,location:rec.location}}));
     // Refresh the review row
     await refreshReviewRowDB(reviewIdx);
     openAttendanceEditModal(empId, window._attEditFrom, window._attEditTo, reviewIdx);
