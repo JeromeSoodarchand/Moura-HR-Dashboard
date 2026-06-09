@@ -17336,7 +17336,7 @@ function getSettings(){
   };
   const _saved = S.get('companySettings',{});
   const _merged = Object.assign({},_def,_saved);
-  if(!_merged.leaveTypes||!_merged.leaveTypes.length) _merged.leaveTypes=_ltDef;
+  if(!Array.isArray(_merged.leaveTypes)||!_merged.leaveTypes.length) _merged.leaveTypes=_ltDef;
   return _merged;
 }
 
@@ -20692,7 +20692,9 @@ function normalisePhone(val){
 // Default balances (days per year) — Mauritius Labour Act
 // LEAVE_TYPES is now dynamic — reads from settings so HR can add/remove types
 function getLEAVE_TYPES(){
-  const types = getSettings().leaveTypes || [];
+  let types = getSettings().leaveTypes;
+  if(typeof types==='string'){try{types=JSON.parse(types);}catch(e){types=[];}}
+  if(!Array.isArray(types)) types=[];
   const obj = {};
   types.forEach(t=>{ obj[t.key] = {label:t.label, color:t.color, bg:t.bg, maxDays:t.maxDays||0}; });
   return obj;
@@ -22805,10 +22807,7 @@ async function saveAttRecordEdit(recId, date, empId, reviewIdx){
   let rec = (_attendance||[]).find(r=>String(r.id)===String(recId));
   if(!rec){ toast('Record not found.','error'); return; }
 
-  // Capture old values for audit trail
-  const _oldClockIn  = rec.clockIn;
-  const _oldClockOut = rec.clockOut;
-  const _oldLocation = rec.location;
+  const _oldClockIn=rec.clockIn, _oldClockOut=rec.clockOut, _oldLocation=rec.location;
 
   rec.clockIn  = new Date(date+'T'+ciTime+':00').toISOString();
   rec.clockOut = coTime ? new Date(date+'T'+coTime+':00').toISOString() : null;
@@ -22827,10 +22826,7 @@ async function saveAttRecordEdit(recId, date, empId, reviewIdx){
     if(idx>=0) _attendance[idx] = saved||rec;
     hideLoader();
     toast('Record updated.','success');
-    dbAddAudit(CU.name,'Edited attendance: '+(gE(empId)?.name||empId)+' on '+date,
-      JSON.stringify({employee:gE(empId)?.name||empId,date:date,
-        before:{clockIn:_oldClockIn,clockOut:_oldClockOut,location:_oldLocation},
-        after:{clockIn:rec.clockIn,clockOut:rec.clockOut,location:rec.location}}));
+    dbAddAudit(CU.name,'Edited attendance: '+(gE(empId)?.name||empId)+' on '+date,JSON.stringify({employee:gE(empId)?.name||empId,date:date,before:{clockIn:_oldClockIn,clockOut:_oldClockOut,location:_oldLocation},after:{clockIn:rec.clockIn,clockOut:rec.clockOut,location:rec.location}}));
     // Refresh the review row
     await refreshReviewRowDB(reviewIdx);
     openAttendanceEditModal(empId, window._attEditFrom, window._attEditTo, reviewIdx);
