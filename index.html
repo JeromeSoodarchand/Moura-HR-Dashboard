@@ -13910,7 +13910,7 @@ async function dbFindUser(username){
 async function dbAddAudit(actor,action,details){
   addAudit(actor,action); // always local
   if(!sbReady()) return;
-  try{ await _sb.from('audit_log').insert({user_name:actor,action:action,company_id:_COMPANY_ID||1}); }
+  try{ await _sb.from('audit_log').insert({user_name:actor,action:action,details:details||null,company_id:_COMPANY_ID||1}); }
   catch(e){ console.warn('Audit log error:',e); }
 }
 
@@ -19149,7 +19149,16 @@ function openAttendanceModal(type){
     }).catch(()=>{ _openAttendanceModalInner(modal, content); });
     return;
   }
-  if(type==='manageLocations'){ renderManageLocations(content); }
+  if(type==='manageLocations'){
+    content.innerHTML='<div style="padding:32px;text-align:center;color:var(--text3);font-size:14px">Loading...</div>';
+    dbGetLocations().then(locs => {
+      _attLocations = locs;
+      renderManageLocations(content);
+    }).catch(() => {
+      renderManageLocations(content);
+    });
+    return;
+  }
 }
 function _openAttendanceModalInner(modal, content){
   if(true){
