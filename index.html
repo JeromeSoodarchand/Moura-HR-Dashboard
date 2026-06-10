@@ -21404,6 +21404,18 @@ async function submitLeaveRequest(){
     }
   }
 
+  // Check for overlapping leave requests
+  const _overlapping = (_leaveRequests||[]).filter(r=>
+    String(r.empId)===String(empId) &&
+    ['pending','approved'].includes(r.status) &&
+    r.fromDate <= to && r.toDate >= from
+  );
+  if(_overlapping.length > 0){
+    const _ov = _overlapping[0];
+    toast(`Already has a ${_ov.status} leave request from ${fDate(_ov.fromDate)} to ${fDate(_ov.toDate)}. Cannot submit overlapping requests.`,'error');
+    _submittingLeave=false; return;
+  }
+
   // Check for overlapping approved leave
   const overlap = _leaveRequests.find(r=>
     String(r.empId)===String(empId)&&
