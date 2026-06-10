@@ -20862,21 +20862,41 @@ function countWorkingDays(from, to){
 
 function getEmpBalance(empId){
   const bal = _leaveBalances[empId] || {...LEAVE_DEFAULTS};
-  // Calculate used this year from approved requests
   const year = new Date().getFullYear();
-  const used = {annual:0, sick:0, casual:0};
+  const types = getLEAVE_TYPES();
+
+  // Calculate used days for ALL leave types from approved requests
+  const used = {};
   _leaveRequests.filter(r=>String(r.empId)===String(empId)&&r.status==='approved').forEach(r=>{
-    if(new Date(r.fromDate).getFullYear()===year && LEAVE_DEFAULTS.hasOwnProperty(r.type)){
-      used[r.type]=(used[r.type]||0)+r.days;
+    if(new Date(r.fromDate).getFullYear()===year){
+      used[r.type] = (used[r.type]||0) + (parseFloat(r.days)||0);
     }
   });
-  return {
+
+  // Build result with all types
+  const result = {
     annual: bal.annual, sick: bal.sick, casual: bal.casual,
-    usedAnnual: used.annual, usedSick: used.sick, usedCasual: used.casual,
+    usedAnnual: used.annual||0, usedSick: used.sick||0, usedCasual: used.casual||0,
     remAnnual: Math.max(0,bal.annual-(parseFloat(used.annual)||0)),
     remSick:   Math.max(0,bal.sick-(parseFloat(used.sick)||0)),
     remCasual: Math.max(0,bal.casual-(parseFloat(used.casual)||0)),
+    byType: {}
   };
+
+  // Add all leave types dynamically
+  Object.entries(types).forEach(([key, cfg])=>{
+    const maxDays = cfg.maxDays || 0;
+    const usedDays = parseFloat(used[key]||0);
+    result.byType[key] = {
+      label: cfg.label,
+      max: maxDays,
+      used: usedDays,
+      remaining: maxDays > 0 ? Math.max(0, maxDays - usedDays) : null,
+      unlimited: maxDays === 0,
+    };
+  });
+
+  return result;
 }
 
 function leaveBadge(status){
@@ -21282,6 +21302,19 @@ function openLeaveRequestModal(empId){
       <div class="fg"><label class="fl">To date *</label><input class="fi" id="lv-to" type="date" value="${todayStr()}" onchange="updateLeaveDays()"></div>
     </div>
     <div id="lv-days-info" style="font-size:12.5px;color:var(--text2);margin-bottom:12px;padding:8px 12px;background:var(--bg2);border-radius:var(--radius)">Select dates to calculate working days</div>
+    <div id="lv-halfday-row" style="display:none;margin-bottom:12px">
+      <label class="fl">Day Option</label>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);cursor:pointer">
+          <input type="radio" name="lv-halfday" id="lv-fullday" value="full" checked onchange="updateLeaveDays()">
+          <span style="font-size:13px;font-weight:600">Full Day</span>
+        </label>
+        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);cursor:pointer">
+          <input type="radio" name="lv-halfday" id="lv-halfday" value="half" onchange="updateLeaveDays()">
+          <span style="font-size:13px;font-weight:600">Half Day (0.5)</span>
+        </label>
+      </div>
+    </div>
     <div class="fg"><label class="fl">Reason</label><textarea class="ft" id="lv-reason" placeholder="Optional reason or notes…" rows="2"></textarea></div>
     <div class="mf">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -21297,14 +21330,23 @@ function updateLeaveBalance(){
   const el    = document.getElementById('lv-balance-info');
   if(!el||!empId) return;
   const b = getEmpBalance(empId);
-  if(['annual','sick','casual'].includes(type)){
-    const rem = {annual:b.remAnnual, sick:b.remSick, casual:b.remCasual}[type];
-    const total = {annual:b.annual, sick:b.sick, casual:b.casual}[type];
-    const pct = Math.round((total-rem)/total*100);
-    el.innerHTML = `Balance: <strong>${rem} days remaining</strong> of ${total} · ${pct}% used
-      <div class="leave-balance-bar" style="margin-top:4px"><div class="leave-balance-fill" style="width:${pct}%;background:${pct>80?'var(--red)':pct>50?'var(--amber)':'var(--green)'}"></div></div>`;
+  const bt = b.byType?.[type];
+  if(bt && !bt.unlimited){
+    const pct = bt.max > 0 ? Math.round((bt.used/bt.max)*100) : 0;
+    el.innerHTML = `Balance: <strong>${bt.remaining} days remaining</strong> of ${bt.max} · ${bt.used} used
+      <div class="leave-balance-bar" style="margin-top:4px"><div class="leave-balance-fill" style="width:${Math.min(100,pct)}%;background:${pct>80?'var(--red)':pct>50?'var(--amber)':'var(--green)'}"></div></div>`;
+  } else if(type==='permission'){
+    const used = b.byType?.permission?.used||0;
+    el.innerHTML = `Permission used this year: <strong>${used} time${used!==1?'s':''}</strong> — not deducted from balance`;
   } else {
     el.innerHTML = getLEAVE_TYPES()[type]?.label+' — no balance limit';
+  }
+  // Show half-day option only for employer_local
+  const hdRow = document.getElementById('lv-halfday-row');
+  if(hdRow) hdRow.style.display = type==='employer_local' ? 'block' : 'none';
+  if(type!=='employer_local'){
+    const fd = document.getElementById('lv-fullday');
+    if(fd) fd.checked = true;
   }
 }
 
@@ -21314,7 +21356,9 @@ function updateLeaveDays(){
   const el   = document.getElementById('lv-days-info');
   if(!el||!from||!to) return;
   if(to<from){ el.innerHTML='<span style="color:var(--red)">End date must be after start date</span>'; return; }
-  const days = countWorkingDays(from, to);
+  const rawDays = countWorkingDays(from, to);
+  const isHalf = document.getElementById('lv-halfday')?.checked;
+  const days = (isHalf && rawDays > 0) ? 0.5 : rawDays;
   el.innerHTML = `<strong>${days} working day${days!==1?'s':''}</strong> (excluding weekends & public holidays)`;
 }
 
@@ -21325,13 +21369,15 @@ async function submitLeaveRequest(){
   const from   = document.getElementById('lv-from')?.value;
   const to     = document.getElementById('lv-to')?.value;
   const reason = document.getElementById('lv-reason')?.value||'';
+  const isHalfDay = document.getElementById('lv-halfday')?.checked && type==='employer_local';
   if(_submittingLeave){ toast('Already submitting, please wait…','info'); _submittingLeave=false; return; }
   _submittingLeave = true;
   if(!empId||!from||!to){ toast('Please fill all required fields.','error'); _submittingLeave=false; return; }
   if(to<from){ toast('End date must be after start date.','error'); _submittingLeave=false; return; }
 
-  const days = countWorkingDays(from, to);
-  if(days===0){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
+  const rawDays = countWorkingDays(from, to);
+  const days = (isHalfDay && rawDays > 0) ? 0.5 : rawDays;
+  if(rawDays===0 && type!=='permission'){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
 
   // Mauritius 3-day rule — medical certificate required for sick leave > 3 days
   if(type==='sick' && days > 3){
@@ -21349,12 +21395,12 @@ async function submitLeaveRequest(){
     }
   }
 
-  // Check balance for tracked types
-  if(['annual','sick','casual'].includes(type)){
-    const b = getEmpBalance(empId);
-    const rem = {annual:b.remAnnual, sick:b.remSick, casual:b.remCasual}[type];
-    if(days>rem){
-      if(!confirm(`This request is for ${days} days but only ${rem} days remain. Submit anyway?`)){ _submittingLeave=false; return; }
+  // Check balance for all tracked types
+  const _bal = getEmpBalance(empId);
+  const _bt = _bal.byType?.[type];
+  if(_bt && !_bt.unlimited && type!=='permission'){
+    if(days > _bt.remaining){
+      if(!confirm(`This request is for ${days} day${days!==1?'s':''} but only ${_bt.remaining} day${_bt.remaining!==1?'s':''} remain for ${_bt.label}. Submit anyway?`)){ _submittingLeave=false; return; }
     }
   }
 
