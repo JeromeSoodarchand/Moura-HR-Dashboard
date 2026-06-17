@@ -18958,6 +18958,9 @@ async function renderAttendanceReport(){
     allEmps.flatMap(e=>[String(e.id), e.userId?String(e.userId):''].filter(Boolean))
   );
   let list = recs.filter(r=>empIdSet.has(String(r.empId)));
+  // Exclude synthetic leave attendance records — these are auto-created on approval
+  // and should appear only in the Leave section, not the Attendance view
+  list = list.filter(r=>!(r.notes && r.notes.includes('— approved leave')));
   list.sort((a,b)=>new Date(b.clockIn)-new Date(a.clockIn));
 
   // Current sub-tab filter
@@ -25085,6 +25088,7 @@ async function createLeaveAttendanceRecords(req){
             duration_minutes: durationMinutes,
             location:         'Leave',
             notes:            leaveLabel + ' — approved leave',
+            source:           'leave_auto',
             company_id:       req.companyId || _COMPANY_ID || emp.companyId || 1,
           });
         }
@@ -25094,11 +25098,12 @@ async function createLeaveAttendanceRecords(req){
 
     if(!rows.length) return;
 
-    // Check for existing attendance on those dates to avoid duplicates
-    const dates = rows.map(r=>r.date);
+    // Check for existing leave_auto records on those dates to avoid duplicates
+    // Filter specifically by source='leave_auto' so real clock-ins are not confused
     const {data:existing} = await _sb.from('attendance')
       .select('date')
       .eq('emp_id', String(emp.id))
+      .eq('source', 'leave_auto')
       .gte('date', req.fromDate)
       .lte('date', req.toDate);
 
