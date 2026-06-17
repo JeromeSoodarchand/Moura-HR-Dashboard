@@ -13177,10 +13177,10 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
             <div class="cb">
               <div class="fr3">
                 <div class="fg"><label class="fl">Work start time</label>
-                  <input class="fi" id="settings-work-start" type="time" value="08:00">
+                  <input class="fi" id="settings-work-start" type="time" value="08:30">
                 </div>
                 <div class="fg"><label class="fl">Work end time</label>
-                  <input class="fi" id="settings-work-end" type="time" value="17:00">
+                  <input class="fi" id="settings-work-end" type="time" value="16:30">
                 </div>
                 <div class="fg"><label class="fl">Normal hours/day</label>
                   <input class="fi" id="settings-work-hours" type="number" min="1" max="24" step="0.5" value="8">
@@ -15042,8 +15042,8 @@ async function autoClockSelfClockingEmployees(){
 
   for(const emp of emps){
     // Use employee's own schedule if set, else company default
-    const ws = emp.workStart || wh.workStart || '08:00';
-    const we = emp.workEnd   || wh.workEnd   || '17:00';
+    const ws = emp.workStart || wh.workStart || '08:30';
+    const we = emp.workEnd   || wh.workEnd   || '16:30';
     const wd = emp.workDays  || wh.workDays  || [1,2,3,4,5];
 
     // Skip if today is not a working day for this employee
@@ -16371,8 +16371,8 @@ function _initClockModeSchedule(sel, emp){
   if(!isSimple) return;
   // Pre-fill from employee's saved schedule, or fall back to company settings
   const wh = getWorkingHoursSettings();
-  const ws = emp?.workStart || wh.workStart || '08:00';
-  const we = emp?.workEnd   || wh.workEnd   || '17:00';
+  const ws = emp?.workStart || wh.workStart || '08:30';
+  const we = emp?.workEnd   || wh.workEnd   || '16:30';
   const wd = emp?.workDays  || wh.workDays  || [1,2,3,4,5];
   const startEl = document.getElementById('fwork-start');
   const endEl   = document.getElementById('fwork-end');
@@ -16388,8 +16388,8 @@ function _readClockModeSchedule(){
   // Read schedule from the form fields
   const clockMode = document.getElementById('fclockmode')?.value||'kiosk';
   if(clockMode !== 'simple') return {};
-  const workStart = document.getElementById('fwork-start')?.value || '08:00';
-  const workEnd   = document.getElementById('fwork-end')?.value   || '17:00';
+  const workStart = document.getElementById('fwork-start')?.value || '08:30';
+  const workEnd   = document.getElementById('fwork-end')?.value   || '16:30';
   const workDays  = [0,1,2,3,4,5,6].filter(d=>document.getElementById('fwork-day-'+d)?.checked);
   return { workStart, workEnd, workDays };
 }
@@ -17402,8 +17402,8 @@ function renderSettings(){
   const owEl = document.getElementById('settings-ot-weekday');
   const owdEl = document.getElementById('settings-ot-weekend');
   const ohdEl = document.getElementById('settings-ot-holiday');
-  if(wsEl) wsEl.value = cs.workStart || '08:00';
-  if(weEl) weEl.value = cs.workEnd   || '17:00';
+  if(wsEl) wsEl.value = cs.workStart || '08:30';
+  if(weEl) weEl.value = cs.workEnd   || '16:30';
   if(whEl) whEl.value = cs.workHours || 8;
   if(owEl) owEl.value = cs.otWeekday || 1.5;
   if(owdEl) owdEl.value = cs.otWeekend || 2.0;
@@ -18917,9 +18917,11 @@ function renderAttLiveBoard(){
 function renderAttMetrics(){
   const el = document.getElementById('att-metrics');
   if(!el) return;
-  const todays = _attendance.filter(r=>r.date===todayStr());
+  // Exclude synthetic leave records from all metrics
+  const todays = _attendance.filter(r=>r.date===todayStr() && !(r.notes&&r.notes.includes('— approved leave')));
   const active = todays.filter(r=>!r.clockOut).length;
-  const avgMins = todays.filter(r=>r.durationMinutes).reduce((s,r)=>s+r.durationMinutes,0)/(todays.filter(r=>r.durationMinutes).length||1);
+  const completed = todays.filter(r=>r.durationMinutes && r.durationMinutes > 0 && r.durationMinutes < 1440);
+  const avgMins = completed.reduce((s,r)=>s+r.durationMinutes,0)/(completed.length||1);
   const late = todays.filter(r=>r.clockIn&&new Date(r.clockIn).getHours()>=9).length;
   el.innerHTML =
     '<div class="att-card"><div class="att-card-accent" style="background:var(--green)"></div><div class="att-card-label">On site now</div><div class="att-card-value">'+active+'</div><div class="att-card-sub">employees clocked in</div></div>'+
@@ -22681,7 +22683,7 @@ async function anomalyClockOut(recId, rowIdx){
 
   const dateStr = document.getElementById('anom-date')?.value || todayStr();
   // Prompt for clock-out time
-  const timeInput = prompt('Enter clock-out time (HH:MM):', '17:00');
+  const timeInput = prompt('Enter clock-out time (HH:MM):', '16:30');
   if(!timeInput) return;
   const [h,m] = timeInput.split(':').map(Number);
   if(isNaN(h)||isNaN(m)||h<0||h>23||m<0||m>59){ toast('Invalid time.','error'); return; }
@@ -22706,9 +22708,9 @@ async function anomalyClockOut(recId, rowIdx){
 
 async function anomalyAddRecord(empId, date, rowIdx){
   const emp = gE(empId);
-  const inTime  = prompt('Clock-in time (HH:MM):', '08:00');
+  const inTime  = prompt('Clock-in time (HH:MM):', '08:30');
   if(!inTime) return;
-  const outTime = prompt('Clock-out time (HH:MM, or leave blank if still open):', '17:00');
+  const outTime = prompt('Clock-out time (HH:MM, or leave blank if still open):', '16:30');
 
   const [ih,im] = inTime.split(':').map(Number);
   if(isNaN(ih)||isNaN(im)){ toast('Invalid time.','error'); return; }
@@ -22809,8 +22811,8 @@ function openAttendanceEditModal(empId, dateFrom, dateTo, reviewIdx){
         <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text2)">&#43; Add / Fix Record</div>
         <div class="fr3">
           <div class="fg"><label class="fl">Date *</label><input class="fi" id="new-att-date" type="date" min="${dateFrom}" max="${dateTo}" value="${dateFrom}"></div>
-          <div class="fg"><label class="fl">Clock in *</label><input class="fi" id="new-att-ci" type="time" value="08:00"></div>
-          <div class="fg"><label class="fl">Clock out</label><input class="fi" id="new-att-co" type="time" value="17:00"></div>
+          <div class="fg"><label class="fl">Clock in *</label><input class="fi" id="new-att-ci" type="time" value="08:30"></div>
+          <div class="fg"><label class="fl">Clock out</label><input class="fi" id="new-att-co" type="time" value="16:30"></div>
         </div>
         <div class="fr">
           <div class="fg"><label class="fl">Location</label><input class="fi" id="new-att-loc" value="Main Entrance" placeholder="Location"></div>
@@ -22983,8 +22985,8 @@ async function refreshReviewRowDB(reviewIdx){
 }
 function getWorkingHoursSettings(){
   const cs = getSettings();
-  const workStart = cs.workStart || '08:00';
-  const workEnd   = cs.workEnd   || '17:00';
+  const workStart = cs.workStart || '08:30';
+  const workEnd   = cs.workEnd   || '16:30';
   const [sh,sm]   = workStart.split(':').map(Number);
   const [eh,em]   = workEnd.split(':').map(Number);
   const derivedHours = ((eh*60+em)-(sh*60+sm))/60;
@@ -23004,8 +23006,8 @@ function getWorkingHoursSettings(){
 
 function saveWorkingHoursSettings(){
   const cs = getSettings();
-  cs.workStart  = document.getElementById('settings-work-start')?.value || '08:00';
-  cs.workEnd    = document.getElementById('settings-work-end')?.value   || '17:00';
+  cs.workStart  = document.getElementById('settings-work-start')?.value || '08:30';
+  cs.workEnd    = document.getElementById('settings-work-end')?.value   || '16:30';
   cs.workHours  = parseFloat(document.getElementById('settings-work-hours')?.value) || 8;
   cs.workDays   = [0,1,2,3,4,5,6].filter(d=>document.getElementById('work-day-'+d)?.checked);
   cs.otWeekday  = parseFloat(document.getElementById('settings-ot-weekday')?.value) || 1.5;
@@ -23064,8 +23066,8 @@ function calcOTCost(d){
 
 function getOTSettings(){
   const s = getSettings();
-  const workStart = s.workStart || '08:00';
-  const workEnd   = s.workEnd   || '17:00';
+  const workStart = s.workStart || '08:30';
+  const workEnd   = s.workEnd   || '16:30';
   // Always derive workHours from workStart/workEnd so they stay in sync
   const [sh,sm] = workStart.split(':').map(Number);
   const [eh,em] = workEnd.split(':').map(Number);
@@ -23864,9 +23866,9 @@ async function updateAttNote(recId, note, reviewIdx){
 async function addAttRecord(empId, periodFrom, reviewIdx){
   const date  = prompt('Date (YYYY-MM-DD):');
   if(!date) return;
-  const ciStr = prompt('Clock-in time (HH:MM):','08:00');
+  const ciStr = prompt('Clock-in time (HH:MM):','08:30');
   if(!ciStr) return;
-  const coStr = prompt('Clock-out time (HH:MM, blank if open):','17:00');
+  const coStr = prompt('Clock-out time (HH:MM, blank if open):','16:30');
   const ci = new Date(date+'T'+ciStr+':00').toISOString();
   const co = coStr ? new Date(date+'T'+coStr+':00').toISOString() : null;
   const rec = {id:Date.now(),empId,clockIn:ci,clockOut:co,
@@ -25059,7 +25061,7 @@ async function createLeaveAttendanceRecords(req){
   try{
     const settings = getSettings();
     const workStart = settings.workStart || '08:30';
-    const workEnd   = settings.workEnd   || '17:00';
+    const workEnd   = settings.workEnd   || '16:30';
     const leaveLabel = getLEAVE_TYPES()[req.type]?.label || req.type;
 
     // Get all working days in the leave period
@@ -25908,12 +25910,12 @@ function openAddAttRecordModal(){
         <input class="fi" id="add-att-date" type="date" value="${new Date().toISOString().slice(0,10)}">
       </div>
       <div class="fg"><label class="fl">Clock-in *</label>
-        <input class="fi" id="add-att-ci" type="time" value="08:00">
+        <input class="fi" id="add-att-ci" type="time" value="08:30">
       </div>
     </div>
     <div class="fr">
       <div class="fg"><label class="fl">Clock-out (blank = open)</label>
-        <input class="fi" id="add-att-co" type="time" value="17:00">
+        <input class="fi" id="add-att-co" type="time" value="16:30">
       </div>
       <div class="fg"><label class="fl">Location</label>
         <input class="fi" id="add-att-loc" value="Main Entrance">
