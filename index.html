@@ -25281,41 +25281,41 @@ async function notifyHODofLeaveRequest(req){
   // Build list of people to notify
   let hodList = [];
 
-  // Always notify the direct manager first (by emp.manager name match)
-  // This applies to both HODs and regular employees
-  const directMgrEmp = getEmps().find(e=>
-    e.status!=='offboarded' &&
-    emp.manager && e.name === emp.manager
-  );
-  if(directMgrEmp && directMgrEmp.email) hodList.push(directMgrEmp);
+  // STEP 1 — Always try the named manager first (employee record's manager field)
+  // Search both employee records AND user accounts; covers managers who may not have
+  // an employee record (e.g. senior executives without a kiosk/app account)
+  if(emp.manager){
+    const directMgrEmp = getEmps().find(e=>
+      e.status!=='offboarded' && e.name === emp.manager
+    );
+    if(directMgrEmp?.email) hodList.push({name:directMgrEmp.name, email:directMgrEmp.email});
 
-  // Also find the manager's HR user account (may have different email)
-  const directMgrUser = getUsers().find(u=>
-    u.active && emp.manager &&
-    (u.name===emp.manager || (u.empId && String(u.empId)===String(directMgrEmp?.id)))
-  );
-  if(directMgrUser?.email && !hodList.find(h=>h.email===directMgrUser.email)){
-    hodList.push({name:directMgrUser.name, email:directMgrUser.email});
+    const directMgrUser = getUsers().find(u=>
+      u.active && (
+        u.name === emp.manager ||
+        (u.empId && directMgrEmp && String(u.empId) === String(directMgrEmp.id))
+      )
+    );
+    if(directMgrUser?.email && !hodList.find(h=>h.email===directMgrUser.email)){
+      hodList.push({name:directMgrUser.name, email:directMgrUser.email});
+    }
   }
 
-  if(req.requesterIsHOD && !hodList.length){
-    // HOD with no direct manager set — fall back to Senior HODs
-    const seniorHODs = getEmps().filter(e=>e.isSeniorHOD&&e.status!=='offboarded'&&e.email);
-    seniorHODs.forEach(e=>{ if(!hodList.find(h=>h.email===e.email)) hodList.push(e); });
-  }
-
-  if(!req.requesterIsHOD && !hodList.length){
-    // Regular employee with no manager set — notify HR admin
-    const hrUsers = getUsers().filter(u=>(u.role==='admin'||u.role==='hr')&&u.active&&u.email&&
-      (u.companyId===_COMPANY_ID||!u.companyId));
-    hrUsers.forEach(u=>{ if(!hodList.find(h=>h.email===u.email)) hodList.push({name:u.name,email:u.email}); });
-  }
-
-  // Final fallback — if nobody to notify, send to all HR/admin users
+  // STEP 2 — Only fall back if NO named manager was found at all.
+  // Never broadcast to all senior HODs when a manager name is set.
   if(!hodList.length){
-    const allHR = getUsers().filter(u=>(u.role==='admin'||u.role==='hr')&&u.active&&u.email&&
-      (!u.companyId||u.companyId===_COMPANY_ID));
-    allHR.forEach(u=>{ if(!hodList.find(h=>h.email===u.email)) hodList.push({name:u.name,email:u.email}); });
+    if(emp.manager){
+      console.warn('[Notify] Manager "'+emp.manager+'" for '+emp.name+' has no email on record. Notification skipped.');
+    } else if(req.requesterIsHOD){
+      // HOD with no manager set at all — only then fall back to senior HODs
+      const seniorHODs = getEmps().filter(e=>e.isSeniorHOD&&e.status!=='offboarded'&&e.email);
+      seniorHODs.forEach(e=>{ if(!hodList.find(h=>h.email===e.email)) hodList.push(e); });
+    } else {
+      // Regular employee with no manager set — notify HR admin for this company only
+      const hrUsers = getUsers().filter(u=>(u.role==='admin'||u.role==='hr')&&u.active&&u.email&&
+        (u.companyId===_COMPANY_ID||!u.companyId));
+      hrUsers.forEach(u=>{ if(!hodList.find(h=>h.email===u.email)) hodList.push({name:u.name,email:u.email}); });
+    }
   }
 
   // In-app notification
