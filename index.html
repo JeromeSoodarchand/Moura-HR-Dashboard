@@ -21272,6 +21272,19 @@ function openLeaveRequestModal(empId){
       <div class="fg"><label class="fl">To date *</label><input class="fi" id="lv-to" type="date" value="${todayStr()}" onchange="updateLeaveDays()"></div>
     </div>
     <div id="lv-days-info" style="font-size:12.5px;color:var(--text2);margin-bottom:12px;padding:8px 12px;background:var(--bg2);border-radius:var(--radius)">Select dates to calculate working days</div>
+    <div id="lv-halfday-row" style="display:none;margin-bottom:12px">
+      <label class="fl">Day Option</label>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);cursor:pointer">
+          <input type="radio" name="lv-halfday" id="lv-fullday" value="full" checked onchange="updateLeaveDays()">
+          <span style="font-size:13px;font-weight:600">Full Day</span>
+        </label>
+        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);cursor:pointer">
+          <input type="radio" name="lv-halfday" id="lv-halfday" value="half" onchange="updateLeaveDays()">
+          <span style="font-size:13px;font-weight:600">Half Day (0.5)</span>
+        </label>
+      </div>
+    </div>
     <div class="fg"><label class="fl">Reason</label><textarea class="ft" id="lv-reason" placeholder="Optional reason or notes…" rows="2"></textarea></div>
     <div class="mf">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -21296,6 +21309,13 @@ function updateLeaveBalance(){
   } else {
     el.innerHTML = getLEAVE_TYPES()[type]?.label+' — no balance limit';
   }
+  // Show half-day option only for employer_local
+  const hdRow = document.getElementById('lv-halfday-row');
+  if(hdRow) hdRow.style.display = type==='employer_local' ? 'block' : 'none';
+  if(type!=='employer_local'){
+    const fd = document.getElementById('lv-fullday');
+    if(fd) fd.checked = true;
+  }
 }
 
 function updateLeaveDays(){
@@ -21304,7 +21324,9 @@ function updateLeaveDays(){
   const el   = document.getElementById('lv-days-info');
   if(!el||!from||!to) return;
   if(to<from){ el.innerHTML='<span style="color:var(--red)">End date must be after start date</span>'; return; }
-  const days = countWorkingDays(from, to);
+  const rawDays = countWorkingDays(from, to);
+  const isHalf = document.getElementById('lv-halfday')?.checked;
+  const days = (isHalf && rawDays > 0) ? 0.5 : rawDays;
   el.innerHTML = `<strong>${days} working day${days!==1?'s':''}</strong> (excluding weekends & public holidays)`;
 }
 
@@ -21320,8 +21342,10 @@ async function submitLeaveRequest(){
   if(!empId||!from||!to){ toast('Please fill all required fields.','error'); _submittingLeave=false; return; }
   if(to<from){ toast('End date must be after start date.','error'); _submittingLeave=false; return; }
 
-  const days = countWorkingDays(from, to);
-  if(days===0){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
+  const isHalfDay = document.getElementById('lv-halfday')?.checked && type==='employer_local';
+  const rawDays = countWorkingDays(from, to);
+  const days = (isHalfDay && rawDays > 0) ? 0.5 : rawDays;
+  if(rawDays===0 && type!=='permission'){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
 
   // Mauritius 3-day rule — medical certificate required for sick leave > 3 days
   if(type==='sick' && days > 3){
