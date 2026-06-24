@@ -884,7 +884,7 @@ async function dbSaveCompany(company){
     if(company.id && company.id <= 9999){
       await _sb.from('companies').upsert({id:company.id, name:company.name, slug:company.slug||company.name.toLowerCase().replace(/[^a-z0-9]/g,'-'), active:true});
     } else {
-      const {data} = await _sb.from('companies').insert({name:company.name, slug:company.slug||company.name.toLowerCase().replace(/[^a-z0-9]/g,'-'), active:true}).select();
+      const {data} = await _sb.from('companies').insert({name:company.name, slug:company.slug||company.name.toLowerCase().replace(/[^a-z0-9]/g,'-'), active:true, platform:company.platform||'full'}).select();
       if(data && data[0]) company.id = data[0].id;
     }
     _companiesCache = null; // invalidate cache
@@ -13177,10 +13177,10 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
             <div class="cb">
               <div class="fr3">
                 <div class="fg"><label class="fl">Work start time</label>
-                  <input class="fi" id="settings-work-start" type="time" value="08:30">
+                  <input class="fi" id="settings-work-start" type="time" value="08:00">
                 </div>
                 <div class="fg"><label class="fl">Work end time</label>
-                  <input class="fi" id="settings-work-end" type="time" value="16:30">
+                  <input class="fi" id="settings-work-end" type="time" value="17:00">
                 </div>
                 <div class="fg"><label class="fl">Normal hours/day</label>
                   <input class="fi" id="settings-work-hours" type="number" min="1" max="24" step="0.5" value="8">
@@ -13907,10 +13907,10 @@ async function dbFindUser(username){
 }
 
 // ── AUDIT ──
-async function dbAddAudit(actor,action,details){
+async function dbAddAudit(actor,action){
   addAudit(actor,action); // always local
   if(!sbReady()) return;
-  try{ await _sb.from('audit_log').insert({user_name:actor,action:action,details:details||null,company_id:_COMPANY_ID||1}); }
+  try{ await _sb.from('audit_log').insert({user_name:actor,action:action,company_id:_COMPANY_ID||1}); }
   catch(e){ console.warn('Audit log error:',e); }
 }
 
@@ -15042,8 +15042,8 @@ async function autoClockSelfClockingEmployees(){
 
   for(const emp of emps){
     // Use employee's own schedule if set, else company default
-    const ws = emp.workStart || wh.workStart || '08:30';
-    const we = emp.workEnd   || wh.workEnd   || '16:30';
+    const ws = emp.workStart || wh.workStart || '08:00';
+    const we = emp.workEnd   || wh.workEnd   || '17:00';
     const wd = emp.workDays  || wh.workDays  || [1,2,3,4,5];
 
     // Skip if today is not a working day for this employee
@@ -16371,8 +16371,8 @@ function _initClockModeSchedule(sel, emp){
   if(!isSimple) return;
   // Pre-fill from employee's saved schedule, or fall back to company settings
   const wh = getWorkingHoursSettings();
-  const ws = emp?.workStart || wh.workStart || '08:30';
-  const we = emp?.workEnd   || wh.workEnd   || '16:30';
+  const ws = emp?.workStart || wh.workStart || '08:00';
+  const we = emp?.workEnd   || wh.workEnd   || '17:00';
   const wd = emp?.workDays  || wh.workDays  || [1,2,3,4,5];
   const startEl = document.getElementById('fwork-start');
   const endEl   = document.getElementById('fwork-end');
@@ -16388,8 +16388,8 @@ function _readClockModeSchedule(){
   // Read schedule from the form fields
   const clockMode = document.getElementById('fclockmode')?.value||'kiosk';
   if(clockMode !== 'simple') return {};
-  const workStart = document.getElementById('fwork-start')?.value || '08:30';
-  const workEnd   = document.getElementById('fwork-end')?.value   || '16:30';
+  const workStart = document.getElementById('fwork-start')?.value || '08:00';
+  const workEnd   = document.getElementById('fwork-end')?.value   || '17:00';
   const workDays  = [0,1,2,3,4,5,6].filter(d=>document.getElementById('fwork-day-'+d)?.checked);
   return { workStart, workEnd, workDays };
 }
@@ -17319,8 +17319,7 @@ function getSettings(){
     {key:'paternity',label:'Paternity Leave',     color:'#7F77DD',bg:'#EEEDFE',maxDays:5,   paid:true, protected:false},
     {key:'unpaid',   label:'Unpaid Leave',        color:'#888780',bg:'#F1EFE8',maxDays:null,paid:false,protected:false},
     {key:'compassionate',label:'Compassionate Leave',color:'#D85A30',bg:'#FAECE7',maxDays:3,paid:true, protected:false},
-    {key:'employer_local', label:'Employer Local Leave', color:'#1E1445',bg:'#EEEDFE',maxDays:11, paid:true, protected:true},
-    {key:'permission', label:'Permission (< 3hrs)', color:'#6D28D9',bg:'#EDE9FE',maxDays:0, paid:true, protected:false}
+    {key:'employer_local', label:'Employer Local Leave', color:'#1E1445',bg:'#EEEDFE',maxDays:11, paid:true, protected:true}
   ];
   const _def={
     orgName:'',tagline:'Giving Comfort · Taking Care',
@@ -17336,7 +17335,7 @@ function getSettings(){
   };
   const _saved = S.get('companySettings',{});
   const _merged = Object.assign({},_def,_saved);
-  if(!Array.isArray(_merged.leaveTypes)||!_merged.leaveTypes.length) _merged.leaveTypes=_ltDef;
+  if(!_merged.leaveTypes||!_merged.leaveTypes.length) _merged.leaveTypes=_ltDef;
   return _merged;
 }
 
@@ -17402,8 +17401,8 @@ function renderSettings(){
   const owEl = document.getElementById('settings-ot-weekday');
   const owdEl = document.getElementById('settings-ot-weekend');
   const ohdEl = document.getElementById('settings-ot-holiday');
-  if(wsEl) wsEl.value = cs.workStart || '08:30';
-  if(weEl) weEl.value = cs.workEnd   || '16:30';
+  if(wsEl) wsEl.value = cs.workStart || '08:00';
+  if(weEl) weEl.value = cs.workEnd   || '17:00';
   if(whEl) whEl.value = cs.workHours || 8;
   if(owEl) owEl.value = cs.otWeekday || 1.5;
   if(owdEl) owdEl.value = cs.otWeekend || 2.0;
@@ -18917,11 +18916,9 @@ function renderAttLiveBoard(){
 function renderAttMetrics(){
   const el = document.getElementById('att-metrics');
   if(!el) return;
-  // Exclude synthetic leave records from all metrics
-  const todays = _attendance.filter(r=>r.date===todayStr() && !(r.notes&&r.notes.includes('— approved leave')));
+  const todays = _attendance.filter(r=>r.date===todayStr());
   const active = todays.filter(r=>!r.clockOut).length;
-  const completed = todays.filter(r=>r.durationMinutes && r.durationMinutes > 0 && r.durationMinutes < 1440);
-  const avgMins = completed.reduce((s,r)=>s+r.durationMinutes,0)/(completed.length||1);
+  const avgMins = todays.filter(r=>r.durationMinutes).reduce((s,r)=>s+r.durationMinutes,0)/(todays.filter(r=>r.durationMinutes).length||1);
   const late = todays.filter(r=>r.clockIn&&new Date(r.clockIn).getHours()>=9).length;
   el.innerHTML =
     '<div class="att-card"><div class="att-card-accent" style="background:var(--green)"></div><div class="att-card-label">On site now</div><div class="att-card-value">'+active+'</div><div class="att-card-sub">employees clocked in</div></div>'+
@@ -18960,9 +18957,6 @@ async function renderAttendanceReport(){
     allEmps.flatMap(e=>[String(e.id), e.userId?String(e.userId):''].filter(Boolean))
   );
   let list = recs.filter(r=>empIdSet.has(String(r.empId)));
-  // Exclude synthetic leave attendance records — these are auto-created on approval
-  // and should appear only in the Leave section, not the Attendance view
-  list = list.filter(r=>!(r.notes && r.notes.includes('— approved leave')));
   list.sort((a,b)=>new Date(b.clockIn)-new Date(a.clockIn));
 
   // Current sub-tab filter
@@ -19154,16 +19148,7 @@ function openAttendanceModal(type){
     }).catch(()=>{ _openAttendanceModalInner(modal, content); });
     return;
   }
-  if(type==='manageLocations'){
-    content.innerHTML='<div style="padding:32px;text-align:center;color:var(--text3);font-size:14px">Loading...</div>';
-    dbGetLocations().then(locs => {
-      _attLocations = locs;
-      renderManageLocations(content);
-    }).catch(() => {
-      renderManageLocations(content);
-    });
-    return;
-  }
+  if(type==='manageLocations'){ renderManageLocations(content); }
 }
 function _openAttendanceModalInner(modal, content){
   if(true){
@@ -20697,9 +20682,7 @@ function normalisePhone(val){
 // Default balances (days per year) — Mauritius Labour Act
 // LEAVE_TYPES is now dynamic — reads from settings so HR can add/remove types
 function getLEAVE_TYPES(){
-  let types = getSettings().leaveTypes;
-  if(typeof types==='string'){try{types=JSON.parse(types);}catch(e){types=[];}}
-  if(!Array.isArray(types)) types=[];
+  const types = getSettings().leaveTypes || [];
   const obj = {};
   types.forEach(t=>{ obj[t.key] = {label:t.label, color:t.color, bg:t.bg, maxDays:t.maxDays||0}; });
   return obj;
@@ -20867,41 +20850,21 @@ function countWorkingDays(from, to){
 
 function getEmpBalance(empId){
   const bal = _leaveBalances[empId] || {...LEAVE_DEFAULTS};
+  // Calculate used this year from approved requests
   const year = new Date().getFullYear();
-  const types = getLEAVE_TYPES();
-
-  // Calculate used days for ALL leave types from approved requests
-  const used = {};
+  const used = {annual:0, sick:0, casual:0};
   _leaveRequests.filter(r=>String(r.empId)===String(empId)&&r.status==='approved').forEach(r=>{
-    if(new Date(r.fromDate).getFullYear()===year){
-      used[r.type] = (used[r.type]||0) + (parseFloat(r.days)||0);
+    if(new Date(r.fromDate).getFullYear()===year && LEAVE_DEFAULTS.hasOwnProperty(r.type)){
+      used[r.type]=(used[r.type]||0)+r.days;
     }
   });
-
-  // Build result with all types
-  const result = {
+  return {
     annual: bal.annual, sick: bal.sick, casual: bal.casual,
-    usedAnnual: used.annual||0, usedSick: used.sick||0, usedCasual: used.casual||0,
+    usedAnnual: used.annual, usedSick: used.sick, usedCasual: used.casual,
     remAnnual: Math.max(0,bal.annual-(parseFloat(used.annual)||0)),
     remSick:   Math.max(0,bal.sick-(parseFloat(used.sick)||0)),
     remCasual: Math.max(0,bal.casual-(parseFloat(used.casual)||0)),
-    byType: {}
   };
-
-  // Add all leave types dynamically
-  Object.entries(types).forEach(([key, cfg])=>{
-    const maxDays = cfg.maxDays || 0;
-    const usedDays = parseFloat(used[key]||0);
-    result.byType[key] = {
-      label: cfg.label,
-      max: maxDays,
-      used: usedDays,
-      remaining: maxDays > 0 ? Math.max(0, maxDays - usedDays) : null,
-      unlimited: maxDays === 0,
-    };
-  });
-
-  return result;
 }
 
 function leaveBadge(status){
@@ -21307,19 +21270,6 @@ function openLeaveRequestModal(empId){
       <div class="fg"><label class="fl">To date *</label><input class="fi" id="lv-to" type="date" value="${todayStr()}" onchange="updateLeaveDays()"></div>
     </div>
     <div id="lv-days-info" style="font-size:12.5px;color:var(--text2);margin-bottom:12px;padding:8px 12px;background:var(--bg2);border-radius:var(--radius)">Select dates to calculate working days</div>
-    <div id="lv-halfday-row" style="display:none;margin-bottom:12px">
-      <label class="fl">Day Option</label>
-      <div style="display:flex;gap:8px;margin-top:4px">
-        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);cursor:pointer">
-          <input type="radio" name="lv-halfday" id="lv-fullday" value="full" checked onchange="updateLeaveDays()">
-          <span style="font-size:13px;font-weight:600">Full Day</span>
-        </label>
-        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);cursor:pointer">
-          <input type="radio" name="lv-halfday" id="lv-halfday" value="half" onchange="updateLeaveDays()">
-          <span style="font-size:13px;font-weight:600">Half Day (0.5)</span>
-        </label>
-      </div>
-    </div>
     <div class="fg"><label class="fl">Reason</label><textarea class="ft" id="lv-reason" placeholder="Optional reason or notes…" rows="2"></textarea></div>
     <div class="mf">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -21335,23 +21285,14 @@ function updateLeaveBalance(){
   const el    = document.getElementById('lv-balance-info');
   if(!el||!empId) return;
   const b = getEmpBalance(empId);
-  const bt = b.byType?.[type];
-  if(bt && !bt.unlimited){
-    const pct = bt.max > 0 ? Math.round((bt.used/bt.max)*100) : 0;
-    el.innerHTML = `Balance: <strong>${bt.remaining} days remaining</strong> of ${bt.max} · ${bt.used} used
-      <div class="leave-balance-bar" style="margin-top:4px"><div class="leave-balance-fill" style="width:${Math.min(100,pct)}%;background:${pct>80?'var(--red)':pct>50?'var(--amber)':'var(--green)'}"></div></div>`;
-  } else if(type==='permission'){
-    const used = b.byType?.permission?.used||0;
-    el.innerHTML = `Permission used this year: <strong>${used} time${used!==1?'s':''}</strong> — not deducted from balance`;
+  if(['annual','sick','casual'].includes(type)){
+    const rem = {annual:b.remAnnual, sick:b.remSick, casual:b.remCasual}[type];
+    const total = {annual:b.annual, sick:b.sick, casual:b.casual}[type];
+    const pct = Math.round((total-rem)/total*100);
+    el.innerHTML = `Balance: <strong>${rem} days remaining</strong> of ${total} · ${pct}% used
+      <div class="leave-balance-bar" style="margin-top:4px"><div class="leave-balance-fill" style="width:${pct}%;background:${pct>80?'var(--red)':pct>50?'var(--amber)':'var(--green)'}"></div></div>`;
   } else {
     el.innerHTML = getLEAVE_TYPES()[type]?.label+' — no balance limit';
-  }
-  // Show half-day option only for employer_local
-  const hdRow = document.getElementById('lv-halfday-row');
-  if(hdRow) hdRow.style.display = type==='employer_local' ? 'block' : 'none';
-  if(type!=='employer_local'){
-    const fd = document.getElementById('lv-fullday');
-    if(fd) fd.checked = true;
   }
 }
 
@@ -21361,9 +21302,7 @@ function updateLeaveDays(){
   const el   = document.getElementById('lv-days-info');
   if(!el||!from||!to) return;
   if(to<from){ el.innerHTML='<span style="color:var(--red)">End date must be after start date</span>'; return; }
-  const rawDays = countWorkingDays(from, to);
-  const isHalf = document.getElementById('lv-halfday')?.checked;
-  const days = (isHalf && rawDays > 0) ? 0.5 : rawDays;
+  const days = countWorkingDays(from, to);
   el.innerHTML = `<strong>${days} working day${days!==1?'s':''}</strong> (excluding weekends & public holidays)`;
 }
 
@@ -21374,15 +21313,13 @@ async function submitLeaveRequest(){
   const from   = document.getElementById('lv-from')?.value;
   const to     = document.getElementById('lv-to')?.value;
   const reason = document.getElementById('lv-reason')?.value||'';
-  const isHalfDay = document.getElementById('lv-halfday')?.checked && type==='employer_local';
   if(_submittingLeave){ toast('Already submitting, please wait…','info'); _submittingLeave=false; return; }
   _submittingLeave = true;
   if(!empId||!from||!to){ toast('Please fill all required fields.','error'); _submittingLeave=false; return; }
   if(to<from){ toast('End date must be after start date.','error'); _submittingLeave=false; return; }
 
-  const rawDays = countWorkingDays(from, to);
-  const days = (isHalfDay && rawDays > 0) ? 0.5 : rawDays;
-  if(rawDays===0 && type!=='permission'){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
+  const days = countWorkingDays(from, to);
+  if(days===0){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
 
   // Mauritius 3-day rule — medical certificate required for sick leave > 3 days
   if(type==='sick' && days > 3){
@@ -21400,25 +21337,13 @@ async function submitLeaveRequest(){
     }
   }
 
-  // Check balance for all tracked types
-  const _bal = getEmpBalance(empId);
-  const _bt = _bal.byType?.[type];
-  if(_bt && !_bt.unlimited && type!=='permission'){
-    if(days > _bt.remaining){
-      if(!confirm(`This request is for ${days} day${days!==1?'s':''} but only ${_bt.remaining} day${_bt.remaining!==1?'s':''} remain for ${_bt.label}. Submit anyway?`)){ _submittingLeave=false; return; }
+  // Check balance for tracked types
+  if(['annual','sick','casual'].includes(type)){
+    const b = getEmpBalance(empId);
+    const rem = {annual:b.remAnnual, sick:b.remSick, casual:b.remCasual}[type];
+    if(days>rem){
+      if(!confirm(`This request is for ${days} days but only ${rem} days remain. Submit anyway?`)){ _submittingLeave=false; return; }
     }
-  }
-
-  // Check for overlapping leave requests
-  const _overlapping = (_leaveRequests||[]).filter(r=>
-    String(r.empId)===String(empId) &&
-    ['pending','approved'].includes(r.status) &&
-    r.fromDate <= to && r.toDate >= from
-  );
-  if(_overlapping.length > 0){
-    const _ov = _overlapping[0];
-    toast(`Already has a ${_ov.status} leave request from ${fDate(_ov.fromDate)} to ${fDate(_ov.toDate)}. Cannot submit overlapping requests.`,'error');
-    _submittingLeave=false; return;
   }
 
   // Check for overlapping approved leave
@@ -22683,7 +22608,7 @@ async function anomalyClockOut(recId, rowIdx){
 
   const dateStr = document.getElementById('anom-date')?.value || todayStr();
   // Prompt for clock-out time
-  const timeInput = prompt('Enter clock-out time (HH:MM):', '16:30');
+  const timeInput = prompt('Enter clock-out time (HH:MM):', '17:00');
   if(!timeInput) return;
   const [h,m] = timeInput.split(':').map(Number);
   if(isNaN(h)||isNaN(m)||h<0||h>23||m<0||m>59){ toast('Invalid time.','error'); return; }
@@ -22708,9 +22633,9 @@ async function anomalyClockOut(recId, rowIdx){
 
 async function anomalyAddRecord(empId, date, rowIdx){
   const emp = gE(empId);
-  const inTime  = prompt('Clock-in time (HH:MM):', '08:30');
+  const inTime  = prompt('Clock-in time (HH:MM):', '08:00');
   if(!inTime) return;
-  const outTime = prompt('Clock-out time (HH:MM, or leave blank if still open):', '16:30');
+  const outTime = prompt('Clock-out time (HH:MM, or leave blank if still open):', '17:00');
 
   const [ih,im] = inTime.split(':').map(Number);
   if(isNaN(ih)||isNaN(im)){ toast('Invalid time.','error'); return; }
@@ -22811,8 +22736,8 @@ function openAttendanceEditModal(empId, dateFrom, dateTo, reviewIdx){
         <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text2)">&#43; Add / Fix Record</div>
         <div class="fr3">
           <div class="fg"><label class="fl">Date *</label><input class="fi" id="new-att-date" type="date" min="${dateFrom}" max="${dateTo}" value="${dateFrom}"></div>
-          <div class="fg"><label class="fl">Clock in *</label><input class="fi" id="new-att-ci" type="time" value="08:30"></div>
-          <div class="fg"><label class="fl">Clock out</label><input class="fi" id="new-att-co" type="time" value="16:30"></div>
+          <div class="fg"><label class="fl">Clock in *</label><input class="fi" id="new-att-ci" type="time" value="08:00"></div>
+          <div class="fg"><label class="fl">Clock out</label><input class="fi" id="new-att-co" type="time" value="17:00"></div>
         </div>
         <div class="fr">
           <div class="fg"><label class="fl">Location</label><input class="fi" id="new-att-loc" value="Main Entrance" placeholder="Location"></div>
@@ -22870,8 +22795,6 @@ async function saveAttRecordEdit(recId, date, empId, reviewIdx){
   let rec = (_attendance||[]).find(r=>String(r.id)===String(recId));
   if(!rec){ toast('Record not found.','error'); return; }
 
-  const _oldClockIn=rec.clockIn, _oldClockOut=rec.clockOut, _oldLocation=rec.location;
-
   rec.clockIn  = new Date(date+'T'+ciTime+':00').toISOString();
   rec.clockOut = coTime ? new Date(date+'T'+coTime+':00').toISOString() : null;
   rec.durationMinutes = rec.clockOut ? calcDuration(rec.clockIn,rec.clockOut) : null;
@@ -22889,7 +22812,7 @@ async function saveAttRecordEdit(recId, date, empId, reviewIdx){
     if(idx>=0) _attendance[idx] = saved||rec;
     hideLoader();
     toast('Record updated.','success');
-    dbAddAudit(CU.name,'Edited attendance: '+(gE(empId)?.name||empId)+' on '+date,JSON.stringify({employee:gE(empId)?.name||empId,date:date,before:{clockIn:_oldClockIn,clockOut:_oldClockOut,location:_oldLocation},after:{clockIn:rec.clockIn,clockOut:rec.clockOut,location:rec.location}}));
+    dbAddAudit(CU.name,'Edited attendance: '+(gE(empId)?.name||empId)+' on '+date);
     // Refresh the review row
     await refreshReviewRowDB(reviewIdx);
     openAttendanceEditModal(empId, window._attEditFrom, window._attEditTo, reviewIdx);
@@ -22985,8 +22908,8 @@ async function refreshReviewRowDB(reviewIdx){
 }
 function getWorkingHoursSettings(){
   const cs = getSettings();
-  const workStart = cs.workStart || '08:30';
-  const workEnd   = cs.workEnd   || '16:30';
+  const workStart = cs.workStart || '08:00';
+  const workEnd   = cs.workEnd   || '17:00';
   const [sh,sm]   = workStart.split(':').map(Number);
   const [eh,em]   = workEnd.split(':').map(Number);
   const derivedHours = ((eh*60+em)-(sh*60+sm))/60;
@@ -23006,8 +22929,8 @@ function getWorkingHoursSettings(){
 
 function saveWorkingHoursSettings(){
   const cs = getSettings();
-  cs.workStart  = document.getElementById('settings-work-start')?.value || '08:30';
-  cs.workEnd    = document.getElementById('settings-work-end')?.value   || '16:30';
+  cs.workStart  = document.getElementById('settings-work-start')?.value || '08:00';
+  cs.workEnd    = document.getElementById('settings-work-end')?.value   || '17:00';
   cs.workHours  = parseFloat(document.getElementById('settings-work-hours')?.value) || 8;
   cs.workDays   = [0,1,2,3,4,5,6].filter(d=>document.getElementById('work-day-'+d)?.checked);
   cs.otWeekday  = parseFloat(document.getElementById('settings-ot-weekday')?.value) || 1.5;
@@ -23066,8 +22989,8 @@ function calcOTCost(d){
 
 function getOTSettings(){
   const s = getSettings();
-  const workStart = s.workStart || '08:30';
-  const workEnd   = s.workEnd   || '16:30';
+  const workStart = s.workStart || '08:00';
+  const workEnd   = s.workEnd   || '17:00';
   // Always derive workHours from workStart/workEnd so they stay in sync
   const [sh,sm] = workStart.split(':').map(Number);
   const [eh,em] = workEnd.split(':').map(Number);
@@ -23866,9 +23789,9 @@ async function updateAttNote(recId, note, reviewIdx){
 async function addAttRecord(empId, periodFrom, reviewIdx){
   const date  = prompt('Date (YYYY-MM-DD):');
   if(!date) return;
-  const ciStr = prompt('Clock-in time (HH:MM):','08:30');
+  const ciStr = prompt('Clock-in time (HH:MM):','08:00');
   if(!ciStr) return;
-  const coStr = prompt('Clock-out time (HH:MM, blank if open):','16:30');
+  const coStr = prompt('Clock-out time (HH:MM, blank if open):','17:00');
   const ci = new Date(date+'T'+ciStr+':00').toISOString();
   const co = coStr ? new Date(date+'T'+coStr+':00').toISOString() : null;
   const rec = {id:Date.now(),empId,clockIn:ci,clockOut:co,
@@ -25061,7 +24984,7 @@ async function createLeaveAttendanceRecords(req){
   try{
     const settings = getSettings();
     const workStart = settings.workStart || '08:30';
-    const workEnd   = settings.workEnd   || '16:30';
+    const workEnd   = settings.workEnd   || '17:00';
     const leaveLabel = getLEAVE_TYPES()[req.type]?.label || req.type;
 
     // Get all working days in the leave period
@@ -25090,7 +25013,6 @@ async function createLeaveAttendanceRecords(req){
             duration_minutes: durationMinutes,
             location:         'Leave',
             notes:            leaveLabel + ' — approved leave',
-            source:           'leave_auto',
             company_id:       req.companyId || _COMPANY_ID || emp.companyId || 1,
           });
         }
@@ -25100,12 +25022,11 @@ async function createLeaveAttendanceRecords(req){
 
     if(!rows.length) return;
 
-    // Check for existing leave_auto records on those dates to avoid duplicates
-    // Filter specifically by source='leave_auto' so real clock-ins are not confused
+    // Check for existing attendance on those dates to avoid duplicates
+    const dates = rows.map(r=>r.date);
     const {data:existing} = await _sb.from('attendance')
       .select('date')
       .eq('emp_id', String(emp.id))
-      .eq('source', 'leave_auto')
       .gte('date', req.fromDate)
       .lte('date', req.toDate);
 
@@ -25288,41 +25209,41 @@ async function notifyHODofLeaveRequest(req){
   // Build list of people to notify
   let hodList = [];
 
-  // STEP 1 — Always try the named manager first (employee record's manager field)
-  // Search both employee records AND user accounts; covers managers who may not have
-  // an employee record (e.g. senior executives without a kiosk/app account)
-  if(emp.manager){
-    const directMgrEmp = getEmps().find(e=>
-      e.status!=='offboarded' && e.name === emp.manager
-    );
-    if(directMgrEmp?.email) hodList.push({name:directMgrEmp.name, email:directMgrEmp.email});
+  // Always notify the direct manager first (by emp.manager name match)
+  // This applies to both HODs and regular employees
+  const directMgrEmp = getEmps().find(e=>
+    e.status!=='offboarded' &&
+    emp.manager && e.name === emp.manager
+  );
+  if(directMgrEmp && directMgrEmp.email) hodList.push(directMgrEmp);
 
-    const directMgrUser = getUsers().find(u=>
-      u.active && (
-        u.name === emp.manager ||
-        (u.empId && directMgrEmp && String(u.empId) === String(directMgrEmp.id))
-      )
-    );
-    if(directMgrUser?.email && !hodList.find(h=>h.email===directMgrUser.email)){
-      hodList.push({name:directMgrUser.name, email:directMgrUser.email});
-    }
+  // Also find the manager's HR user account (may have different email)
+  const directMgrUser = getUsers().find(u=>
+    u.active && emp.manager &&
+    (u.name===emp.manager || (u.empId && String(u.empId)===String(directMgrEmp?.id)))
+  );
+  if(directMgrUser?.email && !hodList.find(h=>h.email===directMgrUser.email)){
+    hodList.push({name:directMgrUser.name, email:directMgrUser.email});
   }
 
-  // STEP 2 — Only fall back if NO named manager was found at all.
-  // Never broadcast to all senior HODs when a manager name is set.
+  if(req.requesterIsHOD && !hodList.length){
+    // HOD with no direct manager set — fall back to Senior HODs
+    const seniorHODs = getEmps().filter(e=>e.isSeniorHOD&&e.status!=='offboarded'&&e.email);
+    seniorHODs.forEach(e=>{ if(!hodList.find(h=>h.email===e.email)) hodList.push(e); });
+  }
+
+  if(!req.requesterIsHOD && !hodList.length){
+    // Regular employee with no manager set — notify HR admin
+    const hrUsers = getUsers().filter(u=>(u.role==='admin'||u.role==='hr')&&u.active&&u.email&&
+      (u.companyId===_COMPANY_ID||!u.companyId));
+    hrUsers.forEach(u=>{ if(!hodList.find(h=>h.email===u.email)) hodList.push({name:u.name,email:u.email}); });
+  }
+
+  // Final fallback — if nobody to notify, send to all HR/admin users
   if(!hodList.length){
-    if(emp.manager){
-      console.warn('[Notify] Manager "'+emp.manager+'" for '+emp.name+' has no email on record. Notification skipped.');
-    } else if(req.requesterIsHOD){
-      // HOD with no manager set at all — only then fall back to senior HODs
-      const seniorHODs = getEmps().filter(e=>e.isSeniorHOD&&e.status!=='offboarded'&&e.email);
-      seniorHODs.forEach(e=>{ if(!hodList.find(h=>h.email===e.email)) hodList.push(e); });
-    } else {
-      // Regular employee with no manager set — notify HR admin for this company only
-      const hrUsers = getUsers().filter(u=>(u.role==='admin'||u.role==='hr')&&u.active&&u.email&&
-        (u.companyId===_COMPANY_ID||!u.companyId));
-      hrUsers.forEach(u=>{ if(!hodList.find(h=>h.email===u.email)) hodList.push({name:u.name,email:u.email}); });
-    }
+    const allHR = getUsers().filter(u=>(u.role==='admin'||u.role==='hr')&&u.active&&u.email&&
+      (!u.companyId||u.companyId===_COMPANY_ID));
+    allHR.forEach(u=>{ if(!hodList.find(h=>h.email===u.email)) hodList.push({name:u.name,email:u.email}); });
   }
 
   // In-app notification
@@ -25910,12 +25831,12 @@ function openAddAttRecordModal(){
         <input class="fi" id="add-att-date" type="date" value="${new Date().toISOString().slice(0,10)}">
       </div>
       <div class="fg"><label class="fl">Clock-in *</label>
-        <input class="fi" id="add-att-ci" type="time" value="08:30">
+        <input class="fi" id="add-att-ci" type="time" value="08:00">
       </div>
     </div>
     <div class="fr">
       <div class="fg"><label class="fl">Clock-out (blank = open)</label>
-        <input class="fi" id="add-att-co" type="time" value="16:30">
+        <input class="fi" id="add-att-co" type="time" value="17:00">
       </div>
       <div class="fg"><label class="fl">Location</label>
         <input class="fi" id="add-att-loc" value="Main Entrance">
