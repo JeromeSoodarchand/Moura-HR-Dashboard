@@ -12684,7 +12684,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         </div>
         <div style="padding:0">
           <table><thead><tr>
-            <th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Actions</th>
+            <th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Applied</th><th>Approved</th><th>Reason</th><th>Status</th><th>Actions</th>
           </tr></thead><tbody id="leave-tbody"></tbody></table>
         </div>
       </div>
@@ -25107,7 +25107,7 @@ function renderLeaveTable(){
   });
 
   if(!list.length){
-    tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text3)">No leave requests found.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text3)">No leave requests found.</td></tr>';
     return;
   }
 
@@ -25186,6 +25186,8 @@ function renderLeaveTable(){
       <td style="padding:10px 12px"><span class="badge b-${req.type}">${getLEAVE_TYPES()[req.type]?.label||req.type}</span></td>
       <td style="padding:10px 12px;font-size:12.5px">${fDate(req.fromDate)}<br><span class="tm txs">to ${fDate(req.toDate)}</span></td>
       <td style="padding:10px 12px;text-align:center;font-size:13px;font-weight:500">${req.days}d</td>
+      <td style="padding:10px 12px;font-size:12px;color:var(--text3)">${req.createdAt ? fDate(req.createdAt.slice(0,10)) : '—'}</td>
+      <td style="padding:10px 12px;font-size:12px;color:var(--text3)">${req.hrApprovedAt ? fDate(req.hrApprovedAt.slice(0,10)) : (req.status==='approved'?'—':'')}</td>
       <td style="padding:10px 12px">
         <span class="badge ${ds.cls}">${ds.label}</span>
         ${ds.detail?`<div class="txs tm" style="margin-top:2px">${ds.detail}</div>`:''}
