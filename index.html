@@ -12700,7 +12700,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         <div class="ch"><span class="ct">Leave Balances</span></div>
         <div class="cb" style="padding:0">
           <table><thead><tr>
-            <th>Employee</th><th>Annual</th><th>Sick</th><th>Casual</th><th>Used This Year</th><th>Actions</th>
+            <th>Employee</th><th>Annual</th><th>Sick</th><th>Bank Sick</th><th>Casual</th><th>Used This Year</th><th>Actions</th>
           </tr></thead><tbody id="leave-balances-tbody"></tbody></table>
         </div>
       </div>
@@ -20817,7 +20817,7 @@ async function dbGetLeaveBalances(){
     const out = {};
     data.forEach(r=>{
       if(companyEmpIds.includes(String(r.emp_id))){
-        out[r.emp_id]={annual:r.annual||20,sick:r.sick||15,casual:r.casual||10,sickCarryover:r.sick_carryover||0};
+        out[r.emp_id]={annual:r.annual||20,sick:r.sick||15,casual:r.casual||10,sickCarryover:r.sick_carryover||0,bankSick:parseFloat(r.bank_sick)||0};
       }
     });
     S.set('leaveBalances', out);
@@ -20841,8 +20841,9 @@ async function dbSaveLeaveBalance(empId, balances){
     const sick = bal?.sick ?? bal?.sick?.entitlement ?? null;
     const cas  = bal?.casual ?? bal?.casual?.entitlement ?? null;
     const carryover = bal?.sickCarryover ?? 0;
+    const bankSick = bal?.bankSick ?? null;
     await _sb.from('leave_balances').upsert(
-      {emp_id:eid, annual:ann, sick:sick, casual:cas, sick_carryover:carryover, updated_at:new Date().toISOString()},
+      {emp_id:eid, annual:ann, sick:sick, casual:cas, sick_carryover:carryover, bank_sick:bankSick, updated_at:new Date().toISOString()},
       {onConflict:'emp_id'}
     );
   } catch(e){ console.error('Save leave balance error:',e); }
@@ -20876,6 +20877,9 @@ function getEmpBalance(empId){
     usedAnnual: used.annual, usedSick: used.sick, usedCasual: used.casual,
     remAnnual: Math.max(0,bal.annual-(parseFloat(used.annual)||0)),
     remSick:   Math.max(0,bal.sick-(parseFloat(used.sick)||0)),
+    bankSick:  bal.bankSick||0,
+    usedBankSick: Math.max(0,(parseFloat(used.sick)||0)-(bal.sick||15)),
+    remBankSick: Math.max(0,(bal.bankSick||0)-Math.max(0,(parseFloat(used.sick)||0)-(bal.sick||15))),
     remCasual: Math.max(0,bal.casual-(parseFloat(used.casual)||0)),
   };
 }
@@ -21216,11 +21220,30 @@ function renderLeaveCalendar(){
 function leaveCalPrev(){ _leaveCalMonth--; if(_leaveCalMonth<0){_leaveCalMonth=11;_leaveCalYear--;} renderLeaveCalendar(); }
 function leaveCalNext(){ _leaveCalMonth++; if(_leaveCalMonth>11){_leaveCalMonth=0;_leaveCalYear++;} renderLeaveCalendar(); }
 
+async function editBankSick(empId, empName, current){
+  const val = prompt(`Bank Sick Leave for ${empName}\nCurrent: ${current} days\n\nEnter new total bank sick days:`, current);
+  if(val===null) return;
+  const newVal = parseFloat(val);
+  if(isNaN(newVal)||newVal<0){ toast('Invalid value.','error'); return; }
+  showLoader('Saving…');
+  try{
+    const local = S.get('leaveBalances',{});
+    const bal = local[empId] || {};
+    bal.bankSick = newVal;
+    await dbSaveLeaveBalance(empId, bal);
+    _leaveBalances = S.get('leaveBalances',{});
+    renderLeaveBalances();
+    toast(`Bank sick updated for ${empName}: ${newVal} days`,'success');
+    dbAddAudit(CU.name,`Updated bank sick leave for ${empName}: ${newVal} days`);
+  } catch(e){ toast('Save failed.','error'); }
+  hideLoader();
+}
+
 function renderLeaveBalances(){
   const tbody = document.getElementById('leave-balances-tbody');
   if(!tbody) return;
   const emps = getScopedLeaveEmps();
-  if(!emps.length){ tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:16px">No employees</td></tr>'; return; }
+  if(!emps.length){ tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:16px">No employees</td></tr>'; return; }
   tbody.innerHTML = emps.map(emp=>{
     const b = getEmpBalance(emp.id);
     const c = aColor(emp.name);
@@ -21235,6 +21258,11 @@ function renderLeaveBalances(){
         <div style="font-size:12px">${b.remSick}/${b.sick} rem</div>
         ${bar(b.usedSick,b.sick)}
         ${(()=>{const e=gE(b.empId);const m=e?Math.floor((new Date()-new Date(e.start+'T00:00:00'))/(1000*60*60*24*30)):12;return m<12?`<div style="font-size:10px;color:var(--amber)">${m<6?'Not yet eligible':'Accruing ('+Math.min(m-5,6)+'d)'}</div>`:''})()}
+      </td>
+      <td style="text-align:center">
+        <div style="font-size:12px;color:var(--purple-deep);font-weight:600">${b.bankSick||0} days</div>
+        <div style="font-size:11px;color:var(--text3)">${b.remBankSick||0} rem</div>
+        ${canEdit()?`<button class="btn btn-xs" style="margin-top:4px" onclick="editBankSick('${emp.id}','${emp.name}',${b.bankSick||0})">✎ Set</button>`:''}
       </td>
       <td><div style="font-size:12px">${b.remCasual}/${b.casual} rem</div>${bar(b.usedCasual,b.casual)}</td>
       <td class="tm">${(parseFloat(b.usedAnnual)||0)+(parseFloat(b.usedSick)||0)+(parseFloat(b.usedCasual)||0)} days</td>
@@ -21283,6 +21311,19 @@ function openLeaveRequestModal(empId){
       <div class="fg"><label class="fl">To date *</label><input class="fi" id="lv-to" type="date" value="${todayStr()}" onchange="updateLeaveDays()"></div>
     </div>
     <div id="lv-days-info" style="font-size:12.5px;color:var(--text2);margin-bottom:12px;padding:8px 12px;background:var(--bg2);border-radius:var(--radius)">Select dates to calculate working days</div>
+    <div id="lv-halfday-row" style="display:none;margin-bottom:12px">
+      <label class="fl">Day Option</label>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);cursor:pointer">
+          <input type="radio" name="lv-halfday" id="lv-fullday" value="full" checked onchange="updateLeaveDays()">
+          <span style="font-size:13px;font-weight:600">Full Day</span>
+        </label>
+        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);cursor:pointer">
+          <input type="radio" name="lv-halfday" id="lv-halfday" value="half" onchange="updateLeaveDays()">
+          <span style="font-size:13px;font-weight:600">Half Day (0.5)</span>
+        </label>
+      </div>
+    </div>
     <div class="fg"><label class="fl">Reason</label><textarea class="ft" id="lv-reason" placeholder="Optional reason or notes…" rows="2"></textarea></div>
     <div class="mf">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -21302,11 +21343,18 @@ function updateLeaveBalance(){
     const rem = {annual:b.remAnnual, sick:b.remSick, casual:b.remCasual}[type];
     const total = {annual:b.annual, sick:b.sick, casual:b.casual}[type];
     const pct = Math.round((total-rem)/total*100);
-    el.innerHTML = `Balance: <strong>${rem} days remaining</strong> of ${total} · ${pct}% used
+    let balHtml = `Balance: <strong>${rem} days remaining</strong> of ${total} · ${pct}% used
       <div class="leave-balance-bar" style="margin-top:4px"><div class="leave-balance-fill" style="width:${pct}%;background:${pct>80?'var(--red)':pct>50?'var(--amber)':'var(--green)'}"></div></div>`;
+    if(type==='sick' && (b.bankSick||0)>0){
+      balHtml += `<div style="margin-top:6px;font-size:11px;color:var(--text2)">🏦 Bank Sick: <strong>${b.remBankSick||0}</strong> days remaining of ${b.bankSick}</div>`;
+    }
+    el.innerHTML = balHtml;
   } else {
     el.innerHTML = getLEAVE_TYPES()[type]?.label+' — no balance limit';
   }
+  const hdRow = document.getElementById('lv-halfday-row');
+  if(hdRow) hdRow.style.display = type==='employer_local' ? 'block' : 'none';
+  if(type!=='employer_local'){ const fd=document.getElementById('lv-fullday'); if(fd) fd.checked=true; }
 }
 
 function updateLeaveDays(){
@@ -21315,7 +21363,9 @@ function updateLeaveDays(){
   const el   = document.getElementById('lv-days-info');
   if(!el||!from||!to) return;
   if(to<from){ el.innerHTML='<span style="color:var(--red)">End date must be after start date</span>'; return; }
-  const days = countWorkingDays(from, to);
+  const rawDays = countWorkingDays(from, to);
+  const isHalf = document.getElementById('lv-halfday')?.checked;
+  const days = (isHalf && rawDays > 0) ? 0.5 : rawDays;
   el.innerHTML = `<strong>${days} working day${days!==1?'s':''}</strong> (excluding weekends & public holidays)`;
 }
 
@@ -21331,8 +21381,10 @@ async function submitLeaveRequest(){
   if(!empId||!from||!to){ toast('Please fill all required fields.','error'); _submittingLeave=false; return; }
   if(to<from){ toast('End date must be after start date.','error'); _submittingLeave=false; return; }
 
-  const days = countWorkingDays(from, to);
-  if(days===0){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
+  const isHalfDay = document.getElementById('lv-halfday')?.checked && type==='employer_local';
+  const rawDays = countWorkingDays(from, to);
+  const days = (isHalfDay && rawDays > 0) ? 0.5 : rawDays;
+  if(rawDays===0 && type!=='permission'){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
 
   // Mauritius 3-day rule — medical certificate required for sick leave > 3 days
   if(type==='sick' && days > 3){
@@ -21355,7 +21407,18 @@ async function submitLeaveRequest(){
     const b = getEmpBalance(empId);
     const rem = {annual:b.remAnnual, sick:b.remSick, casual:b.remCasual}[type];
     if(days>rem){
-      if(!confirm(`This request is for ${days} days but only ${rem} days remain. Submit anyway?`)){ _submittingLeave=false; return; }
+      if(type==='sick'){
+        const overflow = days - (rem||0);
+        const bankRem = b.remBankSick||0;
+        if(bankRem >= overflow){
+          if(!confirm(`Normal sick balance: ${rem||0} day(s)\nBank sick will cover: ${overflow} day(s)\n\nSubmit this request?`)){ _submittingLeave=false; return; }
+        } else {
+          const totalAvail = (rem||0)+bankRem;
+          if(!confirm(`Insufficient balance.\nNormal sick: ${rem||0}d + Bank sick: ${bankRem}d = ${totalAvail}d available.\nRequested: ${days}d.\n\nSubmit anyway?`)){ _submittingLeave=false; return; }
+        }
+      } else {
+        if(!confirm(`This request is for ${days} days but only ${rem} days remain. Submit anyway?`)){ _submittingLeave=false; return; }
+      }
     }
   }
 
