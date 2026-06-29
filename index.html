@@ -12469,7 +12469,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         <button class="fb" onclick="setEF('onboarding',this)">Onboarding</button>
         <button class="fb" onclick="setEF('offboarded',this)">Offboarded</button>
       </div>
-      <div class="card"><table><thead><tr><th>ID</th><th>Employee</th><th>Department</th><th>Role</th><th>Start</th><th>Salary</th><th>Status</th><th>HR Account</th><th>Events</th><th></th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
+      <div class="card"><table><thead><tr><th>ID</th><th>Employee</th><th>Department</th><th>Role</th><th>Tier</th><th>Start</th><th>Salary</th><th>Status</th><th>HR Account</th><th>Events</th><th></th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
     </div>
 
     <!-- ONBOARDING -->
@@ -12661,9 +12661,14 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
               <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#2563EB;margin-right:4px;vertical-align:middle"></span>Permission</span>
               <span style="margin-left:8px">🔴 count = approved &nbsp;·&nbsp; 🟡 count? = pending</span>
             </div>
-            <div style="display:flex;gap:12px;margin-top:10px;font-size:11.5px;color:var(--text3)">
-              <span><span style="display:inline-block;width:10px;height:10px;background:var(--red-light);border-radius:2px;margin-right:4px"></span>On leave</span>
-              <span><span style="display:inline-block;width:10px;height:10px;background:var(--gold);border-radius:2px;margin-right:4px"></span>Today</span>
+            <div style="display:flex;gap:16px;margin-top:10px;font-size:11.5px;color:var(--text3);flex-wrap:wrap">
+              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--gold);margin-right:4px"></span>Today</span>
+              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#DC2626;margin-right:4px"></span>Sick</span>
+              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#7C3AED;margin-right:4px"></span>Local</span>
+              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#059669;margin-right:4px"></span>Casual</span>
+              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#D97706;margin-right:4px"></span>Family Medical</span>
+              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#2563EB;margin-right:4px"></span>Permission</span>
+              <span style="margin-left:8px">🔴 approved &nbsp;·&nbsp; 🟡? pending</span>
             </div>
           </div>
         </div>
@@ -12686,7 +12691,6 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
             <input class="si" style="width:160px" id="leave-filter-search" placeholder="🔍 Search employee…" oninput="renderLeaveTable()">
             <select class="si" style="width:130px" id="leave-filter-dept" onchange="renderLeaveTable()">
               <option value="">All depts</option>
-              ${[...new Set(getEmps().map(e=>e.dept).filter(Boolean))].sort().map(d=>`<option value="${d}">${d}</option>`).join('')}
             </select>
             <select class="si" style="width:130px" id="leave-filter-type" onchange="renderLeaveTable()">
               <option value="">All types</option>
@@ -12718,7 +12722,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
             <th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Applied</th><th>Approved</th><th>Reason</th><th>Status</th><th>Actions</th>
           </tr></thead><tbody id="leave-tbody"></tbody></table>
         </div>
-        <div id="leave-bulk-bar" style="display:none;padding:10px 16px;background:var(--navy);display:flex;align-items:center;gap:10px;border-radius:0 0 var(--radius) var(--radius)">
+        <div id="leave-bulk-bar" style="display:none;padding:10px 16px;background:var(--navy);align-items:center;gap:10px;border-radius:0 0 var(--radius) var(--radius)">
           <span id="leave-bulk-count" style="color:#fff;font-size:13px;font-weight:600"></span>
           <button class="btn" style="background:#059669;color:#fff;border-color:#059669" onclick="bulkApproveLeaves()">✓ Approve Selected</button>
           <button class="btn" style="background:#DC2626;color:#fff;border-color:#DC2626" onclick="bulkRejectLeaves()">✗ Reject Selected</button>
@@ -15321,7 +15325,7 @@ function renderEmployees(){
     return`<tr onclick="${emp.id?'viewEmp('+emp.id+')':''}" style="cursor:pointer${emp.id?'':';opacity:.6;cursor:not-allowed'}">
       <td style="font-family:monospace;font-size:12px;color:var(--text3);white-space:nowrap">${emp.empNo||'—'}</td>
       <td><div class="emp-cell"><div class="avatar" style="background:${c}22;color:${c}">${inits(emp.name)}</div><div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.email||emp.phone||''}</div></div></div></td>
-      <td>${emp.dept}</td><td>${emp.role}</td><td>${fDate(emp.start)}</td>
+      <td>${emp.dept}</td><td>${emp.role}</td><td>${getTierBadge(emp.clockMode||emp.clock_mode||'kiosk')}</td><td>${fDate(emp.start)}</td>
       <td style="font-weight:500">${sal}</td><td>${sB(emp.status)}${emp.attendanceEditor?'<span class="badge" style="background:#1E144520;color:#1E1445;margin-left:4px" title="Attendance Editor">&#x1F4CA; Att. Editor</span>':''}${emp.isHOD?'<span class="badge" style="background:#BA751720;color:#BA7517;margin-left:4px">HOD</span>':''}${emp.isSeniorHOD?'<span class="badge" style="background:#7F77DD20;color:#7F77DD;margin-left:4px">Sr. HOD</span>':''}</td>
 
       <td style="font-size:12px">${(()=>{
@@ -16082,12 +16086,13 @@ function openModal(type,pid,pid2){
 </div>
       <div class="fg"><label class="fl">Mobile clock-in</label>
         <select class="fs" id="fclockmode" onchange="_onClockModeChange(this)">
-          <option value="kiosk">Kiosk only — must use the entrance tablet</option>
-          <option value="simple">Self-clocking — employee clocks in/out from their own phone (no QR needed)</option>
-          <option value="qr">Mobile (QR required) — clock in from phone by scanning a QR code</option>
-          <option value="hod">HOD / Manager — QR clock-in on phone + access to HR platform</option>
+          <option value="kiosk">🟡 Tier 1 — Kiosk Only (use entrance tablet)</option>
+          <option value="qr">🔵 Tier 2 — Kiosk + Mobile QR (tablet + phone QR scan)</option>
+          <option value="hod">🟣 Tier 3 — Kiosk + QR + HOD Platform (tablet + QR + HR features)</option>
         </select>
-        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">All employees can use the entrance kiosk. This setting also controls whether they can clock in from a phone (app) or QR scan.</div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">
+          <strong>Tier 1</strong> — Kiosk tablet only · <strong>Tier 2</strong> — Kiosk + mobile QR scan · <strong>Tier 3</strong> — HODs with full platform access
+        </div>
         <div id="fclockmode-schedule" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg2);border-radius:var(--radius);border:1px solid var(--border)">
           <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:8px">📅 Self-clocking schedule</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
@@ -16273,7 +16278,9 @@ function openModal(type,pid,pid2){
           <option value="manager">Manager — View + log events</option>
           <option value="hr">HR — Full people management</option>
           <option value="admin">Admin — Full system access</option>
-          <option value="kiosk">Kiosk — Tablet clock-in only</option>
+          <option value="kiosk">🟡 Tier 1 — Kiosk Only</option>
+          <option value="qr">🔵 Tier 2 — Kiosk + Mobile QR</option>
+          <option value="hod">🟣 Tier 3 — Kiosk + QR + HOD Platform</option>
           <option value="hr">HR — People management</option>
           <option value="admin">Admin — Full access</option>
         </select>
@@ -21389,6 +21396,16 @@ async function editBankSick(empId, empName, current){
   hideLoader();
 }
 
+function getTierBadge(clockMode){
+  const tiers = {
+    kiosk:  '<span style="background:#FEF3C7;color:#92400E;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">🟡 T1 Kiosk</span>',
+    qr:     '<span style="background:#DBEAFE;color:#1E40AF;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">🔵 T2 Kiosk+QR</span>',
+    hod:    '<span style="background:#EDE9FE;color:#5B21B6;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">🟣 T3 HOD</span>',
+    simple: '<span style="background:#F3F4F6;color:#6B7280;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap">⚪ Simple</span>',
+  };
+  return tiers[clockMode] || tiers.kiosk;
+}
+
 function renderLeaveBalances(){
   const tbody = document.getElementById('leave-balances-tbody');
   if(!tbody) return;
@@ -21401,7 +21418,11 @@ function renderLeaveBalances(){
     return `<tr>
       <td><div class="emp-cell">
         <div class="avatar" style="background:${c}22;color:${c};width:26px;height:26px;font-size:10px">${inits(emp.name)}</div>
-        <div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.dept||''}</div></div>
+        <div>
+            <div style="font-weight:500">${emp.name}</div>
+            <div class="txs tm">${emp.dept||''}</div>
+            <div style="margin-top:3px">${getTierBadge(emp.clockMode||emp.clock_mode||'kiosk')}</div>
+          </div>
       </div></td>
       <td>
         <div style="font-size:13px;font-weight:600;color:var(--navy)">${b.remSick}<span style="color:var(--text3);font-weight:400"> / ${b.sick}</span></div>
@@ -25457,6 +25478,13 @@ function renderLeaveTable(){
     <div style="font-size:22px;font-weight:800;color:${s.color}">${s.value}</div>
     <div style="font-size:11px;color:${s.color};font-weight:600;margin-top:2px">${s.label}</div>
   </div>`).join('');
+
+  // Populate dept filter dynamically
+  const deptSel = document.getElementById('leave-filter-dept');
+  if(deptSel && deptSel.options.length <= 1){
+    const depts=[...new Set(allReqs.map(r=>gE(r.empId)?.dept).filter(Boolean))].sort();
+    depts.forEach(d=>{ const o=document.createElement('option'); o.value=d; o.text=d; deptSel.add(o); });
+  }
 
   // Filter by what current user can see
   let list = allReqs;
