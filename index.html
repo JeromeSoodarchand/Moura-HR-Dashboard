@@ -788,6 +788,7 @@ async function emailLeaveRequestToHOD(emp, hod, req){
             ${req.reason?`<tr><td style="padding:6px 0;color:#6b7280">Reason</td><td style="padding:6px 0">${req.reason}</td></tr>`:''}
           </table>
         </div>
+        ${(()=>{ const b=getEmpBalance(emp.id); const bt=b?.byType?.[req.type]; if(!bt) return ''; const remDays=bt.unlimited?null:bt.remaining; const usedDays=bt.used||0; const maxDays=bt.max||0; const pct=maxDays>0?Math.min(100,Math.round((usedDays/maxDays)*100)):0; const barColor=pct>80?'#DC2626':pct>50?'#D97706':'#059669'; return bt.unlimited ? `<div style="background:#FEF9C3;border:1px solid #FDE047;border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px;color:#713F12">ℹ️ ${leaveLabel} — no balance limit</div>` : `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:14px;margin-bottom:16px"><p style="margin:0 0 8px;font-size:11px;font-weight:700;color:#065F46;letter-spacing:0.5px">LEAVE BALANCE — ${leaveLabel.toUpperCase()}</p><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:#374151"><strong style="color:${barColor}">${remDays} days remaining</strong></span><span style="color:#6b7280">${usedDays} of ${maxDays} used</span></div><div style="height:8px;background:#E5E7EB;border-radius:4px;overflow:hidden"><div style="height:8px;width:${pct}%;background:${barColor};border-radius:4px"></div></div></div>`; })()}
         ${approveUrl ? `
         <div style="display:flex;gap:12px;margin-bottom:20px">
           <a href="${approveUrl}" style="flex:1;display:block;background:#059669;color:#fff;text-align:center;padding:14px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:700">
@@ -17319,7 +17320,8 @@ function getSettings(){
     {key:'paternity',label:'Paternity Leave',     color:'#7F77DD',bg:'#EEEDFE',maxDays:5,   paid:true, protected:false},
     {key:'unpaid',   label:'Unpaid Leave',        color:'#888780',bg:'#F1EFE8',maxDays:null,paid:false,protected:false},
     {key:'compassionate',label:'Compassionate Leave',color:'#D85A30',bg:'#FAECE7',maxDays:3,paid:true, protected:false},
-    {key:'employer_local', label:'Employer Local Leave', color:'#1E1445',bg:'#EEEDFE',maxDays:11, paid:true, protected:true}
+    {key:'employer_local', label:'Employer Local Leave', color:'#1E1445',bg:'#EEEDFE',maxDays:11, paid:true, protected:true},
+    {key:'permission', label:'Permission (< 3hrs)', color:'#6D28D9',bg:'#EDE9FE',maxDays:0, paid:true, protected:false}
   ];
   const _def={
     orgName:'',tagline:'Giving Comfort · Taking Care',
@@ -19148,7 +19150,16 @@ function openAttendanceModal(type){
     }).catch(()=>{ _openAttendanceModalInner(modal, content); });
     return;
   }
-  if(type==='manageLocations'){ renderManageLocations(content); }
+  if(type==='manageLocations'){
+    content.innerHTML='<div style="padding:32px;text-align:center;color:var(--text3);font-size:14px">Loading...</div>';
+    dbGetLocations().then(locs => {
+      _attLocations = locs;
+      renderManageLocations(content);
+    }).catch(() => {
+      renderManageLocations(content);
+    });
+    return;
+  }
 }
 function _openAttendanceModalInner(modal, content){
   if(true){
@@ -21272,19 +21283,6 @@ function openLeaveRequestModal(empId){
       <div class="fg"><label class="fl">To date *</label><input class="fi" id="lv-to" type="date" value="${todayStr()}" onchange="updateLeaveDays()"></div>
     </div>
     <div id="lv-days-info" style="font-size:12.5px;color:var(--text2);margin-bottom:12px;padding:8px 12px;background:var(--bg2);border-radius:var(--radius)">Select dates to calculate working days</div>
-    <div id="lv-halfday-row" style="display:none;margin-bottom:12px">
-      <label class="fl">Day Option</label>
-      <div style="display:flex;gap:8px;margin-top:4px">
-        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);cursor:pointer">
-          <input type="radio" name="lv-halfday" id="lv-fullday" value="full" checked onchange="updateLeaveDays()">
-          <span style="font-size:13px;font-weight:600">Full Day</span>
-        </label>
-        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);cursor:pointer">
-          <input type="radio" name="lv-halfday" id="lv-halfday" value="half" onchange="updateLeaveDays()">
-          <span style="font-size:13px;font-weight:600">Half Day (0.5)</span>
-        </label>
-      </div>
-    </div>
     <div class="fg"><label class="fl">Reason</label><textarea class="ft" id="lv-reason" placeholder="Optional reason or notes…" rows="2"></textarea></div>
     <div class="mf">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -21309,13 +21307,6 @@ function updateLeaveBalance(){
   } else {
     el.innerHTML = getLEAVE_TYPES()[type]?.label+' — no balance limit';
   }
-  // Show half-day option only for employer_local
-  const hdRow = document.getElementById('lv-halfday-row');
-  if(hdRow) hdRow.style.display = type==='employer_local' ? 'block' : 'none';
-  if(type!=='employer_local'){
-    const fd = document.getElementById('lv-fullday');
-    if(fd) fd.checked = true;
-  }
 }
 
 function updateLeaveDays(){
@@ -21324,9 +21315,7 @@ function updateLeaveDays(){
   const el   = document.getElementById('lv-days-info');
   if(!el||!from||!to) return;
   if(to<from){ el.innerHTML='<span style="color:var(--red)">End date must be after start date</span>'; return; }
-  const rawDays = countWorkingDays(from, to);
-  const isHalf = document.getElementById('lv-halfday')?.checked;
-  const days = (isHalf && rawDays > 0) ? 0.5 : rawDays;
+  const days = countWorkingDays(from, to);
   el.innerHTML = `<strong>${days} working day${days!==1?'s':''}</strong> (excluding weekends & public holidays)`;
 }
 
@@ -21342,10 +21331,8 @@ async function submitLeaveRequest(){
   if(!empId||!from||!to){ toast('Please fill all required fields.','error'); _submittingLeave=false; return; }
   if(to<from){ toast('End date must be after start date.','error'); _submittingLeave=false; return; }
 
-  const isHalfDay = document.getElementById('lv-halfday')?.checked && type==='employer_local';
-  const rawDays = countWorkingDays(from, to);
-  const days = (isHalfDay && rawDays > 0) ? 0.5 : rawDays;
-  if(rawDays===0 && type!=='permission'){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
+  const days = countWorkingDays(from, to);
+  if(days===0){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
 
   // Mauritius 3-day rule — medical certificate required for sick leave > 3 days
   if(type==='sick' && days > 3){
