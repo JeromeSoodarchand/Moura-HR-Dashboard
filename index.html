@@ -21391,6 +21391,26 @@ function updateLeaveBalance(){
       el.innerHTML=getLEAVE_TYPES()[type]?.label+' — no balance limit';
     }
   }
+  // Show/hide half day toggle (local leave only)
+  const hdRow = document.getElementById('lv-halfday-row');
+  if(hdRow) hdRow.style.display = type==='employer_local' ? 'block' : 'none';
+  if(type!=='employer_local'){ const fd=document.getElementById('lv-fullday'); if(fd) fd.checked=true; }
+  // Show/hide permission time fields
+  const ptRow = document.getElementById('lv-permission-time-row');
+  if(ptRow) ptRow.style.display = type==='permission' ? 'block' : 'none';
+  if(type==='permission') updatePermDuration();
+}
+
+function updatePermDuration(){
+  const f=document.getElementById('lv-perm-from')?.value;
+  const t=document.getElementById('lv-perm-to')?.value;
+  const el=document.getElementById('lv-perm-duration');
+  if(!el||!f||!t) return;
+  const [fh,fm]=f.split(':').map(Number), [th,tm]=t.split(':').map(Number);
+  const mins=(th*60+tm)-(fh*60+fm);
+  if(mins<=0){ el.innerHTML='<span style="color:var(--red)">End time must be after start time</span>'; return; }
+  if(mins>180){ el.innerHTML='<span style="color:var(--red)">⚠ Permission cannot exceed 3 hours ('+Math.floor(mins/60)+'h '+mins%60+'m selected)</span>'; return; }
+  el.innerHTML='<span style="color:var(--green)">Duration: '+Math.floor(mins/60)+'h '+String(mins%60).padStart(2,'0')+'m</span>';
 }
 
 function updateLeaveDays(){
