@@ -20868,7 +20868,7 @@ function countWorkingDays(from, to){
 }
 
 function getEmpBalance(empId){
-  const bal = _leaveBalances[empId] || {};
+  const bal = _leaveBalances[String(empId)] || _leaveBalances[empId] || {};
   const ANNUAL_MAX=22, SICK_MAX=15, CASUAL_MAX=10, LOCAL_MAX=22, FAMILY_MAX=5;
   const remAnnual = parseFloat(bal.annual!==undefined&&bal.annual!==null ? bal.annual : ANNUAL_MAX);
   const remSick   = parseFloat(bal.sick!==undefined&&bal.sick!==null     ? bal.sick   : SICK_MAX);
@@ -25621,7 +25621,7 @@ This will restore the leave balance.`)) return;
         _leaveBalances = await dbGetLeaveBalances().catch(()=>({}));
       }
       const empBalKey = String(req.empId);
-      const bal = _leaveBalances[empBalKey];
+      const bal = _leaveBalances[String(empBalKey)] || _leaveBalances[empBalKey];
       if(bal && ['annual','sick','casual'].includes(req.type)){
         const field = req.type === 'annual' ? 'usedAnnual' : req.type === 'sick' ? 'usedSick' : 'usedCasual';
         bal[field] = Math.max(0, (parseFloat(bal[field])||0) - (parseFloat(req.days)||0));
