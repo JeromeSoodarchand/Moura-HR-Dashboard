@@ -12707,13 +12707,10 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
               <option value="rejected">Rejected</option>
               <option value="cancelled">Cancelled</option>
             </select>
-            <select class="si" style="width:130px" id="leave-filter-period" onchange="renderLeaveTable()">
-              <option value="">All time</option>
-              <option value="thismonth">This month</option>
-              <option value="lastmonth">Last month</option>
-              <option value="thisyear">This year</option>
-            </select>
-            <button class="btn btn-xs" onclick="document.getElementById('leave-filter-search').value='';document.getElementById('leave-filter-dept').value='';document.getElementById('leave-filter-type').value='';document.getElementById('leave-filter-status').value='';document.getElementById('leave-filter-period').value='';renderLeaveTable()">Clear</button>
+            <input type="date" class="si" id="leave-filter-from" onchange="renderLeaveTable()" style="width:130px" title="From date">
+            <span style="color:var(--text3);font-size:12px">–</span>
+            <input type="date" class="si" id="leave-filter-to" onchange="renderLeaveTable()" style="width:130px" title="To date">
+            <button class="btn btn-xs" onclick="document.getElementById('leave-filter-search').value='';document.getElementById('leave-filter-dept').value='';document.getElementById('leave-filter-type').value='';document.getElementById('leave-filter-status').value='';document.getElementById('leave-filter-from').value='';document.getElementById('leave-filter-to').value='';renderLeaveTable()">Clear</button>
           </div>
         </div>
         <div style="padding:0">
@@ -21276,14 +21273,14 @@ function renderLeaveCalendar(){
   for(let d=1;d<=last.getDate();d++){
     const ds=`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const isToday   = ds===today;
-    const hasLeave  = !!leaveDates[ds];
     const isHoliday = (MAURITIUS_HOLIDAYS_2025||[]).includes(ds);
+    const isWeekend = [0,6].includes(new Date(ds+'T00:00:00').getDay());
     const entries = leaveDates[ds]||[];
     const approvedCount = entries.filter(e=>e.status==='approved').length;
     const pendingCount  = entries.filter(e=>e.status==='pending').length;
     const hasAny = entries.length > 0;
     const cls=['leave-cal-day',
-      isToday?'today':isHoliday?'weekend':isWeekend?'weekend':''
+      isToday?'today':isHoliday?'holiday':isWeekend?'weekend':''
     ].filter(Boolean).join(' ');
     let badge='';
     if(approvedCount>0||pendingCount>0){
@@ -21414,7 +21411,7 @@ function renderLeaveBalances(){
   tbody.innerHTML = emps.map(emp=>{
     const b = getEmpBalance(emp.id);
     const c = aColor(emp.name);
-    const bar=(used,total)=>`<div class="leave-balance-bar"><div class="leave-balance-fill" style="width:${Math.min(100,Math.round(used/total*100))}%;background:${used/total>0.8?'var(--red)':used/total>0.5?'var(--amber)':'var(--green)'}"></div></div>`;
+    const bar=(used,total)=>{ if(!total||isNaN(total)) return ''; const pct=Math.min(100,Math.round((used||0)/total*100)); return `<div class="leave-balance-bar"><div class="leave-balance-fill" style="width:${pct}%;background:${pct>80?'var(--red)':pct>50?'var(--amber)':'var(--green)'}"></div></div>`; };
     return `<tr>
       <td><div class="emp-cell">
         <div class="avatar" style="background:${c}22;color:${c};width:26px;height:26px;font-size:10px">${inits(emp.name)}</div>
@@ -21433,12 +21430,12 @@ function renderLeaveBalances(){
         ${canEdit()?`<button class="btn btn-xs" style="margin-top:4px" onclick="editBankSick('${emp.id}','${emp.name}',${b.bankSick||0})">✎ Set</button>`:''}
       </td>
       <td>
-        <div style="font-size:13px;font-weight:600;color:var(--navy)">${b.byType?.employer_local?.remaining??22}<span style="color:var(--text3);font-weight:400"> / 22</span></div>
-        ${bar(b.byType?.employer_local?.used||0,22)}
+        <div style="font-size:13px;font-weight:600;color:var(--navy)">${(b.byType?.employer_local?.remaining??b.remEmployerLocal??22)}<span style="color:var(--text3);font-weight:400"> / 22</span></div>
+        ${bar(b.byType?.employer_local?.used||b.usedEmployerLocal||0,22)}
       </td>
       <td>
-        <div style="font-size:13px;font-weight:600;color:var(--navy)">${b.byType?.family_medical?.remaining??5}<span style="color:var(--text3);font-weight:400"> / 5</span></div>
-        ${bar(b.byType?.family_medical?.used||0,5)}
+        <div style="font-size:13px;font-weight:600;color:var(--navy)">${(b.byType?.family_medical?.remaining??b.remFamilyMedical??5)}<span style="color:var(--text3);font-weight:400"> / 5</span></div>
+        ${bar(b.byType?.family_medical?.used||b.usedFamilyMedical||0,5)}
       </td>
       <td>
         <div style="font-size:13px;font-weight:600;color:var(--navy)">${b.remCasual}<span style="color:var(--text3);font-weight:400"> / ${b.casual}</span></div>
@@ -25458,7 +25455,6 @@ function renderLeaveTable(){
   const statusF = document.getElementById('leave-filter-status')?.value||'';
   const searchF = (document.getElementById('leave-filter-search')?.value||'').toLowerCase().trim();
   const deptF   = document.getElementById('leave-filter-dept')?.value||'';
-  const periodF = document.getElementById('leave-filter-period')?.value||'';
   const ctx     = getLeaveApprovalContext();
 
   // Summary stats
@@ -25492,12 +25488,10 @@ function renderLeaveTable(){
   if(statusF) list=list.filter(r=>r.status===statusF);
   if(deptF)   list=list.filter(r=>(gE(r.empId)?.dept||'')===deptF);
   if(searchF) list=list.filter(r=>(gE(r.empId)?.name||'').toLowerCase().includes(searchF));
-  if(periodF){
-    const now=new Date(), m=now.getMonth(), y=now.getFullYear();
-    if(periodF==='thismonth')  list=list.filter(r=>{ const d=new Date(r.fromDate); return d.getMonth()===m&&d.getFullYear()===y; });
-    if(periodF==='lastmonth')  list=list.filter(r=>{ const d=new Date(r.fromDate); const lm=m===0?11:m-1,ly=m===0?y-1:y; return d.getMonth()===lm&&d.getFullYear()===ly; });
-    if(periodF==='thisyear')   list=list.filter(r=>new Date(r.fromDate).getFullYear()===y);
-  }
+  const fromF = document.getElementById('leave-filter-from')?.value||'';
+  const toF   = document.getElementById('leave-filter-to')?.value||'';
+  if(fromF) list=list.filter(r=>r.toDate>=fromF);
+  if(toF)   list=list.filter(r=>r.fromDate<=toF);
   list.sort((a,b)=>{
     if(!a.createdAt && !b.createdAt) return b.id - a.id;
     if(!a.createdAt) return 1;
