@@ -20700,6 +20700,7 @@ function getLEAVE_TYPES(){
   let types = getSettings().leaveTypes;
   if(typeof types==='string'){try{types=JSON.parse(types);}catch(e){types=[];}}
   if(!Array.isArray(types)) types=[];
+  types = types.filter(t => t.key !== 'annual'); // annual leave removed
   const obj = {};
   types.forEach(t=>{ obj[t.key] = {label:t.label, color:t.color, bg:t.bg, maxDays:t.maxDays||0}; });
   return obj;
