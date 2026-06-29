@@ -17316,7 +17316,8 @@ function toast(msg,type='info'){
 // ─── COMPANY SETTINGS ────────────────────────────────────────────────────────
 function getSettings(){
   const _ltDef=[
-    {key:'annual',   label:'Annual Leave',       color:'#1D9E75',bg:'#E1F5EE',maxDays:22,  paid:true, protected:true},
+    // annual leave removed per company preference
+    // {key:'annual', label:'Annual Leave', color:'#1D9E75',bg:'#E1F5EE',maxDays:22, paid:true, protected:true},
     {key:'sick',     label:'Sick Leave',          color:'#378ADD',bg:'#E6F1FB',maxDays:15,  paid:true, protected:true},
     {key:'casual',   label:'Casual Leave',        color:'#BA7517',bg:'#FAEEDA',maxDays:6,   paid:true, protected:false},
     {key:'maternity',label:'Maternity Leave',     color:'#D4537E',bg:'#FDEEF4',maxDays:84,  paid:true, protected:false},
@@ -20888,8 +20889,8 @@ function getEmpBalance(empId){
       annual:        {label:'Annual Leave',        max:ANNUAL_MAX, used:parseFloat(used.annual||0),         remaining:Math.max(0,remAnnual),  unlimited:false},
       sick:          {label:'Sick Leave',           max:SICK_MAX,   used:parseFloat(used.sick||0),           remaining:Math.max(0,remSick),    unlimited:false},
       casual:        {label:'Casual Leave',         max:CASUAL_MAX, used:parseFloat(used.casual||0),         remaining:Math.max(0,remCasual),  unlimited:false},
-      employer_local:{label:'Local Leave',          max:LOCAL_MAX,  used:parseFloat(used.employer_local||0), remaining:parseFloat(bal.employer_local!==undefined?bal.employer_local:LOCAL_MAX), unlimited:false},
-      family_medical:{label:'Family Medical Leave', max:FAMILY_MAX, used:parseFloat(used.family_medical||0), remaining:parseFloat(bal.family_medical!==undefined?bal.family_medical:FAMILY_MAX), unlimited:false},
+      employer_local:{label:'Local Leave',          max:LOCAL_MAX,  used:parseFloat(used.employer_local||0), remaining:Math.max(0,LOCAL_MAX-(parseFloat(used.employer_local)||0)), unlimited:false},
+      family_medical:{label:'Family Medical Leave', max:FAMILY_MAX, used:parseFloat(used.family_medical||0), remaining:Math.max(0,FAMILY_MAX-(parseFloat(used.family_medical)||0)), unlimited:false},
       permission:    {label:'Permission',           max:0,          used:parseFloat(used.permission||0),     remaining:null, unlimited:true},
     },
   };
