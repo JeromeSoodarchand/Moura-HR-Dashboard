@@ -12703,7 +12703,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         <div class="ch"><span class="ct">Leave Balances</span></div>
         <div class="cb" style="padding:0">
           <table><thead><tr>
-            <th>Employee</th><th>Annual</th><th>Sick</th><th>Bank Sick</th><th>Casual</th><th>Used This Year</th><th>Actions</th>
+            <th>Employee</th><th>Sick</th><th>Bank Sick</th><th>Local Leave</th><th>Family Medical</th><th>Casual</th><th>Used This Year</th><th>Actions</th>
           </tr></thead><tbody id="leave-balances-tbody"></tbody></table>
         </div>
       </div>
@@ -20822,7 +20822,7 @@ async function dbGetLeaveBalances(){
     const out = {};
     data.forEach(r=>{
       if(companyEmpIds.includes(String(r.emp_id))){
-        out[r.emp_id]={annual:parseFloat(r.annual)||22,sick:parseFloat(r.sick)||15,casual:parseFloat(r.casual)||10,sickCarryover:parseFloat(r.sick_carryover)||0,bankSick:parseFloat(r.bank_sick)||0};
+        out[r.emp_id]={annual:parseFloat(r.annual)||22,sick:parseFloat(r.sick)||15,casual:parseFloat(r.casual)||10,sickCarryover:parseFloat(r.sick_carryover)||0,bankSick:parseFloat(r.bank_sick)||0,employer_local:r.employer_local!==null&&r.employer_local!==undefined?parseFloat(r.employer_local):null,family_medical:r.family_medical!==null&&r.family_medical!==undefined?parseFloat(r.family_medical):null};
       }
     });
     S.set('leaveBalances', out);
@@ -20842,13 +20842,17 @@ async function dbSaveLeaveBalance(empId, balances){
   _leaveBalances = local;
   if(!sbReady()) return;
   try{
-    const ann = bal?.annual ?? bal?.annual?.entitlement ?? null;
-    const sick = bal?.sick ?? bal?.sick?.entitlement ?? null;
-    const cas  = bal?.casual ?? bal?.casual?.entitlement ?? null;
-    const carryover = bal?.sickCarryover ?? 0;
-    const bankSick = bal?.bankSick ?? null;
+    const ann        = bal?.annual ?? null;
+    const sick       = bal?.sick   ?? null;
+    const cas        = bal?.casual ?? null;
+    const carryover  = bal?.sickCarryover ?? 0;
+    const bankSick   = bal?.bankSick ?? bal?.bank_sick ?? null;
+    const empLocal   = bal?.employer_local ?? null;
+    const famMedical = bal?.family_medical ?? null;
     await _sb.from('leave_balances').upsert(
-      {emp_id:eid, annual:ann, sick:sick, casual:cas, sick_carryover:carryover, bank_sick:bankSick, updated_at:new Date().toISOString()},
+      {emp_id:eid, annual:ann, sick:sick, casual:cas, sick_carryover:carryover,
+       bank_sick:bankSick, employer_local:empLocal, family_medical:famMedical,
+       updated_at:new Date().toISOString()},
       {onConflict:'emp_id'}
     );
   } catch(e){ console.error('Save leave balance error:',e); }
@@ -20890,8 +20894,8 @@ function getEmpBalance(empId){
       annual:        {label:'Annual Leave',        max:ANNUAL_MAX, used:parseFloat(used.annual||0),         remaining:Math.max(0,remAnnual),  unlimited:false},
       sick:          {label:'Sick Leave',           max:SICK_MAX,   used:parseFloat(used.sick||0),           remaining:Math.max(0,remSick),    unlimited:false},
       casual:        {label:'Casual Leave',         max:CASUAL_MAX, used:parseFloat(used.casual||0),         remaining:Math.max(0,remCasual),  unlimited:false},
-      employer_local:{label:'Local Leave',          max:LOCAL_MAX,  used:parseFloat(used.employer_local||0), remaining:Math.max(0,LOCAL_MAX-(parseFloat(used.employer_local)||0)), unlimited:false},
-      family_medical:{label:'Family Medical Leave', max:FAMILY_MAX, used:parseFloat(used.family_medical||0), remaining:Math.max(0,FAMILY_MAX-(parseFloat(used.family_medical)||0)), unlimited:false},
+      employer_local:{label:'Local Leave',          max:LOCAL_MAX,  used:parseFloat(used.employer_local||0), remaining:parseFloat(bal.employer_local!==undefined&&bal.employer_local!==null?bal.employer_local:LOCAL_MAX), unlimited:false},
+      family_medical:{label:'Family Medical Leave', max:FAMILY_MAX, used:parseFloat(used.family_medical||0), remaining:parseFloat(bal.family_medical!==undefined&&bal.family_medical!==null?bal.family_medical:FAMILY_MAX), unlimited:false},
       permission:    {label:'Permission',           max:0,          used:parseFloat(used.permission||0),     remaining:null, unlimited:true},
     },
   };
@@ -21254,7 +21258,7 @@ function renderLeaveBalances(){
   const tbody = document.getElementById('leave-balances-tbody');
   if(!tbody) return;
   const emps = getScopedLeaveEmps();
-  if(!emps.length){ tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:16px">No employees</td></tr>'; return; }
+  if(!emps.length){ tbody.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:16px">No employees</td></tr>'; return; }
   tbody.innerHTML = emps.map(emp=>{
     const b = getEmpBalance(emp.id);
     const c = aColor(emp.name);
@@ -21265,23 +21269,26 @@ function renderLeaveBalances(){
         <div><div style="font-weight:500">${emp.name}</div><div class="txs tm">${emp.dept||''}</div></div>
       </div></td>
       <td>
-        <div style="font-size:13px;font-weight:600;color:var(--navy)">${b.remAnnual}<span style="color:var(--text3);font-weight:400"> / ${b.annual}</span></div>
-        ${bar(b.usedAnnual,b.annual)}
-      </td>
-      <td>
         <div style="font-size:13px;font-weight:600;color:var(--navy)">${b.remSick}<span style="color:var(--text3);font-weight:400"> / ${b.sick}</span></div>
         ${bar(b.usedSick,b.sick)}
-        ${(()=>{const e=gE(b.empId);const m=e?Math.floor((new Date()-new Date(e.start+'T00:00:00'))/(1000*60*60*24*30)):12;return m<12?`<div style="font-size:10px;color:var(--amber)">${m<6?'Not yet eligible':'Accruing ('+Math.min(m-5,6)+'d)'}</div>`:''})()}
       </td>
       <td style="text-align:center">
         <div style="font-size:13px;font-weight:600;color:var(--purple-deep)">${b.remBankSick||0}<span style="color:var(--text3);font-weight:400"> / ${b.bankSick||0}</span></div>
         ${canEdit()?`<button class="btn btn-xs" style="margin-top:4px" onclick="editBankSick('${emp.id}','${emp.name}',${b.bankSick||0})">✎ Set</button>`:''}
       </td>
       <td>
+        <div style="font-size:13px;font-weight:600;color:var(--navy)">${b.byType?.employer_local?.remaining??22}<span style="color:var(--text3);font-weight:400"> / 22</span></div>
+        ${bar(b.byType?.employer_local?.used||0,22)}
+      </td>
+      <td>
+        <div style="font-size:13px;font-weight:600;color:var(--navy)">${b.byType?.family_medical?.remaining??5}<span style="color:var(--text3);font-weight:400"> / 5</span></div>
+        ${bar(b.byType?.family_medical?.used||0,5)}
+      </td>
+      <td>
         <div style="font-size:13px;font-weight:600;color:var(--navy)">${b.remCasual}<span style="color:var(--text3);font-weight:400"> / ${b.casual}</span></div>
         ${bar(b.usedCasual,b.casual)}
       </td>
-      <td class="tm">${(parseFloat(b.usedAnnual)||0)+(parseFloat(b.usedSick)||0)+(parseFloat(b.usedCasual)||0)} days</td>
+      <td class="tm">${(parseFloat(b.usedSick)||0)+(parseFloat(b.usedCasual)||0)+(parseFloat(b.byType?.employer_local?.used)||0)} days</td>
       <td>${canEdit()?`<button class="btn btn-xs" onclick="openEditBalance('${emp.id}')">Edit</button>`:'—'}</td>
     </tr>`;
   }).join('');
@@ -21557,24 +21564,36 @@ async function reviewLeave(reqId, newStatus){
 
 function openEditBalance(empId){
   const emp=gE(empId);const b=getEmpBalance(empId);
+  const raw=_leaveBalances[String(empId)]||_leaveBalances[empId]||{};
   const mb=document.getElementById('mbox');mb.className='modal-box';
   document.getElementById('mb').classList.add('open');
   mb.innerHTML=`
     <div class="modal-title">Leave Balance — ${emp?emp.name:'Employee'} <button class="modal-close" onclick="closeModal()">✕</button></div>
-    <div style="font-size:12.5px;color:var(--text3);margin-bottom:14px">Set the annual entitlement (days per year). Used days are calculated automatically from approved requests.</div>
+    <div style="font-size:12.5px;color:var(--text3);margin-bottom:14px">Enter the <strong>remaining days</strong> for each leave type as of today. New approved leaves will be deducted automatically.</div>
     <div class="fr3">
-      <div class="fg"><label class="fl">Annual leave</label>
-        <input class="fi" id="bal-annual" type="number" value="${b.annual}" min="0" max="60">
-        <div class="txs tm" style="margin-top:3px">${b.usedAnnual} used · ${b.remAnnual} remaining</div>
+      <div class="fg"><label class="fl">Sick Leave</label>
+        <input class="fi" id="bal-sick" type="number" value="${b.remSick}" min="0" max="60" step="0.5">
+        <div class="txs tm" style="margin-top:3px">Max ${b.sick} days/year</div>
       </div>
-      <div class="fg"><label class="fl">Sick leave</label>
-        <input class="fi" id="bal-sick" type="number" value="${b.sick}" min="0" max="60">
-        <div class="txs tm" style="margin-top:3px">${b.usedSick} used · ${b.remSick} remaining</div>
+      <div class="fg"><label class="fl">Casual Leave</label>
+        <input class="fi" id="bal-casual" type="number" value="${b.remCasual}" min="0" max="60" step="0.5">
+        <div class="txs tm" style="margin-top:3px">Max ${b.casual} days/year</div>
       </div>
-      <div class="fg"><label class="fl">Casual leave</label>
-        <input class="fi" id="bal-casual" type="number" value="${b.casual}" min="0" max="60">
-        <div class="txs tm" style="margin-top:3px">${b.usedCasual} used · ${b.remCasual} remaining</div>
+      <div class="fg"><label class="fl">Local Leave</label>
+        <input class="fi" id="bal-local" type="number" value="${b.byType?.employer_local?.remaining??22}" min="0" max="30" step="0.5">
+        <div class="txs tm" style="margin-top:3px">Max 22 days/year</div>
       </div>
+    </div>
+    <div class="fr3" style="margin-top:8px">
+      <div class="fg"><label class="fl">Family Medical</label>
+        <input class="fi" id="bal-family" type="number" value="${b.byType?.family_medical?.remaining??5}" min="0" max="30" step="0.5">
+        <div class="txs tm" style="margin-top:3px">Max 5 days/year</div>
+      </div>
+      <div class="fg"><label class="fl">Bank Sick</label>
+        <input class="fi" id="bal-banksick" type="number" value="${b.bankSick||0}" min="0" max="365">
+        <div class="txs tm" style="margin-top:3px">Activated when sick leave exhausted</div>
+      </div>
+      <div class="fg"></div>
     </div>
     <div class="mf">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -21583,12 +21602,24 @@ function openEditBalance(empId){
 }
 
 async function saveBalance(empId){
-  const annual=parseInt(document.getElementById('bal-annual').value)||20;
-  const sick=parseInt(document.getElementById('bal-sick').value)||15;
-  const casual=parseInt(document.getElementById('bal-casual').value)||10;
+  const sick        = parseFloat(document.getElementById('bal-sick').value)||0;
+  const casual      = parseFloat(document.getElementById('bal-casual').value)||0;
+  const local       = parseFloat(document.getElementById('bal-local').value)||0;
+  const familyMed   = parseFloat(document.getElementById('bal-family').value)||0;
+  const bankSick    = parseFloat(document.getElementById('bal-banksick').value)||0;
   showLoader('Saving…');
   try{
-    await dbSaveLeaveBalance(empId,{annual,sick,casual});
+    const existing = _leaveBalances[String(empId)]||_leaveBalances[empId]||{};
+    await dbSaveLeaveBalance(empId, {
+      ...existing,
+      sick:    String(sick),
+      casual:  String(casual),
+      employer_local:  String(local),
+      family_medical:  String(familyMed),
+      bankSick: bankSick,
+      bank_sick: String(bankSick),
+    });
+    _leaveBalances = await dbGetLeaveBalances();
   } catch(err){
     hideLoader();
     toast('Failed to save balance: '+(err.message||err),'error');
@@ -21597,6 +21628,7 @@ async function saveBalance(empId){
   hideLoader();
   closeModal();renderLeaveBalances();
   toast('Leave balance updated.','success');
+  dbAddAudit(CU.name, `Updated leave balance for ${gE(empId)?.name||empId}`);
 }
 
 function exportLeaveCSV(){
