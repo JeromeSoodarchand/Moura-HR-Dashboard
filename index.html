@@ -20923,7 +20923,7 @@ function leaveBadge(status){
 }
 
 function leaveTypeBadge(type){
-  const cfg = getLEAVE_TYPES()[type]||LEAVE_TYPES.other;
+  const cfg = getLEAVE_TYPES()[type]||{label:'Other',color:'#6B7280',bg:'#F3F4F6'};
   return `<span class="badge" style="background:${cfg.bg};color:${cfg.color}">${cfg.label}</span>`;
 }
 
@@ -21168,7 +21168,7 @@ function renderLeavePending(){
   el.innerHTML = pending.map(req=>{
     const emp = gE(req.empId);
     const c   = emp ? aColor(emp.name) : '#888';
-    const cfg = getLEAVE_TYPES()[req.type]||LEAVE_TYPES.other;
+    const cfg = getLEAVE_TYPES()[req.type]||{label:'Other',color:'#6B7280',bg:'#F3F4F6'};
     return `<div class="leave-card">
       <div class="leave-card-header">
         <div style="display:flex;align-items:center;gap:8px">
