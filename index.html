@@ -21120,6 +21120,7 @@ async function renderLeave(){
   renderLeaveCalendar();
   renderLeaveTable();
   renderLeaveBalances();
+  populateKioskLeaveEmpSelect();
   renderManagerLeaveCalendar().catch(e=>console.warn("[MgrCal]",e));
 }
 
