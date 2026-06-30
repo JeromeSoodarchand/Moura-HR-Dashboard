@@ -19915,21 +19915,6 @@ function renderSickLeaveWarnings(req){
 }
 
 // Override getEmpBalance to use Mauritius-compliant sick leave
-const _origGetEmpBalance = getEmpBalance;
-function getEmpBalance(empId){
-  const bal = _origGetEmpBalance(empId);
-  if(!bal) return bal;
-  // Override sick leave with Mauritius-compliant calculation
-  const emp = gE(empId);
-  if(emp){
-    const entitlement = getTotalSickLeaveBalance(emp);
-    const carryover = parseFloat(bal.sickCarryover||0);
-    bal.sick = entitlement + carryover;
-    bal.remSick = Math.max(0, bal.sick - (parseFloat(bal.usedSick)||0));
-  }
-  return bal;
-}
-
 // Add family medical leave type if not already present
 function ensureFamilyMedicalLeaveType(){
   const settings = getSettings();
