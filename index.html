@@ -12653,23 +12653,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
           <div class="cb">
 
             <div class="leave-calendar" id="leave-calendar"></div>
-            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:11.5px;color:var(--text3)">
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#DC2626;margin-right:4px;vertical-align:middle"></span>Sick</span>
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#7C3AED;margin-right:4px;vertical-align:middle"></span>Local</span>
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#059669;margin-right:4px;vertical-align:middle"></span>Casual</span>
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#D97706;margin-right:4px;vertical-align:middle"></span>Family Medical</span>
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#2563EB;margin-right:4px;vertical-align:middle"></span>Permission</span>
-              <span style="margin-left:8px">🔴 count = approved &nbsp;·&nbsp; 🟡 count? = pending</span>
-            </div>
-            <div style="display:flex;gap:16px;margin-top:10px;font-size:11.5px;color:var(--text3);flex-wrap:wrap">
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--gold);margin-right:4px"></span>Today</span>
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#DC2626;margin-right:4px"></span>Sick</span>
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#7C3AED;margin-right:4px"></span>Local</span>
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#059669;margin-right:4px"></span>Casual</span>
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#D97706;margin-right:4px"></span>Family Medical</span>
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#2563EB;margin-right:4px"></span>Permission</span>
-              <span style="margin-left:8px">🔴 approved &nbsp;·&nbsp; 🟡? pending</span>
-            </div>
+            <div style="margin-top:10px;font-size:11px;color:var(--text3);text-align:center">Click a day with a badge to see who's on leave</div>
           </div>
         </div>
       </div>
@@ -21229,11 +21213,12 @@ function renderLeaveCalendar(){
   // Get all approved leave dates for this month
   const leaveDates={};
   const LEAVE_COLORS_CAL = {sick:'#DC2626',casual:'#059669',employer_local:'#7C3AED',family_medical:'#D97706',permission:'#2563EB',annual:'#1E1445'};
+  const _fmtLocalDate = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   getVisibleLeaveRequests().filter(r=>['approved','pending'].includes(r.status)).forEach(req=>{
     let cur=new Date(req.fromDate+'T00:00:00');
     const end=new Date(req.toDate+'T00:00:00');
     while(cur<=end){
-      const ds=cur.toISOString().slice(0,10);
+      const ds=_fmtLocalDate(cur);
       if(!leaveDates[ds]) leaveDates[ds]=[];
       const emp=gE(req.empId)||getEmps().find(e=>String(e.id)===String(req.empId));
       if(emp) leaveDates[ds].push({
