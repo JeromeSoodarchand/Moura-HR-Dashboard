@@ -13975,7 +13975,7 @@ function rowToEmp(r){
   return{id:r.id,empNo:r.emp_no||null,nic:r.nic||null,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
     salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:typeof r.salary_history==='string'?JSON.parse(r.salary_history||'[]'):(r.salary_history||[])}:null,
     checklist:typeof r.checklist==='string'?JSON.parse(r.checklist||'{}'):(r.checklist||{}),offChecklist:typeof r.off_checklist==='string'?JSON.parse(r.off_checklist||'{}'):(r.off_checklist||{}),lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
-    photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,attendanceEditor:[true,'true','1',1].includes(r.att_editor),isHOD:[true,'true','1',1].includes(r.is_hod),isSeniorHOD:[true,'true','1',1].includes(r.is_senior_hod),
+    photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,pinAttempts:parseInt(r.pin_attempts)||0,pinLockedUntil:r.pin_locked_until||null,pinLockedOut:[true,'true',1].includes(r.pin_locked_out)||false,attendanceEditor:[true,'true','1',1].includes(r.att_editor),isHOD:[true,'true','1',1].includes(r.is_hod),isSeniorHOD:[true,'true','1',1].includes(r.is_senior_hod),
     companyId:r.company_id||1,
     workStart:r.work_start||null, workEnd:r.work_end||null,
     workDays:typeof r.work_days==='string'?JSON.parse(r.work_days||'null'):(r.work_days||null)};
@@ -14120,6 +14120,75 @@ const ROLE_PERMS={
 // (CU, notifs, ef etc declared near top with _cache)
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
+// ── PIN Lockout System (Supabase-backed) ────────────────────────────────────
+function _fmtLockRemaining(ms){
+  const m = Math.floor(ms/60000), s = Math.floor((ms%60000)/1000);
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+let _pinLockTimer = null;
+function _startPinLockCountdown(errEl, lockUntil){
+  if(_pinLockTimer) clearInterval(_pinLockTimer);
+  _pinLockTimer = setInterval(()=>{
+    const remaining = lockUntil - Date.now();
+    if(remaining <= 0){
+      clearInterval(_pinLockTimer); _pinLockTimer=null;
+      if(errEl){ errEl.textContent=''; errEl.style.display='none'; }
+      return;
+    }
+    if(errEl){ errEl.style.display='block'; errEl.textContent=`Too many failed attempts. Try again in ${_fmtLockRemaining(remaining)}`; }
+  }, 1000);
+}
+
+async function checkPinLockoutDB(emp){
+  // Returns null=OK, or {locked, lockedOut, lockUntil}
+  if(!emp) return null;
+  if(emp.pinLockedOut===true||emp.pinLockedOut==='true') return {locked:true,lockedOut:true};
+  if(emp.pinLockedUntil){
+    const until = parseInt(emp.pinLockedUntil);
+    if(until > Date.now()) return {locked:true,lockedOut:false,lockUntil:until};
+    // Expired — clear it silently
+    await _sb.from('employees').update({pin_locked_until:null}).eq('id',String(emp.id)).catch(()=>{});
+  }
+  return null;
+}
+
+async function recordPinFailureDB(emp){
+  if(!emp||!sbReady()) return {attempts:1};
+  const attempts = (parseInt(emp.pinAttempts)||0) + 1;
+  const now = Date.now();
+  let update = {pin_attempts: attempts};
+  let result = {attempts};
+  if(attempts >= 10){
+    update.pin_locked_out = true;
+    result.lockedOut = true;
+  } else if(attempts >= 6){
+    update.pin_locked_until = now + 30*60*1000;
+    result.lockUntil = update.pin_locked_until;
+  } else if(attempts >= 3){
+    update.pin_locked_until = now + 5*60*1000;
+    result.lockUntil = update.pin_locked_until;
+  }
+  await _sb.from('employees').update(update).eq('id',String(emp.id)).catch(()=>{});
+  // Update local cache
+  emp.pinAttempts = attempts;
+  if(update.pin_locked_out) emp.pinLockedOut = true;
+  if(update.pin_locked_until) emp.pinLockedUntil = update.pin_locked_until;
+  return result;
+}
+
+async function resetPinLockoutDB(empId, empName){
+  if(!sbReady()){ toast('Not connected to database.','error'); return; }
+  await _sb.from('employees').update({pin_attempts:0,pin_locked_until:null,pin_locked_out:false}).eq('id',String(empId));
+  // Update local cache
+  const emp = getEmps().find(e=>String(e.id)===String(empId));
+  if(emp){ emp.pinAttempts=0; emp.pinLockedUntil=null; emp.pinLockedOut=false; }
+  toast(`PIN lockout cleared for ${empName||'employee'}.`,'success');
+  dbAddAudit(CU?.name||'Admin',`PIN lockout cleared for ${empName||empId}`);
+  renderEmpTable();
+}
+// ── End PIN Lockout System ───────────────────────────────────────────────────
+
 function showLoginScreen(){
   document.getElementById('login-screen').style.display='flex';
 
@@ -14576,10 +14645,34 @@ async function doLogin(){
   }
 
   if(user.passwordHash!==simpleHash(p)){
+    // Record failure against linked employee
+    const linkedEmp = getEmps().find(e=>String(e.userId)===String(user.id)||e.email===user.email);
     const lerr=document.getElementById('lerr');
-    lerr.textContent='Incorrect password. Please try again.';
-    lerr.style.display='block';return;
+    if(linkedEmp){
+      const fail = await recordPinFailureDB(linkedEmp);
+      if(fail.lockedOut){
+        lerr.textContent='Account locked after too many failed attempts. Contact your Admin to reset.';
+        lerr.style.display='block'; return;
+      } else if(fail.lockUntil){
+        const mins = fail.attempts >= 6 ? 30 : 5;
+        lerr.textContent=`Too many failed attempts. Account locked for ${mins} minutes.`;
+        lerr.style.display='block'; return;
+      } else {
+        lerr.textContent=`Incorrect password. Please try again. (${fail.attempts} failed attempt${fail.attempts!==1?'s':''})`;
+      }
+    } else {
+      lerr.textContent='Incorrect password. Please try again.';
+    }
+    lerr.style.display='block'; return;
   }
+
+  // Successful login — clear any lockout on linked employee
+  const _linkedEmpSuccess = getEmps().find(e=>String(e.userId)===String(user.id)||e.email===user.email);
+  if(_linkedEmpSuccess && (_linkedEmpSuccess.pinAttempts||0) > 0){
+    await _sb.from('employees').update({pin_attempts:0,pin_locked_until:null,pin_locked_out:false})
+      .eq('id',String(_linkedEmpSuccess.id)).catch(()=>{});
+  }
+
   document.getElementById('lerr').style.display='none';
   CU=user;
   // Get company_id from selector or from user record
@@ -15322,7 +15415,7 @@ function renderEmployees(){
         return '<span style="color:var(--text3);font-size:11.5px">No account</span>';
       })()}</td>
       <td class="ts tm">${cnt}</td>
-      <td>${canEdit()?`<button class="btn btn-xs btn-danger" onclick="event.stopPropagation();deleteEmployee(${emp.id})" title="Delete employee">✕</button>`:''}</td>
+      <td style="white-space:nowrap">${canEdit()?`<button class="btn btn-xs btn-danger" onclick="event.stopPropagation();deleteEmployee(${emp.id})" title="Delete employee">✕</button>`:''}${(()=>{const isLocked=emp.pinLockedOut===true||emp.pinLockedOut==='true';const isTimedOut=emp.pinLockedUntil&&parseInt(emp.pinLockedUntil)>Date.now();const attempts=parseInt(emp.pinAttempts)||0;if((CU&&(CU.role==='admin'||CU.role==='hr'))&&(isLocked||isTimedOut||attempts>=3)){const nm=emp.name.replace(/'/g,'');return '<button class="btn btn-xs" style="background:#FFF7ED;color:#D97706;border:1px solid #FED7AA;margin-left:4px" onclick="event.stopPropagation();resetPinLockoutDB('+emp.id+',\''+nm+'\')">🔓 Unlock</button>';}return '';})()}</td>
     </tr>`;
   }).join('');
 }
@@ -22147,10 +22240,11 @@ async function loginPinSubmit(){
   const allEmps = getEmps().filter(e=>e.status!=='offboarded');
   const matches = allEmps.filter(e=>e.pinHash===pinHash);
   if(!matches.length){
+    // Find any employee to record attempt against (by partial match or first attempt)
+    // We can't know which employee tried - just show generic message
     _loginPin='';
     updateLoginDots();
     const errEl=document.getElementById('lerr-pin');
-    // Debug: show how many employees loaded and their PIN status
     const withPin=allEmps.filter(e=>e.pinHash).length;
     const msg = allEmps.length===0
       ? 'No employees loaded. Check Supabase connection.'
@@ -22161,6 +22255,28 @@ async function loginPinSubmit(){
     setTimeout(()=>{ if(errEl)errEl.style.display='none'; },4000);
     return;
   }
+
+  // ── Supabase PIN lockout check ─────────────────────────────────────────
+  const empCandidate = matches[0];
+  const lockStatus = await checkPinLockoutDB(empCandidate);
+  if(lockStatus){
+    _loginPin=''; updateLoginDots();
+    const errEl = document.getElementById('lerr-pin');
+    if(lockStatus.lockedOut){
+      if(errEl){ errEl.textContent='Account locked. Contact HR or Admin to reset.'; errEl.style.display='block'; }
+    } else {
+      _startPinLockCountdown(errEl, lockStatus.lockUntil);
+    }
+    return;
+  }
+  // ── End lockout check ───────────────────────────────────────────────────
+  // Successful PIN — reset lockout on Supabase
+  const _pinSuccessEmp = matches[0];
+  if(_pinSuccessEmp && (parseInt(_pinSuccessEmp.pinAttempts)||0) > 0){
+    await _sb.from('employees').update({pin_attempts:0,pin_locked_until:null,pin_locked_out:false})
+      .eq('id',String(_pinSuccessEmp.id)).catch(()=>{});
+  }
+
   // If multiple matches (duplicate PIN — shouldn't happen but handle gracefully)
   let emp = matches[0];
   if(matches.length > 1){
