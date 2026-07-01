@@ -18951,7 +18951,7 @@ function renderAttMetrics(){
   if(!el) return;
   const todays = _attendance.filter(r=>r.date===todayStr());
   const active = todays.filter(r=>!r.clockOut).length;
-  const avgMins = todays.filter(r=>r.durationMinutes).reduce((s,r)=>s+r.durationMinutes,0)/(todays.filter(r=>r.durationMinutes).length||1);
+  const avgMins = todays.filter(r=>r.durationMinutes).reduce((s,r)=>s+(parseFloat(r.durationMinutes)||0),0)/(todays.filter(r=>r.durationMinutes).length||1);
   const late = todays.filter(r=>r.clockIn&&new Date(r.clockIn).getHours()>=9).length;
   el.innerHTML =
     '<div class="att-card"><div class="att-card-accent" style="background:var(--green)"></div><div class="att-card-label">On site now</div><div class="att-card-value">'+active+'</div><div class="att-card-sub">employees clocked in</div></div>'+
