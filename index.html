@@ -15226,6 +15226,13 @@ const sB=s=>({active:'<span class="badge b-active">Active</span>',onboarding:'<s
 
 const PAGE_TITLES={dashboard:'Dashboard',attendance:'Attendance',employees:'Employees',onboarding:'Onboarding',events:'Events log',training:'Training tracker',offboarding:'Offboarding',analytics:'Analytics',usermgmt:'User management',settings:'Settings'};
 function showPage(id,el){
+  // ── Auth guard ──────────────────────────────────────────────────────────
+  if(!CU && id !== 'login'){
+    console.warn('[Auth] Not authenticated — redirecting to login');
+    showLoginScreen();
+    return;
+  }
+  // ────────────────────────────────────────────────────────────────────────
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
@@ -25343,7 +25350,7 @@ async function createLeaveAttendanceRecords(req){
       // Skip weekends (0=Sun, 6=Sat)
       if(dayOfWeek !== 0 && dayOfWeek !== 6){
         // Skip public holidays
-        const dateStr = cur.toISOString().slice(0,10);
+        const dateStr = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
         if(!isDayHoliday(dateStr)){
           // Build clock_in and clock_out timestamps for the leave day
           const clockIn  = new Date(dateStr + 'T' + workStart + ':00');
