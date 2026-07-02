@@ -14674,6 +14674,7 @@ async function doLogin(){
   }
 
   document.getElementById('lerr').style.display='none';
+  dbAddAudit(user.name||user.username,'Logged in via email/password').catch(()=>{});
   CU=user;
   // Get company_id from selector or from user record
   const _loginCompanyEl = document.getElementById('login-company');
@@ -15931,7 +15932,7 @@ function viewEmp(id){
   const evts=[...gEE(id)].sort((a,b)=>new Date(b.date)-new Date(a.date));
   const assigns=gEA(id);const c=aColor(emp.name);
   const cl=emp.checklist||emp.offChecklist||{},hasCL=Object.keys(cl).length>0;
-  const sal=emp.salary;const showSal=hasPerm('view_salary');
+  const sal=emp.salary;const showSal=hasPerm('view_salary');if(showSal&&sal&&CU)dbAddAudit(CU.name,'Viewed salary for '+emp.name+' ('+( sal.amount?fCur(sal.amount,sal.currency):'set')+')').catch(()=>{});
   const mb=document.getElementById('mbox');
   if(!mb){ toast('Modal not found. Please refresh.','error'); return; }
   mb.className='modal-box xl';
@@ -20158,6 +20159,7 @@ async function deleteAttRecord(recId){
   const local=S.get('attendance',[]).filter(r=>String(r.id)!==String(recId));
   S.set('attendance',local);
   if(sbReady())try{await _sb.from('attendance').delete().eq('id',recId);}catch(e){}
+  if(CU) dbAddAudit(CU.name,'Deleted attendance record ID '+recId).catch(()=>{});
   await renderAttendance();toast('Record deleted.','info');
 }
 
@@ -20169,6 +20171,7 @@ function exportAttendanceCSV(){
   });
   const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='attendance_'+todayStr()+'.csv';a.click();
+  if(CU) dbAddAudit(CU.name,'Exported attendance CSV').catch(()=>{});
   toast('Attendance exported.','success');
 }
 
@@ -20959,6 +20962,7 @@ async function dbGetLeaveBalances(){
 }
 
 async function dbSaveLeaveBalance(empId, balances){
+  if(CU && empId && balances) dbAddAudit(CU.name,'Edited leave balance for emp '+empId+': '+JSON.stringify(balances)).catch(()=>{});
   // Accept (empId, balances) or a single object with .empId
   let eid = empId, bal = balances;
   if(typeof empId === 'object' && empId !== null){
@@ -21901,6 +21905,7 @@ async function bulkApproveLeaves(){
   if(!confirm(`Approve ${ids.length} leave request${ids.length!==1?'s':''}?`)) return;
   showLoader('Approving…');
   for(const id of ids){ try{ await approveLeave(id,true,true); }catch(e){} }
+  if(CU) dbAddAudit(CU.name,'Bulk approved '+ids.length+' leave request(s)').catch(()=>{});
   hideLoader(); clearLeaveSelection(); renderLeaveTable();
   toast(`${ids.length} request${ids.length!==1?'s':''} approved.`,'success');
 }
@@ -21911,6 +21916,7 @@ async function bulkRejectLeaves(){
   if(!confirm(`Reject ${ids.length} leave request${ids.length!==1?'s':''}?`)) return;
   showLoader('Rejecting…');
   for(const id of ids){ try{ await approveLeave(id,false,true); }catch(e){} }
+  if(CU) dbAddAudit(CU.name,'Bulk rejected '+ids.length+' leave request(s)').catch(()=>{});
   hideLoader(); clearLeaveSelection(); renderLeaveTable();
   toast(`${ids.length} request${ids.length!==1?'s':''} rejected.`,'error');
 }
@@ -21925,6 +21931,7 @@ function exportLeaveCSV(){
   const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download='leave_requests_'+todayStr()+'.csv';a.click();
+  if(CU) dbAddAudit(CU.name,'Exported leave requests CSV').catch(()=>{});
   toast('Leave data exported.','success');
 }
 
@@ -22294,6 +22301,7 @@ async function loginPinSubmit(){
   }
 
   // If multiple matches (duplicate PIN — shouldn't happen but handle gracefully)
+  dbAddAudit(_pinSuccessEmp.name,'Logged in via PIN').catch(()=>{});
   let emp = matches[0];
   if(matches.length > 1){
     // Show name picker so employee can confirm who they are
@@ -23347,6 +23355,7 @@ async function deleteAttRecordFromReview(recId, empId, dateFrom, dateTo, reviewI
     _attendance = (_attendance||[]).filter(r=>String(r.id)!==String(recId));
     const local = S.get('attendance',[]).filter(r=>String(r.id)!==String(recId));
     S.set('attendance', local);
+    if(CU) dbAddAudit(CU.name,'Deleted attendance record ID '+recId+' for emp '+empId).catch(()=>{});
     hideLoader();
     toast('Record deleted.','success');
     await refreshReviewRowDB(reviewIdx);
