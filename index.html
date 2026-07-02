@@ -15901,6 +15901,21 @@ function toggleUser(userId){
 }
 
 // ─── EMPLOYEE PROFILE ─────────────────────────────────────────────────────────
+function renderPinStatus(emp){
+  var isLocked = emp.pinLockedOut===true||emp.pinLockedOut==='true';
+  var isTimedOut = emp.pinLockedUntil && parseInt(emp.pinLockedUntil)>Date.now();
+  var attempts = parseInt(emp.pinAttempts)||0;
+  var nm = (emp.name||'').replace(/'/g,'');
+  var btn = '<button class="btn btn-xs" style="background:#FFF7ED;color:#D97706;border:1px solid #FED7AA;margin-left:8px" onclick="resetPinLockoutDB('+emp.id+',\''+nm+'\');closeModal()">🔓 Unlock</button>';
+  if(isLocked) return '<span style="color:#DC2626;font-weight:600">🔒 Account Locked — requires Admin/HR reset</span>'+btn;
+  if(isTimedOut){
+    var mins = Math.ceil((parseInt(emp.pinLockedUntil)-Date.now())/60000);
+    return '<span style="color:#D97706;font-weight:600">⏱ Temporarily locked ('+mins+' min remaining)</span>'+btn;
+  }
+  if(attempts>=3) return '<span style="color:#D97706">⚠️ '+attempts+' failed attempt'+(attempts!==1?'s':'')+'</span>'+btn;
+  return '<span style="color:var(--green)">✓ No issues</span><span style="color:var(--text3);font-size:11px;margin-left:8px">'+(attempts>0?attempts+' failed attempt'+(attempts!==1?'s':''):'0 failed attempts')+'</span>';
+}
+
 function viewEmp(id){
   const emp=gE(id);
   if(!emp){
@@ -15957,6 +15972,7 @@ function viewEmp(id){
       })()}</div></div>
       ${emp.lastDay?`<div class="ig-item"><div class="ig-label">Last Day</div><div class="ig-value">${fDate(emp.lastDay)}</div></div>`:''}
       ${emp.reason?`<div class="ig-item"><div class="ig-label">Reason</div><div class="ig-value">${emp.reason}</div></div>`:''}
+      ${(CU&&(CU.role==='admin'||CU.role==='hr'))?'<div class="ig-item" style="grid-column:1/-1"><div class="ig-label">PIN Security</div><div class="ig-value">'+renderPinStatus(emp)+'</div></div>':''}
     </div>
     <div class="tab-bar" style="margin-bottom:12px">
       ${showSal?`<button class="tbb active" onclick="swETab('salary',this)">💰 Salary</button>`:''}
