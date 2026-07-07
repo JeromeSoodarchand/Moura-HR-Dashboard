@@ -25738,15 +25738,24 @@ async function notifyHODofLeaveRequest(req){
   // Build list of people to notify
   let hodList = [];
 
-  // Always notify the direct manager first (by emp.manager name match)
-  // This applies to both HODs and regular employees
+  // Always notify the direct manager first (by name OR managerId)
   const directMgrEmp = getEmps().find(e=>
-    e.status!=='offboarded' &&
-    emp.manager && e.name === emp.manager
+    e.status!=='offboarded' && (
+      (emp.managerId && String(e.id)===String(emp.managerId)) ||
+      (emp.manager && e.name && e.name.trim()===emp.manager.trim())
+    )
   );
-  if(directMgrEmp && directMgrEmp.email) hodList.push(directMgrEmp);
+  if(directMgrEmp){
+    // Push employee record email
+    if(directMgrEmp.email && !hodList.find(h=>h.email===directMgrEmp.email))
+      hodList.push({name:directMgrEmp.name, email:directMgrEmp.email});
+    // Also check their HR user account
+    const mgrUser = getUsers().find(u=>u.active&&u.empId&&String(u.empId)===String(directMgrEmp.id)&&u.email);
+    if(mgrUser && !hodList.find(h=>h.email===mgrUser.email))
+      hodList.push({name:mgrUser.name, email:mgrUser.email});
+  }
 
-  // Also find the manager's HR user account (may have different email)
+  // Also find the manager's HR user account by name match
   const directMgrUser = getUsers().find(u=>
     u.active && emp.manager &&
     (u.name===emp.manager || (u.empId && String(u.empId)===String(directMgrEmp?.id)))
