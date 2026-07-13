@@ -12513,6 +12513,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
               <input type="date" class="si" id="att-date-from" style="width:130px">
               <span class="tm txs">to</span>
               <input type="date" class="si" id="att-date-to" style="width:130px">
+              <input class="si" id="att-emp-search" placeholder="🔍 Employee name…" style="width:150px" oninput="renderAttendanceReport()">
               <select class="si" id="att-dept-filter" style="width:130px" onchange="renderAttendanceReport()">
                 <option value="">All departments</option>
               </select>
@@ -19100,8 +19101,10 @@ async function renderAttendanceReport(){
   _attendance  = recs;
   // Scope to HOD's team if not admin/HR
   const scopedEmps = getScopedEmps();
+  const empSearch = (document.getElementById('att-emp-search')?.value||'').toLowerCase().trim();
   const allEmps = scopedEmps.filter(e=>
-    (!deptF||!deptF.value||e.dept===deptF.value));
+    (!deptF||!deptF.value||e.dept===deptF.value) &&
+    (!empSearch||e.name.toLowerCase().includes(empSearch)));
   // Build a set of all possible IDs for scoped employees (emp.id + emp.userId)
   const empIdSet = new Set(
     allEmps.flatMap(e=>[String(e.id), e.userId?String(e.userId):''].filter(Boolean))
