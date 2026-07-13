@@ -12680,8 +12680,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
             <select class="si" style="width:130px" id="leave-filter-type" onchange="renderLeaveTable()">
               <option value="">All types</option>
               <option value="sick">Sick Leave</option>
-              <option value="casual">Casual Leave</option>
-              <option value="employer_local">Local Leave</option>
+              <option value="employer_local">Annual Leave</option>
               <option value="family_medical">Family Medical</option>
               <option value="permission">Permission</option>
             </select>
@@ -12728,7 +12727,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         <div class="ch"><span class="ct">Leave Balances</span></div>
         <div class="cb" style="padding:0">
           <table><thead><tr>
-            <th>Employee</th><th>Sick</th><th>Bank Sick</th><th>Local Leave</th><th>Family Medical</th><th>Casual</th><th>Used This Year</th><th>Actions</th>
+            <th>Employee</th><th>Sick</th><th>Bank Sick</th><th>Annual Leave</th><th>Family Medical</th><th>Used This Year</th><th>Actions</th>
           </tr></thead><tbody id="leave-balances-tbody"></tbody></table>
         </div>
       </div>
@@ -20834,7 +20833,7 @@ function getLEAVE_TYPES(){
   let types = getSettings().leaveTypes;
   if(typeof types==='string'){try{types=JSON.parse(types);}catch(e){types=[];}}
   if(!Array.isArray(types)) types=[];
-  types = types.filter(t => t.key !== 'annual'); // annual leave removed
+  types = types.filter(t => t.key !== 'annual' && t.key !== 'casual'); // removed leave types
   const obj = {};
   types.forEach(t=>{ obj[t.key] = {label:t.label, color:t.color, bg:t.bg, maxDays:t.maxDays||0}; });
   return obj;
@@ -21029,7 +21028,7 @@ function getEmpBalance(empId){
       annual:        {label:'Annual Leave',        max:ANNUAL_MAX, used:parseFloat(used.annual||0),         remaining:Math.max(0,remAnnual),  unlimited:false},
       sick:          {label:'Sick Leave',           max:SICK_MAX,   used:parseFloat(used.sick||0),           remaining:Math.max(0,remSick),    unlimited:false},
       casual:        {label:'Casual Leave',         max:CASUAL_MAX, used:parseFloat(used.casual||0),         remaining:Math.max(0,remCasual),  unlimited:false},
-      employer_local:{label:'Local Leave',          max:LOCAL_MAX,  used:parseFloat(used.employer_local||0), remaining:parseFloat(bal.employer_local!==undefined&&bal.employer_local!==null?bal.employer_local:LOCAL_MAX), unlimited:false},
+      employer_local:{label:'Annual Leave',          max:LOCAL_MAX,  used:parseFloat(used.employer_local||0), remaining:parseFloat(bal.employer_local!==undefined&&bal.employer_local!==null?bal.employer_local:LOCAL_MAX), unlimited:false},
       family_medical:{label:'Family Medical Leave', max:FAMILY_MAX, used:parseFloat(used.family_medical||0), remaining:parseFloat(bal.family_medical!==undefined&&bal.family_medical!==null?bal.family_medical:FAMILY_MAX), unlimited:false},
       permission:    {label:'Permission',           max:0,          used:parseFloat(used.permission||0),     remaining:null, unlimited:true},
     },
@@ -21399,7 +21398,7 @@ function showLeaveCalPopup(ds, event){
   document.querySelectorAll('.leave-cal-popup').forEach(p=>p.remove());
 
   const LEAVE_COLORS_CAL={sick:'#DC2626',casual:'#059669',employer_local:'#7C3AED',family_medical:'#D97706',permission:'#2563EB',annual:'#1E1445'};
-  const LEAVE_LABELS_CAL={sick:'Sick',casual:'Casual',employer_local:'Local',family_medical:'Family Medical',permission:'Permission',annual:'Annual'};
+  const LEAVE_LABELS_CAL={sick:'Sick',employer_local:'Annual',family_medical:'Family Medical',permission:'Permission',annual:'Annual'};
 
   const entries=[];
   getVisibleLeaveRequests().filter(r=>['approved','pending'].includes(r.status)).forEach(req=>{
@@ -21533,7 +21532,6 @@ function renderLeaveBalances(){
       </td>
       <td>
         <div style="font-size:13px;font-weight:600;color:var(--navy)">${b.remCasual}<span style="color:var(--text3);font-weight:400"> / ${b.casual}</span></div>
-        ${bar(b.usedCasual,b.casual)}
       </td>
       <td class="tm">${(parseFloat(b.usedSick)||0)+(parseFloat(b.usedCasual)||0)+(parseFloat(b.byType?.employer_local?.used)||0)} days</td>
       <td>${canEdit()?`<button class="btn btn-xs" onclick="openEditBalance('${emp.id}')">Edit</button>`:'—'}</td>
@@ -21624,9 +21622,9 @@ function updateLeaveBalance(){
   const el    = document.getElementById('lv-balance-info');
   if(!el||!empId) return;
   const b = getEmpBalance(empId);
-  if(['annual','sick','casual'].includes(type)){
-    const rem = {annual:b.remAnnual, sick:b.remSick, casual:b.remCasual}[type];
-    const total = {annual:b.annual, sick:b.sick, casual:b.casual}[type];
+  if(['annual','sick'].includes(type)){
+    const rem = {annual:b.remAnnual, sick:b.remSick}[type];
+    const total = {annual:b.annual, sick:b.sick}[type];
     const pct = total>0 ? Math.min(100,Math.round(((total-rem)/total)*100)) : 0;
     let balHtml = `<span style="font-size:15px;font-weight:700;color:var(--navy)">${rem}</span><span style="color:var(--text3)"> / ${total} days remaining</span>
       <div class="leave-balance-bar" style="margin-top:4px"><div class="leave-balance-fill" style="width:${pct}%;background:${pct>80?'var(--red)':pct>50?'var(--amber)':'var(--green)'}"></div></div>`;
@@ -26016,8 +26014,8 @@ This will restore the leave balance.`)) return;
       }
       const empBalKey = String(req.empId);
       const bal = _leaveBalances[String(empBalKey)] || _leaveBalances[empBalKey];
-      if(bal && ['annual','sick','casual'].includes(req.type)){
-        const field = req.type === 'annual' ? 'usedAnnual' : req.type === 'sick' ? 'usedSick' : 'usedCasual';
+      if(bal && ['annual','sick'].includes(req.type)){
+        const field = req.type === 'annual' ? 'usedAnnual' : 'usedSick';
         bal[field] = Math.max(0, (parseFloat(bal[field])||0) - (parseFloat(req.days)||0));
         await dbSaveLeaveBalance(req.empId, bal).catch(()=>{});
       }
