@@ -19213,6 +19213,7 @@ async function renderAttendanceReport(){
       <td style="padding:8px 12px;color:var(--text2);font-size:12px">${r.location||'—'}</td>
       <td style="padding:8px 12px;font-size:11.5px">
         ${anom.flag?`<span style="color:var(--amber)">⚠ ${anom.reason}</span>`:''}
+        ${r.notes&&r.notes.includes('Permission')?`<span style="display:inline-block;background:#EDE9FE;color:#7C3AED;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600">🕐 Permission</span> `:''}
         ${r.notes&&!anom.flag?`<span style="color:var(--text3)">${r.notes}</span>`:''}
       </td>
       <td style="padding:8px 12px">
@@ -21699,6 +21700,7 @@ async function submitLeaveRequest(){
   if(rawDays===0 && type!=='permission'){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
 
   // Permission: validate time from/to and max 3 hours
+  let permMins = 0;
   if(type==='permission'){
     const pf=document.getElementById('lv-perm-from')?.value;
     const pt=document.getElementById('lv-perm-to')?.value;
@@ -21707,6 +21709,8 @@ async function submitLeaveRequest(){
     const mins=(th*60+tm)-(fh*60+fm);
     if(mins<=0){ toast('Permission end time must be after start time.','error'); _submittingLeave=false; return; }
     if(mins>180){ toast('Permission cannot exceed 3 hours.','error'); _submittingLeave=false; return; }
+    // Store actual hours as days (e.g. 1.5h = 0.0625 of a day is confusing — store as hours string in reason prefix)
+    permMins = mins;
   }
 
   // Mauritius 3-day rule — medical certificate required for sick leave > 3 days
@@ -25475,6 +25479,37 @@ async function createLeaveAttendanceRecords(req){
   const emp = gE(req.empId);
   if(!emp) return;
 
+  // Permission leave: don't create a Leave attendance record
+  // Instead, add a note to any existing real clock-in record for that day
+  if(req.type === 'permission'){
+    const dateStr = req.fromDate;
+    const {data:existing} = await _sb.from('attendance')
+      .select('id,notes').eq('emp_id',String(req.empId)).eq('date',dateStr)
+      .neq('location','Leave').limit(1);
+    const timeNote = '🕐 Permission: ' + (req.reason ? req.reason.match(/\d{1,2}:\d{2}.*?\d{1,2}:\d{2}/)?.[0] || req.reason : 'approved');
+    if(existing && existing.length > 0){
+      // Update existing clock-in record with permission note
+      const existingNotes = existing[0].notes || '';
+      if(!existingNotes.includes('Permission')){
+        await _sb.from('attendance').update({
+          notes: existingNotes + ' | ' + timeNote
+        }).eq('id', existing[0].id).catch(()=>{});
+      }
+    } else {
+      // No clock-in yet — store a placeholder that will be updated when they clock in
+      await _sb.from('attendance').insert({
+        emp_id: String(req.empId),
+        date: dateStr,
+        clock_in: dateStr + 'T' + (getSettings().workStart||'08:30') + ':00',
+        clock_out: null,
+        location: 'Permission',
+        notes: timeNote,
+        duration_minutes: null
+      }).catch(()=>{});
+    }
+    return;
+  }
+
   try{
     const settings = getSettings();
     const workStart = settings.workStart || '08:30';
@@ -25703,7 +25738,7 @@ function renderLeaveTable(){
       <td style="padding:10px 12px"><span class="badge b-${req.type}">${getLEAVE_TYPES()[req.type]?.label||req.type}</span></td>
       <td style="padding:10px 12px;font-size:12.5px">${fDate(req.fromDate)}</td>
       <td style="padding:10px 12px;font-size:12.5px">${fDate(req.toDate)}</td>
-      <td style="padding:10px 12px;text-align:center;font-size:13px;font-weight:500">${req.days}d</td>
+      <td style="padding:10px 12px;text-align:center;font-size:13px;font-weight:500">${req.type==='permission'?(()=>{const note=req.reason||'';const m=note.match(/(\d+):(\d+)\s*[–-]\s*(\d+):(\d+)/);if(m){const mins=(parseInt(m[3])*60+parseInt(m[4]))-(parseInt(m[1])*60+parseInt(m[2]));const h=Math.floor(mins/60),min=mins%60;return h>0?(h+'h'+(min>0?' '+min+'m':'')):(min+'m');}return req.days+'d';})():req.days+'d'}</td>
       <td style="padding:10px 12px;font-size:12px;color:var(--text3)">${req.createdAt ? fDate(req.createdAt.slice(0,10)) : '—'}</td>
       <td style="padding:10px 12px;font-size:12px;color:var(--text3)">${req.hrApprovedAt ? fDate(req.hrApprovedAt.slice(0,10)) : (req.status==='approved'?'—':'')}</td>
       <td style="padding:10px 12px">
