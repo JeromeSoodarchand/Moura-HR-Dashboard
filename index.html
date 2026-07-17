@@ -20998,7 +20998,7 @@ function countWorkingDays(from, to){
   const end=new Date(to+'T00:00:00');
   while(cur<=end){
     const dow=cur.getDay();
-    const ds=cur.toISOString().slice(0,10);
+    const ds=`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
     if(dow!==0&&dow!==6&&!isDayHoliday(ds)&&!isDayEmployerLeave(ds)) count++;
     cur.setDate(cur.getDate()+1);
   }
@@ -25547,23 +25547,25 @@ async function createLeaveAttendanceRecords(req){
 
 async function deductLeaveBalance(req){
   try{
-    // Get leave balances — handles both array and object shapes
+    if(!sbReady()) return;
+    const days = parseFloat(req.days)||0;
+    if(!days) return;
     const balData = await dbGetLeaveBalances();
-    // Normalise: localStorage uses {empId:{annual,...}}, Supabase returns same shape
-    const empBal = Array.isArray(balData)
-      ? balData.find(b=>String(b.empId)===String(req.empId))
-      : (balData[req.empId] ? {empId:req.empId, balances:balData[req.empId]} : null);
-    const typeKey = req.type; // e.g. 'annual', 'sick'
-    if(empBal?.balances?.[typeKey] !== undefined){
-      empBal.balances[typeKey].used = (empBal.balances[typeKey].used||0) + req.days;
-      empBal.balances[typeKey].remaining = (empBal.balances[typeKey].entitlement||empBal.balances[typeKey].used||0);
-      await dbSaveLeaveBalance(empBal);
-    } else if(empBal?.[typeKey] !== undefined || (balData[req.empId]?.[typeKey] !== undefined)){
-      // Flat shape {annual:20, sick:15, ...}
-      const flat = empBal || {empId:req.empId, ...balData[req.empId]};
-      if(flat[typeKey] !== undefined) flat[typeKey] = Math.max(0,(flat[typeKey]||0) - req.days);
-      await dbSaveLeaveBalance(flat);
-    }
+    const bal = balData[String(req.empId)];
+    if(!bal) return;
+    // Map leave type to balance field
+    const fieldMap = {
+      annual:         'annual',
+      sick:           'sick',
+      employer_local: 'employer_local',
+      family_medical: 'family_medical',
+    };
+    const field = fieldMap[req.type];
+    if(!field) return; // permission, bank_sick etc — no deduction needed
+    const current = parseFloat(bal[field]);
+    if(isNaN(current)) return;
+    bal[field] = Math.max(0, current - days);
+    await dbSaveLeaveBalance(String(req.empId), bal);
   } catch(e){ console.warn('Balance deduct error:', e); }
 }
 
@@ -26014,9 +26016,11 @@ This will restore the leave balance.`)) return;
       }
       const empBalKey = String(req.empId);
       const bal = _leaveBalances[String(empBalKey)] || _leaveBalances[empBalKey];
-      if(bal && ['annual','sick'].includes(req.type)){
-        const field = req.type === 'annual' ? 'usedAnnual' : 'usedSick';
-        bal[field] = Math.max(0, (parseFloat(bal[field])||0) - (parseFloat(req.days)||0));
+      const refundFieldMap = {annual:'annual', sick:'sick', employer_local:'employer_local', family_medical:'family_medical'};
+      const refundField = refundFieldMap[req.type];
+      if(bal && refundField && bal[refundField] !== undefined){
+        const maxMap = {annual:22, sick:15, employer_local:22, family_medical:5};
+        bal[refundField] = Math.min(maxMap[req.type]||22, (parseFloat(bal[refundField])||0) + (parseFloat(req.days)||0));
         await dbSaveLeaveBalance(req.empId, bal).catch(()=>{});
       }
     }
