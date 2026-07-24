@@ -20986,13 +20986,20 @@ async function dbSaveLeaveBalance(empId, balances){
     const famMedical = bal?.family_medical ?? null;
     const empObj = getEmps().find(e=>String(e.id)===String(eid));
     const compId = empObj?.companyId || bal?.company_id || _COMPANY_ID || 1;
-    await _sb.from('leave_balances').upsert(
-      {emp_id:eid, company_id:compId, annual:ann, sick:sick, casual:cas,
-       sick_carryover:carryover, bank_sick:bankSick,
-       employer_local:empLocal, family_medical:famMedical,
-       updated_at:new Date().toISOString()},
-      {onConflict:'emp_id'}
-    );
+    const row = {
+      emp_id:eid, company_id:compId, annual:ann, sick:sick, casual:cas,
+      sick_carryover:carryover, bank_sick:bankSick,
+      employer_local:empLocal, family_medical:famMedical,
+      updated_at:new Date().toISOString()
+    };
+    // Check if row exists first — custom REST client doesn't support onConflict
+    const {data:existing2} = await _sb.from('leave_balances').select('id').eq('emp_id',String(eid)).limit(1);
+    const existingId = Array.isArray(existing2) ? existing2[0]?.id : existing2?.id;
+    if(existingId){
+      await _sb.from('leave_balances').update(row).eq('id', String(existingId));
+    } else {
+      await _sb.from('leave_balances').insert(row);
+    }
   } catch(e){ console.error('Save leave balance error:',e); }
 }
 
