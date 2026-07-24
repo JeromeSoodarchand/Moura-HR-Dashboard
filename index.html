@@ -20984,9 +20984,12 @@ async function dbSaveLeaveBalance(empId, balances){
     const bankSick   = bal?.bankSick ?? bal?.bank_sick ?? null;
     const empLocal   = bal?.employer_local ?? null;
     const famMedical = bal?.family_medical ?? null;
+    const empObj = getEmps().find(e=>String(e.id)===String(eid));
+    const compId = empObj?.companyId || bal?.company_id || _COMPANY_ID || 1;
     await _sb.from('leave_balances').upsert(
-      {emp_id:eid, annual:ann, sick:sick, casual:cas, sick_carryover:carryover,
-       bank_sick:bankSick, employer_local:empLocal, family_medical:famMedical,
+      {emp_id:eid, company_id:compId, annual:ann, sick:sick, casual:cas,
+       sick_carryover:carryover, bank_sick:bankSick,
+       employer_local:empLocal, family_medical:famMedical,
        updated_at:new Date().toISOString()},
       {onConflict:'emp_id'}
     );
@@ -21824,11 +21827,7 @@ function openEditBalance(empId){
         <input class="fi" id="bal-sick" type="number" value="${b.remSick}" min="0" max="60" step="0.5">
         <div class="txs tm" style="margin-top:3px">Max ${b.sick} days/year</div>
       </div>
-      <div class="fg"><label class="fl">Casual Leave</label>
-        <input class="fi" id="bal-casual" type="number" value="${b.remCasual}" min="0" max="60" step="0.5">
-        <div class="txs tm" style="margin-top:3px">Max ${b.casual} days/year</div>
-      </div>
-      <div class="fg"><label class="fl">Local Leave</label>
+      <div class="fg"><label class="fl">Annual Leave</label>
         <input class="fi" id="bal-local" type="number" value="${b.byType?.employer_local?.remaining??22}" min="0" max="30" step="0.5">
         <div class="txs tm" style="margin-top:3px">Max 22 days/year</div>
       </div>
@@ -21851,22 +21850,20 @@ function openEditBalance(empId){
 }
 
 async function saveBalance(empId){
-  const sick        = parseFloat(document.getElementById('bal-sick').value)||0;
-  const casual      = parseFloat(document.getElementById('bal-casual').value)||0;
-  const local       = parseFloat(document.getElementById('bal-local').value)||0;
-  const familyMed   = parseFloat(document.getElementById('bal-family').value)||0;
-  const bankSick    = parseFloat(document.getElementById('bal-banksick').value)||0;
+  const sick        = parseFloat(document.getElementById('bal-sick')?.value)||0;
+  const local       = parseFloat(document.getElementById('bal-local')?.value)||0;
+  const familyMed   = parseFloat(document.getElementById('bal-family')?.value)||0;
+  const bankSick    = parseFloat(document.getElementById('bal-banksick')?.value)||0;
   showLoader('Saving…');
   try{
     const existing = _leaveBalances[String(empId)]||_leaveBalances[empId]||{};
     await dbSaveLeaveBalance(empId, {
       ...existing,
-      sick:    String(sick),
-      casual:  String(casual),
-      employer_local:  String(local),
-      family_medical:  String(familyMed),
-      bankSick: bankSick,
-      bank_sick: String(bankSick),
+      sick:           String(sick),
+      employer_local: String(local),
+      family_medical: String(familyMed),
+      bank_sick:      String(bankSick),
+      bankSick:       bankSick,
     });
     _leaveBalances = await dbGetLeaveBalances();
   } catch(err){
@@ -26171,12 +26168,30 @@ async function submitEditLeave(reqId){
   req.reviewNote = (req.reviewNote ? req.reviewNote + ' | ' : '') + 'Edited by employee — re-approval needed';
   showLoader('Saving…');
   try{
-    await dbSaveLeaveRequest(req);
+    // Direct Supabase update — bypass localStorage cache
+    if(sbReady()){
+      const row = {
+        type: type, from_date: from, to_date: to, days: days,
+        reason: reason, status: 'pending',
+        hod_status: 'pending', hr_status: 'pending',
+        hod_approved_by: null, hod_approved_at: null,
+        hr_approved_by: null, hr_approved_at: null,
+        updated_at: new Date().toISOString()
+      };
+      const {error} = await _sb.from('leave_requests').update(row).eq('id', String(reqId));
+      if(error){ toast('Save error: '+error.message,'error'); hideLoader(); return; }
+    }
+    // Update local cache
+    req.type = type; req.fromDate = from; req.toDate = to;
+    req.days = days; req.reason = reason; req.status = 'pending';
+    req.hodStatus = 'pending'; req.hrStatus = 'pending';
+    req.hodApprovedBy = null; req.hodApprovedAt = null;
+    req.hrApprovedBy = null; req.hrApprovedAt = null;
     // Re-notify HOD
-    notifyHODofLeaveRequest(req);
+    notifyHODofLeaveRequest(req).catch(()=>{});
     closeModal();
-    renderLeave();
     toast('Leave request updated. HOD has been notified.','success');
+    await renderLeave();
   } catch(e){
     toast('Failed to save: '+(e.message||e),'error');
   }
