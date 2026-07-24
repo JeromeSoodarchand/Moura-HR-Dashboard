@@ -117,3 +117,7 @@ const ROLE_LABELS_DEFAULT = {
   director:   "Director",
   admin:      "Administrator"
 };
+
+/* Feedback calls — the CRO also rings families who have no complaint at all. */
+const FEEDBACK_TYPES  = ["Satisfaction call", "Compliment", "Suggestion", "General comment", "Concern raised"];
+const FEEDBACK_RATING = ["Very satisfied", "Satisfied", "Neutral", "Dissatisfied", "Very dissatisfied"];
