@@ -307,6 +307,7 @@
   .srr-link{color:var(--teal);font-weight:700;cursor:pointer;text-decoration:none;border-bottom:1px dashed var(--teal)}
   .dispatch-banner{background:var(--amber-bg);border:1px solid var(--amber);color:#7a5a12;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px}
   .module-switch{display:flex;gap:6px;align-items:center}
+  .build-tag{font-size:10px;color:var(--faint);margin-left:8px;font-family:ui-monospace,monospace}
   .mod-btn{border:1px solid var(--border);background:var(--card);color:var(--muted);border-radius:999px;padding:7px 14px;font-size:12.5px;font-weight:600;cursor:pointer}
   .mod-btn.on{background:var(--teal);color:#fff;border-color:var(--teal)}
   .launch-wrap{max-width:820px;margin:40px auto;text-align:center;padding:0 16px}
@@ -726,6 +727,7 @@
     <span id="userEmail"></span>
     <span id="userRole" class="role-pill"></span>
     <button class="signout" onclick="doLogout()" title="Sign out">Sign out</button>
+    <span id="buildTag" class="build-tag" title="Deployed build"></span>
   </div>
 </div>
 <div class="tabs" id="requestsTabs">
@@ -4437,6 +4439,8 @@ async function loadProfile(key){
 function profileFor(company){ return COMPANY_PROFILES[profileKeyFor(company)] || SETTINGS; }
 
 const APP_NAME = 'Corevest Service Hub';
+const BUILD = '2026-07-24.1555';   // shown in the footer and available in the console as BUILD
+console.log('%cCorevest Service Hub','color:#0E5A57;font-weight:700','build '+BUILD);
 function applySettings(){
   document.querySelectorAll('.brand .name').forEach(el=> el.textContent = APP_NAME);
   document.querySelectorAll('.logo, .auth-logo').forEach(el=> el.textContent = 'CSS');
@@ -5170,6 +5174,7 @@ async function onSignedIn(user){
   await loadStaffList();
   loadAllEditableLists();
   applySettings();
+  { const bt=$('buildTag'); if(bt) bt.textContent = BUILD; }
   $('userEmail').textContent = user.email;
   $('userRole').textContent = roleLabel(currentRole);
   applyRole(currentRole);
