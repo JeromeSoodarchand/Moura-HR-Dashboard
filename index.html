@@ -120,6 +120,30 @@
   .formhead h1{margin:0; font-family:'Spectral',serif; font-weight:600; font-size:23px}
   .formhead .refline{color:var(--muted); font-size:12.5px; margin-top:2px}
   .section{margin-bottom:18px; overflow:hidden}
+  /* Who fills this in: a light wash so the front desk and the planning team
+     can see at a glance which sections are theirs. */
+  .section[data-sec="customer"]{background:#F5FAF9}
+  .section[data-sec="customer"] > .sec-h{background:#EAF4F2;border-bottom-color:#CFE4E0}
+  .section[data-sec="customer"] > .sec-h .n{background:var(--teal)}
+  .section[data-sec="planning"]{background:#FDFAF3}
+  .section[data-sec="planning"] > .sec-h{background:#F8F0DE;border-bottom-color:#E8DCBE}
+  .section[data-sec="planning"] > .sec-h .n{background:var(--amber)}
+  .section[data-sec="amendment"]{background:#FBFAF6}
+  .section[data-sec="amendment"] > .sec-h{background:#F3F1E8;border-bottom-color:#E0DCCC}
+  .section[data-sec="amendment"] > .sec-h .n{background:#8A7A4E}
+  .section[data-sec="feedback"]{background:#F6FBF7}
+  .section[data-sec="feedback"] > .sec-h{background:#E9F5EC;border-bottom-color:#CFE6D6}
+  .section[data-sec="feedback"] > .sec-h .n{background:#2F7D4F}
+  .fb-card .cmp-head select{padding:7px 9px;border:1px solid var(--border);border-radius:8px;font:inherit;font-size:13px;background:#fff}
+  .fb-card .fb-raise{margin-left:auto}
+  .section[data-sec="complaints"]{background:#FDF7F6}
+  .section[data-sec="complaints"] > .sec-h{background:#F8EAE8;border-bottom-color:#EBD2CE}
+  .section[data-sec="complaints"] > .sec-h .n{background:#A6382C}
+  /* keep the inputs white so they stay legible on the tint */
+  .section[data-sec] .fld input,.section[data-sec] .fld select,.section[data-sec] .fld textarea{background:#fff}
+  .section.sec-readonly[data-sec] .fld input,
+  .section.sec-readonly[data-sec] .fld select,
+  .section.sec-readonly[data-sec] .fld textarea{background:transparent}
   .section > .sec-h{
     padding:14px 20px; border-bottom:1px solid var(--border);
     display:flex; align-items:center; gap:9px; background:#FAFCFB;
@@ -740,6 +764,34 @@
     <div id="recSetup"></div>
   </div>
 
+  <!-- Complaint received directly -->
+  <div id="dcModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-head"><h2 id="dcTitle">Complaint received</h2><button class="modal-x" onclick="closeDirectComplaint()">×</button></div>
+      <div class="modal-body">
+        <div class="fld"><label>Which service request is this about?</label>
+          <input id="dc_search" list="dcReqList" placeholder="Search by name or reference — leave blank if not about one request" oninput="dcPickRequest()">
+          <datalist id="dcReqList"></datalist>
+          <span class="hint" id="dc_reqNote">Not linked to a request.</span>
+        </div>
+        <div class="fld"><label>Date received</label><input id="dc_date" type="date"></div>
+        <div class="fld"><label>Received from</label><input id="dc_from" placeholder="Who is complaining"></div>
+        <div class="fld"><label>Contact</label><input id="dc_contact" placeholder="Phone / email"></div>
+        <div class="fld"><label>How they contacted us</label><select id="dc_channel"></select></div>
+        <div class="fld"><label>Category</label><select id="dc_category"></select></div>
+        <div class="fld"><label>Severity</label><select id="dc_severity"></select></div>
+        <div class="fld"><label>Complaint</label><textarea id="dc_desc" rows="3" placeholder="What are they complaining about?"></textarea></div>
+        <div class="fld"><label>Customer Relations Officer</label><input id="dc_officer" list="croList" placeholder="Who is handling it"></div>
+        <div class="fld"><label>Target date</label><input id="dc_due" type="date"></div>
+        <div class="auth-err" id="dcErr"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" onclick="closeDirectComplaint()">Cancel</button>
+        <button class="btn" id="dcSaveBtn" onclick="saveDirectComplaint()">Log complaint</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Log a call modal -->
   <div id="callModal" class="modal-overlay hidden">
     <div class="modal">
@@ -896,6 +948,7 @@
     <div id="amendBanner" class="amend-banner hidden"></div>
 
     <!-- Customer Information -->
+    <!-- Customer Information -->
     <div class="section card" data-sec="customer">
       <div class="sec-h"><span class="n">1</span><h2>Customer Information</h2></div>
       <div class="grid">
@@ -957,9 +1010,40 @@
       </div>
     </div>
 
+    <!-- Contact Person -->
+    <div class="section card" data-sec="customer">
+      <div class="sec-h"><span class="n">2</span><h2>Contact Person Information</h2></div>
+      <div class="grid">
+        <div class="fld"><label>Contact Person Name</label><input id="f_contactName" placeholder="Full name"></div>
+        <div class="fld"><label>Relationship with Customer</label><input id="f_relationship" placeholder="e.g. Son, Daughter, Spouse"></div>
+        <div class="fld"><label>Mobile No</label><input id="f_mobile" placeholder="Mobile number"></div>
+        <div class="fld"><label>Telephone No</label><input id="f_telephone" placeholder="Landline"></div>
+        <div class="fld col2"><label>Address</label><textarea id="f_contactAddress" placeholder="Contact address"></textarea></div>
+        <div class="fld col3"><label>Additional Details</label><textarea id="f_additional" placeholder="Any notes relevant to the service"></textarea></div>
+      </div>
+    </div>
+
+    <!-- Additional Elements -->
+    <div class="section card" data-sec="customer">
+      <div class="sec-h"><span class="n">3</span><h2>Additional Elements</h2></div>
+      <div class="grid">
+        <div class="fld">
+          <label>Rapatriation</label>
+          <select id="f_rapatriation"><option value="">—</option><option>Yes</option><option>No</option></select>
+        </div>
+        <div class="fld"><label>Prayer Book</label><input id="f_prayerBook" type="number" min="0" placeholder="Quantity"></div>
+        <div class="fld"><label>Upgrade Done By</label><input id="f_upgradeBy" placeholder="Staff name"></div>
+        <div class="fld col3">
+          <label>Medical Information (Doctor)</label>
+          <input id="f_medicalDoctor" placeholder="Attending doctor">
+          <span class="hint">Send me the ERP doctor list and I'll make this a dropdown.</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Funeral Details -->
     <div class="section card" data-sec="planning">
-      <div class="sec-h"><span class="n">2</span><h2>Funeral Details</h2></div>
+      <div class="sec-h"><span class="n">4</span><h2>Funeral Details</h2></div>
       <div class="grid">
         <div class="fld"><label>Funeral Type</label><input id="f_funeralType" list="funeralTypeList" placeholder="e.g. Catholic, Hindu…"></div>
         <div class="fld"><label>Funeral Type 2</label><input id="f_funeralType2" list="burialCremList" placeholder="Burial or Cremation" onchange="funTypeChange()"></div>
@@ -988,7 +1072,7 @@
 
     <!-- Operational Details (shared with the Daily Board) -->
     <div class="section card" data-sec="planning">
-      <div class="sec-h"><span class="n">3</span><h2>Operational Details</h2></div>
+      <div class="sec-h"><span class="n">5</span><h2>Operational Details</h2></div>
       <p class="sec-note" style="margin:-6px 0 14px;color:var(--muted);font-size:12.5px">Day-of logistics for the funeral. These appear on the Planning → Daily Board and can be edited from either place.</p>
       <div class="grid">
         <div class="fld col3"><label>Hearse — vehicle + crew</label><input id="f_hearse" list="vehicleList" placeholder="Pick a vehicle, then add the crew"></div>
@@ -1010,38 +1094,7 @@
       </div>
     </div>
 
-    <!-- Contact Person -->
-    <div class="section card" data-sec="customer">
-      <div class="sec-h"><span class="n">4</span><h2>Contact Person Information</h2></div>
-      <div class="grid">
-        <div class="fld"><label>Contact Person Name</label><input id="f_contactName" placeholder="Full name"></div>
-        <div class="fld"><label>Relationship with Customer</label><input id="f_relationship" placeholder="e.g. Son, Daughter, Spouse"></div>
-        <div class="fld"><label>Mobile No</label><input id="f_mobile" placeholder="Mobile number"></div>
-        <div class="fld"><label>Telephone No</label><input id="f_telephone" placeholder="Landline"></div>
-        <div class="fld col2"><label>Address</label><textarea id="f_contactAddress" placeholder="Contact address"></textarea></div>
-        <div class="fld col3"><label>Additional Details</label><textarea id="f_additional" placeholder="Any notes relevant to the service"></textarea></div>
-      </div>
-    </div>
-
-    <!-- Additional Elements -->
-    <div class="section card">
-      <div class="sec-h"><span class="n">5</span><h2>Additional Elements</h2></div>
-      <div class="grid">
-        <div class="fld">
-          <label>Rapatriation</label>
-          <select id="f_rapatriation"><option value="">—</option><option>Yes</option><option>No</option></select>
-        </div>
-        <div class="fld"><label>Prayer Book</label><input id="f_prayerBook" type="number" min="0" placeholder="Quantity"></div>
-        <div class="fld"><label>Upgrade Done By</label><input id="f_upgradeBy" placeholder="Staff name"></div>
-        <div class="fld col3">
-          <label>Medical Information (Doctor)</label>
-          <input id="f_medicalDoctor" placeholder="Attending doctor">
-          <span class="hint">Send me the ERP doctor list and I'll make this a dropdown.</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Plan Details / Services -->
+    <!-- Plan Details — Services -->
     <div class="section card" data-sec="customer">
       <div class="sec-h"><span class="n">6</span><h2>Plan Details — Services</h2></div>
       <div class="svc">
@@ -1073,6 +1126,14 @@
       <div class="svc">
         <div id="cmpRows"></div>
         <button class="addsvc" onclick="addComplaint()">+ Log a complaint</button>
+      </div>
+    </div>
+
+    <div class="section card" data-sec="feedback">
+      <div class="sec-h"><span class="n">9</span><h2>Feedback</h2><span id="fbCount" class="cmp-count"></span></div>
+      <div class="svc">
+        <div id="fbRows"></div>
+        <button class="addsvc" onclick="addFeedback()">+ Record feedback</button>
       </div>
     </div>
 
@@ -1401,6 +1462,7 @@
   <div id="complaintsView" class="hidden">
     <div class="listhead">
       <div><h1>Complaints</h1><p id="cwSub">Follow-up across all service requests</p></div>
+      <button class="btn" onclick="openDirectComplaint()">+ Log a complaint</button>
     </div>
     <div class="kpi-row" id="cwKpis"></div>
     <div class="rec-filters" id="cwFilters"></div>
@@ -2167,6 +2229,7 @@ function roleLabel(role, company){
 function canEditSection(sec){
   if(sec==='planning') return currentRole==='admin' || currentRole==='planning';
   if(sec==='complaints') return ['admin','reception','cro'].includes(currentRole);
+  if(sec==='feedback')   return ['admin','reception','cro'].includes(currentRole);
   if(sec==='amendment')  return ['admin','reception','planning'].includes(currentRole);
   return currentRole==='admin' || currentRole==='reception';   // customer/services
 }
@@ -2279,9 +2342,11 @@ function applyFormPerms(forceView){
       let lock=hdr.querySelector('.sec-lock');
       if(!editable && !forceView){
         if(!lock){ lock=document.createElement('span'); lock.className='sec-lock'; hdr.appendChild(lock); }
-        lock.textContent = (sec==='planning') ? roleLabel('planning')
-          : (sec==='complaints' ? roleLabel('reception')+' / CRO'
-          : (sec==='amendment' ? roleLabel('reception')+' / '+roleLabel('planning') : roleLabel('reception')));
+        lock.textContent =
+            (sec==='planning')  ? roleLabel('planning')
+          : (sec==='complaints'||sec==='feedback') ? roleLabel('reception')+' / CRO'
+          : (sec==='amendment') ? roleLabel('reception')+' / '+roleLabel('planning')
+          : roleLabel('reception');
         lock.style.display='';
       } else if(lock){ lock.style.display='none'; }
     }
@@ -2336,6 +2401,7 @@ function fillForm(r){
   svcs.forEach(s=> addService(s.service || s.description || '', s.amount, s.details || {}, s.type || 'upgrade'));
   recalcTotal();
   loadComplaints(r.complaints || []);
+  loadFeedback(r.feedback || []);
   $('formView').querySelectorAll('.fld').forEach(f=>f.classList.remove('invalid'));
   const ro = RO();
   if($('saveDraftBtn')) $('saveDraftBtn').style.display = ro ? 'none' : '';
@@ -2689,6 +2755,16 @@ function renderReports(){
   ];
   const qualBlock=barBlock('Dispatch & service quality', qualRows, {note:`${dispatched.length} dispatched`});
 
+  // Feedback — satisfaction from the CRO's calls
+  const fbs=[]; list.forEach(r=>(r.feedback||[]).forEach(x=>fbs.push(x)));
+  const byRating={}; fbs.forEach(x=>{ const k=x.rating||'Not rated'; byRating[k]=(byRating[k]||0)+1; });
+  const happy=fbs.filter(x=>/^very satisfied$|^satisfied$/i.test(x.rating||'')).length;
+  const rated=fbs.filter(x=>x.rating).length;
+  const fbBlock=barBlock('Client feedback',
+    Object.entries(byRating).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({label:k,value:v,
+      cls:/dissat/i.test(k)?'bad':(/^neutral/i.test(k)?'warn':'good')})),
+    {note: rated?`${Math.round(happy/rated*100)}% satisfied of ${rated} rated`:'no ratings yet'});
+
   // Complaints
   const comps=[]; list.forEach(r=>(r.complaints||[]).forEach(c=>comps.push(c)));
   const byCat={}; comps.forEach(c=>{ const k=c.category||'—'; byCat[k]=(byCat[k]||0)+1; });
@@ -2703,7 +2779,7 @@ function renderReports(){
   const townBlock=barBlock('Top locations', Object.entries(byTown).sort((x,y)=>y[1]-x[1]).slice(0,8).map(([k,v])=>({label:k,value:v})));
 
   $('rpBody').innerHTML = `<div class="rp-grid">
-    ${trend}${coBlock}${spBlock}${provBlock}${planBlock}${typeBlock}${clientBlock}${qualBlock}${compBlock}${townBlock}</div>`;
+    ${trend}${coBlock}${spBlock}${provBlock}${planBlock}${typeBlock}${clientBlock}${qualBlock}${fbBlock}${compBlock}${townBlock}</div>`;
 }
 function exportReportsCSV(){
   const list=rpRecords();
@@ -2725,14 +2801,122 @@ function exportReportsCSV(){
   URL.revokeObjectURL(url);
   toast(`Exported ${rows.length} funeral${rows.length===1?'':'s'}`,'ok');
 }
+/* ---- Complaints received directly ----
+   Most complaints sit on the request they concern. These arrive by telephone
+   before anyone knows which request that is, or concern the company generally.
+   They are stored on their own and can be linked to a request at any time. */
+let DIRECT = [];
+async function loadDirectComplaints(){
+  try{
+    const { data } = await sb.from('complaints').select('*').order('date',{ascending:false});
+    DIRECT = data || [];
+  }catch(e){ DIRECT = []; }   // table not created yet — the rest still works
+}
+function directVisible(){
+  if(currentRole==='admin' || currentRole==='cro' || !currentCompany || currentCompany==='CSS') return DIRECT;
+  return DIRECT.filter(d => d.owner_company===currentCompany || d.provider===currentCompany);
+}
+function openDirectComplaint(){
+  if(!canEditSection('complaints')){ toast('You can’t log complaints','err'); return; }
+  $('dcErr').textContent=''; $('dc_reqNote').textContent='Not linked to a request.';
+  ['dc_search','dc_from','dc_contact','dc_desc','dc_officer','dc_due'].forEach(id=>$(id).value='');
+  $('dc_date').value = ymd(new Date());
+  fillSelect('dc_channel',  typeof COMPLAINT_CHANNELS!=='undefined'?COMPLAINT_CHANNELS:[]);
+  fillSelect('dc_category', typeof COMPLAINT_CATEGORIES!=='undefined'?COMPLAINT_CATEGORIES:[]);
+  fillSelect('dc_severity', typeof COMPLAINT_SEVERITY!=='undefined'?COMPLAINT_SEVERITY:[]);
+  $('dc_severity').value='Medium';
+  // offer the requests this person can see
+  const dl=$('dcReqList');
+  dl.innerHTML = scopeVisible(records).slice(0,400)
+    .map(r=>`<option value="${esc(srrDisplay(r)+' — '+(r.deceasedName||''))}"></option>`).join('');
+  $('dcModal').classList.remove('hidden');
+}
+function closeDirectComplaint(){ $('dcModal').classList.add('hidden'); }
+function dcMatchedRequest(){
+  const v=($('dc_search').value||'').trim(); if(!v) return null;
+  return scopeVisible(records).find(r => (srrDisplay(r)+' — '+(r.deceasedName||''))===v)
+      || scopeVisible(records).find(r => srrDisplay(r).toLowerCase()===v.toLowerCase()) || null;
+}
+function dcPickRequest(){
+  const r=dcMatchedRequest();
+  $('dc_reqNote').textContent = r
+    ? `Linked to ${srrDisplay(r)} — ${r.deceasedName||''} (${r.serviceProvider||'no provider'})`
+    : 'Not linked to a request.';
+}
+async function saveDirectComplaint(){
+  const desc=$('dc_desc').value.trim();
+  if(!desc){ $('dcErr').textContent='Write down what the complaint is.'; return; }
+  const r=dcMatchedRequest();
+  const row={
+    request_id: r ? r.id : null,
+    owner_company: r ? (r.ownerCompany||'') : (currentCompany||''),
+    provider: r ? (r.serviceProvider||'') : '',
+    date: $('dc_date').value || ymd(new Date()),
+    from_name: $('dc_from').value.trim(),
+    contact: $('dc_contact').value.trim(),
+    channel: $('dc_channel').value,
+    category: $('dc_category').value,
+    severity: $('dc_severity').value || 'Medium',
+    description: desc,
+    assigned_to: $('dc_officer').value.trim(),
+    due_date: $('dc_due').value || null,
+    status: 'Open',
+    created_by: (currentUser&&currentUser.email)||''
+  };
+  const btn=$('dcSaveBtn'); btn.disabled=true; btn.textContent='Saving…';
+  try{
+    const { error } = await sb.from('complaints').insert([row]);
+    if(error) throw error;
+    closeDirectComplaint();
+    toast(r?'Complaint logged against '+srrDisplay(r):'Complaint logged','ok');
+    await loadDirectComplaints();
+    renderComplaintsWorklist();
+  }catch(e){
+    $('dcErr').textContent = /relation .* does not exist/i.test(e.message||'')
+      ? 'Complaints table not set up — run complaints_direct.sql.'
+      : (e.message||'Could not save');
+  }finally{ btn.disabled=false; btn.textContent='Log complaint'; }
+}
+function directActions(id){
+  const d=DIRECT.find(x=>x.id===id); if(!d) return;
+  const open=!/resolv|closed/i.test(d.status||'');
+  const msg=[`Complaint received ${d.date||''}`, d.from_name?`From: ${d.from_name}`:'',
+    d.category?`Category: ${d.category}`:'', '', d.description||'', '',
+    open ? 'Mark this complaint resolved?' : 'Reopen this complaint?'].filter(Boolean).join('\n');
+  if(confirm(msg)) setDirectStatus(id, open ? 'Resolved' : 'Open');
+}
+async function setDirectStatus(id, status){
+  try{
+    const patch={status, updated_at:new Date().toISOString()};
+    if(/resolv|closed/i.test(status)) patch.resolved_date=ymd(new Date());
+    await sb.from('complaints').update(patch).eq('id',id);
+    await loadDirectComplaints(); renderComplaintsWorklist();
+    toast('Complaint updated','ok');
+  }catch(e){ toast('Could not update','err'); }
+}
 /* ---------------- Complaints worklist (cross-request) ---------------- */
 const CW = { status:'open', officer:'all', severity:'all', search:'' };
-function showComplaints(){ switchView('complaintsView','tabComplaints'); renderComplaintsWorklist(); }
+async function showComplaints(){ switchView('complaintsView','tabComplaints'); renderComplaintsWorklist(); await loadDirectComplaints(); renderComplaintsWorklist(); }
 function allComplaints(){
   const out=[];
   scopeVisible(records).forEach(r=>{
-    (r.complaints||[]).forEach((c,i)=> out.push({ ...c, _rid:r.id, _idx:i,
+    (r.complaints||[]).forEach((c,i)=> out.push({ ...c, _rid:r.id, _idx:i, _direct:false,
       _srr:srrDisplay(r), _deceased:r.deceasedName||'', _provider:r.serviceProvider||r.ownerCompany||'' }));
+  });
+  // complaints received directly, whether or not they name a request
+  directVisible().forEach(d=>{
+    const req = d.request_id ? records.find(r=>r.id===d.request_id) : null;
+    out.push({
+      _direct:true, _id:d.id, _rid:d.request_id||'', _idx:-1,
+      _srr: req ? srrDisplay(req) : 'Direct',
+      _deceased: req ? (req.deceasedName||'') : (d.from_name||''),
+      _provider: d.provider || d.owner_company || '',
+      date:d.date||'', from:d.from_name||'', contact:d.contact||'', channel:d.channel||'',
+      category:d.category||'', severity:d.severity||'', description:d.description||'',
+      assignedTo:d.assigned_to||'', dueDate:d.due_date||'', resolvedDate:d.resolved_date||'',
+      action:d.action||'', status:d.status||'Open',
+      files:(d.data&&d.data.files)||[], remedyType:(d.data&&d.data.remedyType)||''
+    });
   });
   return out;
 }
@@ -2791,9 +2975,12 @@ function renderComplaintsWorklist(){
       <th>Officer</th><th>Remedy</th><th>Severity</th><th>Age</th><th>Status</th></tr></thead><tbody>${
     rows.map(c=>{
       const age=cmpAge(c), late = c.dueDate && c.dueDate < ymd(new Date()) && cmpIsOpen(c);
-      return `<tr onclick="openRecord('${c._rid}')" title="Open this service request">
+      const act = c._direct
+        ? (c._rid ? `openRecord('${c._rid}')` : `directActions('${c._id}')`)
+        : `openRecord('${c._rid}')`;
+      return `<tr onclick="${act}" title="${c._direct&&!c._rid?'Received directly — no linked request':'Open this service request'}">
         <td>${esc(c.date||'—')}</td>
-        <td><span class="name">${esc(c._srr)}</span></td>
+        <td><span class="name">${esc(c._srr)}</span>${c._direct?'<span class="cf-count" title="Received directly">direct</span>':''}</td>
         <td>${esc(c._deceased||'—')}</td>
         <td>${esc(c.category||'—')}</td>
         <td class="cw-desc">${esc((c.description||'').slice(0,90))}${(c.description||'').length>90?'…':''}${(c.files&&c.files.length)?`<span class="cf-count" title="${c.files.length} attachment(s)">📎 ${c.files.length}</span>`:''}</td>
@@ -3069,6 +3256,101 @@ async function sendComplaintReport(idx){
   if(wantsEmail()) openMail(to, subject, body);
   toast(to?('Closure report sent to '+to):'Closure report ready to send','ok');
 }
+/* ---------------- Feedback ----------------
+   The CRO also makes courtesy and satisfaction calls that are not complaints.
+   Where one turns out to reveal a problem, it can be raised as a complaint
+   without re-typing everything. */
+function fbCls(rating){
+  if(/very dissat|dissat/i.test(rating||'')) return 'open';
+  if(/neutral/i.test(rating||'')) return 'wip';
+  if(/satisf/i.test(rating||'')) return 'ok';
+  return '';
+}
+function addFeedback(fb){
+  fb = fb || {};
+  const card=document.createElement('div');
+  card.className='cmp-card fb-card';
+  card.innerHTML = `
+    <div class="cmp-head">
+      <span class="cmp-badge ${fbCls(fb.rating)}">${esc(fb.rating||'Feedback')}</span>
+      <select class="fb-type">${cmpOpts(typeof FEEDBACK_TYPES!=='undefined'?FEEDBACK_TYPES:[], fb.type||'Satisfaction call')}</select>
+      <select class="fb-rating" onchange="onFeedbackRating(this)">${cmpOpts(typeof FEEDBACK_RATING!=='undefined'?FEEDBACK_RATING:[], fb.rating)}</select>
+      <button class="act fb-raise" title="Raise this as a complaint" onclick="raiseFeedbackAsComplaint(this)">Raise as complaint</button>
+      <button class="rm" title="Remove" onclick="this.closest('.cmp-card').remove(); updateFeedbackCount()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="cmp-grid">
+      <div class="df"><span class="dl">Date</span><input class="fb-date" type="date" value="${esc(fb.date||ymd(new Date()))}"></div>
+      <div class="df"><span class="dl">Spoke to</span><input class="fb-from" placeholder="Family member or contact" value="${esc(fb.from||'')}"></div>
+      <div class="df"><span class="dl">Contact</span><input class="fb-contact" placeholder="Phone / email" value="${esc(fb.contact||'')}"></div>
+      <div class="df"><span class="dl">Channel</span><select class="fb-channel">${cmpOpts(typeof COMPLAINT_CHANNELS!=='undefined'?COMPLAINT_CHANNELS:[], fb.channel||'Phone')}</select></div>
+      <div class="df"><span class="dl">Officer</span><input class="fb-officer" list="croList" placeholder="Who made the call" value="${esc(fb.officer||'')}"></div>
+      <div class="df"><span class="dl">Follow-up needed</span><select class="fb-follow">${cmpOpts(['No','Yes'], fb.followUp||'No')}</select></div>
+      <div class="df df-full"><span class="dl">What they said</span><textarea class="fb-notes" rows="2" placeholder="Their comments in their own words">${esc(fb.notes||'')}</textarea></div>
+      <div class="df df-full"><span class="dl">Action or observation</span><textarea class="fb-action" rows="2" placeholder="Anything we should do or note">${esc(fb.action||'')}</textarea></div>
+    </div>`;
+  $('fbRows').appendChild(card);
+  updateFeedbackCount();
+}
+function onFeedbackRating(sel){
+  const card=sel.closest('.cmp-card');
+  const b=card.querySelector('.cmp-badge');
+  b.textContent=sel.value||'Feedback'; b.className='cmp-badge '+fbCls(sel.value);
+  updateFeedbackCount();
+}
+function collectFeedback(){
+  const out=[];
+  document.querySelectorAll('#fbRows .fb-card').forEach(card=>{
+    const g=s=>{ const el=card.querySelector(s); return el ? el.value.trim() : ''; };
+    const rec={ date:g('.fb-date'), type:g('.fb-type'), rating:g('.fb-rating'),
+      from:g('.fb-from'), contact:g('.fb-contact'), channel:g('.fb-channel'),
+      officer:g('.fb-officer'), followUp:g('.fb-follow'),
+      notes:g('.fb-notes'), action:g('.fb-action') };
+    if(!rec.notes && !rec.from && !rec.rating) return;   // skip blank rows
+    out.push(rec);
+  });
+  return out;
+}
+function loadFeedback(list){
+  $('fbRows').innerHTML='';
+  (list||[]).forEach(fb=>addFeedback(fb));
+  updateFeedbackCount();
+}
+function updateFeedbackCount(){
+  const el=$('fbCount'); if(!el) return;
+  const cards=document.querySelectorAll('#fbRows .fb-card');
+  let poor=0, follow=0;
+  cards.forEach(c=>{
+    const r=c.querySelector('.fb-rating'); if(r && /dissat/i.test(r.value||'')) poor++;
+    const f=c.querySelector('.fb-follow'); if(f && f.value==='Yes') follow++;
+  });
+  const bits=[];
+  if(cards.length) bits.push(`${cards.length} recorded`);
+  if(poor) bits.push(`${poor} dissatisfied`);
+  if(follow) bits.push(`${follow} to follow up`);
+  el.textContent = bits.join(' · ');
+  el.className = 'cmp-count' + ((poor||follow) ? ' has-open' : '');
+  document.querySelectorAll('#fbRows .fb-raise').forEach(b=>{ b.style.display = canEditSection('complaints') ? '' : 'none'; });
+}
+/* Carry a piece of feedback over into the complaints section. */
+function raiseFeedbackAsComplaint(btn){
+  if(!canEditSection('complaints')){ toast('You can’t log complaints','err'); return; }
+  const card=btn.closest('.cmp-card');
+  const g=s=>{ const el=card.querySelector(s); return el ? el.value.trim() : ''; };
+  if(!g('.fb-notes')){ toast('Write down what they said first','err'); return; }
+  if(!confirm('Raise this feedback as a complaint?\n\nThe details are copied across. The feedback record stays as it is.')) return;
+  addComplaint({
+    date:g('.fb-date'), from:g('.fb-from'), contact:g('.fb-contact'), channel:g('.fb-channel'),
+    category:'', severity:'Medium', description:g('.fb-notes'),
+    assignedTo:g('.fb-officer'), status:'Open'
+  });
+  const f=card.querySelector('.fb-follow'); if(f) f.value='Yes';
+  updateFeedbackCount();
+  toast('Added to complaints — set the category and save','ok');
+  const el=document.querySelector('.section[data-sec="complaints"]');
+  if(el) el.scrollIntoView({behavior:'smooth', block:'start'});
+}
 function addComplaint(c){
   c = c || {};
   const card = document.createElement('div');
@@ -3304,6 +3586,7 @@ async function save(status){
   }
   if(canEditSection('planning')) rec.transport = collectTransport();
   if(canEditSection('complaints') || canTouchRemedy(base)) rec.complaints = collectComplaints();
+  if(canEditSection('feedback')) rec.feedback = collectFeedback();
   if(canEditSection('customer')){
     rec.services = collectServices();
     rec.total = recalcTotal();
@@ -4883,6 +5166,7 @@ async function onSignedIn(user){
   PROFILE_MODULES = (prof && prof.modules) ? String(prof.modules).split(',').map(s=>s.trim()).filter(Boolean) : [];
   await loadSettings();
   await loadCompanyContacts();
+  await loadDirectComplaints();
   await loadStaffList();
   loadAllEditableLists();
   applySettings();
