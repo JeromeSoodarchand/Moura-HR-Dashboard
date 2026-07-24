@@ -26153,7 +26153,7 @@ async function submitEditLeave(reqId){
   if(!from||!to){ toast('Please fill all required fields.','error'); return; }
   if(new Date(to) < new Date(from)){ toast('End date must be after start date.','error'); return; }
   // Recalculate days
-  const days = calcWorkingDays(from, to);
+  const days = countWorkingDays(from, to);
   if(days <= 0){ toast('No working days in selected range.','error'); return; }
   // Reset approval — editing means it needs re-approval
   req.type       = type;
