@@ -12360,6 +12360,10 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     </button>
 
     <div class="sb-section" id="sb-sec-reports">Reports</div>
+    <button class="nav-tab" data-perm="view_analytics" onclick="showPage('hrreports',this)">
+      <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
+      <span class="tab-label">HR Reports</span>
+    </button>
     <button class="nav-tab" data-perm="view_analytics" onclick="showPage('payroll',this)">
       <div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div>
       <span class="tab-label">Payroll</span>
@@ -12629,6 +12633,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         <div class="ph-title">Leave Management</div>
         <div class="ph-actions">
           <button class="btn" onclick="exportLeaveCSV()">⬇ Export</button>
+          <button class="btn btn-blue ahr-btn" onclick="openLeaveSummaryReport()">📊 Summary Report</button>
           <button class="btn btn-primary ahr-btn" onclick="openLeaveRequestModal()">+ Request Leave</button>
         </div>
       </div>
@@ -12844,6 +12849,48 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     </div>
 
     <!-- PAYROLL -->
+    <!-- HR REPORTS -->
+    <div class="page" id="page-hrreports">
+      <div class="ph">
+        <div class="ph-title">📋 HR Reports</div>
+      </div>
+
+      <!-- Report Tabs -->
+      <div class="tbb-wrap" style="margin-bottom:16px">
+        <button class="tbb active" onclick="setHRReportTab('exception',this)">⚠ Exception</button>
+        <button class="tbb" onclick="setHRReportTab('attendance',this)">📅 Attendance Summary</button>
+        <button class="tbb" onclick="setHRReportTab('absenteeism',this)">❌ Absenteeism</button>
+        <button class="tbb" onclick="setHRReportTab('entitlement',this)">📊 Leave Entitlement</button>
+        <button class="tbb" onclick="setHRReportTab('overtime',this)">⏱ Overtime Summary</button>
+        <button class="tbb" onclick="setHRReportTab('lateness',this)">🕐 Lateness</button>
+        <button class="tbb" onclick="setHRReportTab('headcount',this)">👥 Headcount</button>
+        <button class="tbb" onclick="setHRReportTab('anniversary',this)">🎂 Birthdays & Anniversaries</button>
+      </div>
+
+      <!-- Shared Filters -->
+      <div class="card" style="margin-bottom:14px">
+        <div class="cb" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div class="fg" style="margin:0"><label class="fl" style="margin-bottom:3px">From</label>
+            <input class="fi" id="hrr-from" type="date" style="width:130px">
+          </div>
+          <div class="fg" style="margin:0"><label class="fl" style="margin-bottom:3px">To</label>
+            <input class="fi" id="hrr-to" type="date" style="width:130px">
+          </div>
+          <div class="fg" style="margin:0"><label class="fl" style="margin-bottom:3px">Department</label>
+            <select class="fi" id="hrr-dept" style="width:140px">
+              <option value="">All departments</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="generateHRReport()">Generate Report</button>
+          <button class="btn" id="hrr-export-csv" style="display:none" onclick="exportHRReportCSV()">⬇ CSV</button>
+          <button class="btn" id="hrr-export-docx" style="display:none" onclick="exportHRReportDocx()">⬇ Word</button>
+        </div>
+      </div>
+
+      <!-- Report Output -->
+      <div id="hrr-output"></div>
+    </div>
+
     <div class="page" id="page-payroll">
       <div class="ph">
         <div class="ph-title">Payroll</div>
@@ -15404,7 +15451,7 @@ function showPage(id,el){
   if(mn) mn.classList.add('active');
   const heading=document.getElementById('page-heading');
   if(heading)heading.textContent=PAGE_TITLES[id]||id;
-  const loaders={dashboard:loadAndRenderDashboard,employees:loadAndRenderEmployees,onboarding:loadAndRenderOnboarding,events:loadAndRenderEvents,training:loadAndRenderTraining,overtime:renderOvertime,offboarding:loadAndRenderOffboarding,analytics:loadAndRenderAnalytics,usermgmt:loadAndRenderUserMgmt,settings:()=>{renderSettings();renderJobTitles();renderCustomEventTypes();populateKioskLeaveEmpSelect();renderLeaveTypes();renderChecklistDefaults(getSettings().checklistDefaults||[]);renderShifts();}};
+  const loaders={dashboard:loadAndRenderDashboard,employees:loadAndRenderEmployees,onboarding:loadAndRenderOnboarding,events:loadAndRenderEvents,training:loadAndRenderTraining,hrreports:renderHRReports,overtime:renderOvertime,offboarding:loadAndRenderOffboarding,analytics:loadAndRenderAnalytics,usermgmt:loadAndRenderUserMgmt,settings:()=>{renderSettings();renderJobTitles();renderCustomEventTypes();populateKioskLeaveEmpSelect();renderLeaveTypes();renderChecklistDefaults(getSettings().checklistDefaults||[]);renderShifts();}};
   const loader=loaders[id];
   if(loader) loader();
 }
@@ -15611,6 +15658,415 @@ function renderEvents(){
 function setEVF(f,el){evf=f;document.querySelectorAll('#evf .fb').forEach(b=>b.classList.remove('active'));el.classList.add('active');renderEvents();}
 
 // ─── TRAINING ─────────────────────────────────────────────────────────────────
+
+
+// ═══════════════════════════════════════════════════════════════════
+// HR REPORTS MODULE
+// ═══════════════════════════════════════════════════════════════════
+let _hrrTab = 'exception';
+let _hrrData = null;
+
+async function renderHRReports(){
+  // Set default dates (current month)
+  const today = todayStr();
+  const firstOfMonth = today.slice(0,7)+'-01';
+  const fromEl = document.getElementById('hrr-from');
+  const toEl   = document.getElementById('hrr-to');
+  const deptEl = document.getElementById('hrr-dept');
+  if(fromEl && !fromEl.value) fromEl.value = firstOfMonth;
+  if(toEl && !toEl.value) toEl.value = today;
+  if(deptEl){
+    deptEl.innerHTML = '<option value="">All departments</option>' +
+      getDepts().map(d=>`<option>${d}</option>`).join('');
+  }
+  // Auto-generate on load
+  generateHRReport();
+}
+
+function setHRReportTab(tab, el){
+  _hrrTab = tab;
+  document.querySelectorAll('#page-hrreports .tbb').forEach(b=>b.classList.remove('active'));
+  if(el) el.classList.add('active');
+  generateHRReport();
+}
+
+function generateHRReport(){
+  const from = document.getElementById('hrr-from')?.value||'';
+  const to   = document.getElementById('hrr-to')?.value||'';
+  const dept = document.getElementById('hrr-dept')?.value||'';
+  const out  = document.getElementById('hrr-output');
+  if(!out) return;
+  if(!from||!to){ out.innerHTML='<div class="card"><div class="cb" style="color:var(--text3);text-align:center;padding:24px">Please select a date range.</div></div>'; return; }
+
+  const emps = getScopedEmps().filter(e=>e.status!=='offboarded'&&(!dept||e.dept===dept));
+  const att  = (_attendance||[]).filter(r=>r.date>=from&&r.date<=to);
+  const lrs  = (_leaveRequests||[]).filter(r=>r.fromDate<=to&&r.toDate>=from&&(!dept||gE(r.empId)?.dept===dept));
+  const ots  = (_otRequests||[]).filter(r=>r.date>=from&&r.date<=to&&(!dept||gE(r.empId)?.dept===dept));
+
+  document.getElementById('hrr-export-csv').style.display='inline-block';
+  document.getElementById('hrr-export-docx').style.display='inline-block';
+
+  switch(_hrrTab){
+    case 'exception':    out.innerHTML = _reportException(emps,att,from,to); break;
+    case 'attendance':   out.innerHTML = _reportAttendance(emps,att,from,to); break;
+    case 'absenteeism':  out.innerHTML = _reportAbsenteeism(emps,att,lrs,from,to); break;
+    case 'entitlement':  out.innerHTML = _reportEntitlement(emps); break;
+    case 'overtime':     out.innerHTML = _reportOvertime(emps,ots,from,to); break;
+    case 'lateness':     out.innerHTML = _reportLateness(emps,att,from,to); break;
+    case 'headcount':    out.innerHTML = _reportHeadcount(emps); break;
+    case 'anniversary':  out.innerHTML = _reportAnniversary(emps,from,to); break;
+  }
+  _hrrData = {tab:_hrrTab, from, to, dept, emps, att, lrs, ots};
+}
+
+// ── 1. EXCEPTION REPORT ─────────────────────────────────────────────
+function _reportException(emps,att,from,to){
+  const rows = [];
+  att.forEach(r=>{
+    const emp = gE(r.empId);
+    if(!emp) return;
+    if(r.location==='Leave') return;
+    if(!r.clockOut) rows.push({emp,date:r.date,type:'Missing Clock-out',detail:`Clocked in ${fmtTime(r.clockIn)} — no clock-out recorded`,severity:'high'});
+    else if((r.durationMinutes||0)<240) rows.push({emp,date:r.date,type:'Short Shift',detail:`Only ${fmtDuration(r.durationMinutes)} worked`,severity:'medium'});
+    else {
+      const shift=getEmpShift(emp);
+      const [lh,lm]=shift.startTime.split(':').map(Number);
+      const ci=new Date(r.clockIn);
+      if(ci.getHours()*60+ci.getMinutes()>lh*60+lm+30)
+        rows.push({emp,date:r.date,type:'Late Arrival',detail:`Arrived ${fmtTime(r.clockIn)} (shift starts ${shift.startTime})`,severity:'low'});
+    }
+  });
+  if(!rows.length) return _emptyReport('No exceptions found for this period. ✓');
+  const sevColor={high:'#FEE2E2',medium:'#FEF3C7',low:'#EFF6FF'};
+  const sevText={high:'🔴 High',medium:'🟡 Medium',low:'🔵 Low'};
+  return `<div class="card"><div class="cb">
+    <div style="font-size:13px;color:var(--text3);margin-bottom:12px">${rows.length} exception(s) found</div>
+    <table class="dt" style="font-size:12.5px"><thead><tr>
+      <th>Employee</th><th>Dept</th><th>Date</th><th>Exception Type</th><th>Detail</th><th>Severity</th>
+    </tr></thead><tbody>${rows.sort((a,b)=>b.date.localeCompare(a.date)).map(r=>`<tr style="background:${sevColor[r.severity]}22">
+      <td style="font-weight:600">${r.emp.name}</td><td>${r.emp.dept}</td>
+      <td>${fDate(r.date)}</td><td>${r.type}</td><td style="color:var(--text3)">${r.detail}</td>
+      <td>${sevText[r.severity]}</td>
+    </tr>`).join('')}</tbody></table>
+  </div></div>`;
+}
+
+// ── 2. ATTENDANCE SUMMARY ───────────────────────────────────────────
+function _reportAttendance(emps,att,from,to){
+  const rows = emps.map(emp=>{
+    const empAtt = att.filter(r=>String(r.empId)===String(emp.id)&&r.location!=='Leave'&&r.location!=='Permission');
+    const present = empAtt.filter(r=>r.clockOut).length;
+    const totalMins = empAtt.filter(r=>r.clockOut).reduce((s,r)=>s+(parseFloat(r.durationMinutes)||0),0);
+    const avgMins = present>0?Math.round(totalMins/present):0;
+    const onsite = empAtt.filter(r=>!r.clockOut).length;
+    const approved = (_leaveRequests||[]).filter(r=>String(r.empId)===String(emp.id)&&r.status==='approved'&&r.fromDate<=to&&r.toDate>=from);
+    const leaveDays = approved.reduce((s,r)=>s+parseFloat(r.days||0),0);
+    return {emp,present,totalMins,avgMins,onsite,leaveDays};
+  });
+  return `<div class="card"><div class="cb">
+    <table class="dt" style="font-size:12.5px"><thead><tr>
+      <th>Employee</th><th>Dept</th><th>Shift</th><th>Days Present</th><th>Total Hours</th><th>Avg Daily Hours</th><th>Leave Days</th><th>Missing Clock-out</th>
+    </tr></thead><tbody>${rows.map(r=>`<tr>
+      <td style="font-weight:600">${r.emp.name}</td><td>${r.emp.dept}</td>
+      <td style="font-size:11px">${r.emp.shiftName||'Day'}</td>
+      <td style="text-align:center;font-weight:600;color:var(--navy)">${r.present}</td>
+      <td style="text-align:center">${fmtDuration(r.totalMins)}</td>
+      <td style="text-align:center;color:${r.avgMins<450?'#DC2626':'#059669'}">${fmtDuration(r.avgMins)}</td>
+      <td style="text-align:center;color:#D97706">${r.leaveDays>0?r.leaveDays+'d':'—'}</td>
+      <td style="text-align:center;color:${r.onsite>0?'#DC2626':'#059669'}">${r.onsite>0?r.onsite:'✓'}</td>
+    </tr>`).join('')}</tbody></table>
+  </div></div>`;
+}
+
+// ── 3. ABSENTEEISM REPORT ───────────────────────────────────────────
+function _reportAbsenteeism(emps,att,lrs,from,to){
+  // Get all working days in range
+  const workDays = [];
+  let cur = new Date(from+'T00:00:00');
+  const end = new Date(to+'T00:00:00');
+  while(cur<=end){
+    const dow=cur.getDay();
+    if(dow!==0&&dow!==6){
+      const ds=`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
+      if(!isDayHoliday(ds)) workDays.push(ds);
+    }
+    cur.setDate(cur.getDate()+1);
+  }
+  const rows = emps.map(emp=>{
+    const empAttDates = new Set(att.filter(r=>String(r.empId)===String(emp.id)).map(r=>r.date));
+    const empLeaveDates = new Set();
+    lrs.filter(r=>String(r.empId)===String(emp.id)&&r.status==='approved').forEach(r=>{
+      let d=new Date(r.fromDate+'T00:00:00');
+      const e=new Date(r.toDate+'T00:00:00');
+      while(d<=e){
+        empLeaveDates.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+        d.setDate(d.getDate()+1);
+      }
+    });
+    const absentDays = workDays.filter(d=>!empAttDates.has(d)&&!empLeaveDates.has(d));
+    return {emp,absentDays,total:absentDays.length};
+  }).filter(r=>r.total>0).sort((a,b)=>b.total-a.total);
+
+  if(!rows.length) return _emptyReport('No unexplained absences found. ✓');
+  return `<div class="card"><div class="cb">
+    <div style="font-size:13px;color:var(--text3);margin-bottom:12px">${rows.length} employee(s) with unexplained absences (${workDays.length} working days in period)</div>
+    <table class="dt" style="font-size:12.5px"><thead><tr>
+      <th>Employee</th><th>Dept</th><th>Absent Days</th><th>Dates</th>
+    </tr></thead><tbody>${rows.map(r=>`<tr>
+      <td style="font-weight:600">${r.emp.name}</td><td>${r.emp.dept}</td>
+      <td style="text-align:center;font-weight:700;color:#DC2626">${r.total}</td>
+      <td style="font-size:11px;color:var(--text3)">${r.absentDays.map(d=>fDate(d)).join(', ')}</td>
+    </tr>`).join('')}</tbody></table>
+  </div></div>`;
+}
+
+// ── 4. LEAVE ENTITLEMENT ────────────────────────────────────────────
+function _reportEntitlement(emps){
+  const rows = emps.map(emp=>{
+    const bal = _leaveBalances[String(emp.id)]||{};
+    return {emp,bal};
+  });
+  return `<div class="card"><div class="cb">
+    <table class="dt" style="font-size:12.5px"><thead><tr>
+      <th>Employee</th><th>Dept</th>
+      <th>Annual<br><small>Rem / Total</small></th>
+      <th>Sick<br><small>Rem / Total</small></th>
+      <th>Family Med<br><small>Rem / Total</small></th>
+      <th>Bank Sick</th>
+      <th>Status</th>
+    </tr></thead><tbody>${rows.map(({emp,bal})=>{
+      const remAnn=parseFloat(bal.employer_local||bal.annual||22);
+      const remSick=parseFloat(bal.sick||15);
+      const remFam=parseFloat(bal.family_medical||5);
+      const bankSick=parseFloat(bal.bank_sick||0);
+      const annPct=Math.round((1-remAnn/22)*100);
+      const sickPct=Math.round((1-remSick/15)*100);
+      const color=(pct)=>pct>=80?'#DC2626':pct>=50?'#D97706':'#059669';
+      return `<tr>
+        <td style="font-weight:600">${emp.name}</td><td>${emp.dept}</td>
+        <td style="text-align:center"><span style="color:${color(annPct)};font-weight:600">${remAnn}</span> / 22</td>
+        <td style="text-align:center"><span style="color:${color(sickPct)};font-weight:600">${remSick}</span> / 15</td>
+        <td style="text-align:center"><span style="font-weight:600">${remFam}</span> / 5</td>
+        <td style="text-align:center">${bankSick>0?`<span style="color:#7C3AED;font-weight:600">${bankSick}d</span>`:'—'}</td>
+        <td>${remAnn<=2?'🔴 Low annual':remSick<=2?'🟡 Low sick':'✓ OK'}</td>
+      </tr>`;
+    }).join('')}</tbody></table>
+  </div></div>`;
+}
+
+// ── 5. OVERTIME SUMMARY ─────────────────────────────────────────────
+function _reportOvertime(emps,ots,from,to){
+  if(!ots.length) return _emptyReport('No overtime requests in this period.');
+  const rows = emps.map(emp=>{
+    const empOTs = ots.filter(r=>String(r.empId)===String(emp.id));
+    const approved = empOTs.filter(r=>r.status==='approved');
+    const pending  = empOTs.filter(r=>r.status==='pending');
+    const paidHrs  = approved.filter(r=>r.compensationType==='paid').reduce((s,r)=>s+r.otHours,0);
+    const toilHrs  = approved.filter(r=>r.compensationType==='toil').reduce((s,r)=>s+r.otHours,0);
+    return {emp,approved:approved.length,pending:pending.length,paidHrs,toilHrs,total:paidHrs+toilHrs};
+  }).filter(r=>r.approved>0||r.pending>0).sort((a,b)=>b.total-a.total);
+
+  if(!rows.length) return _emptyReport('No overtime records for this period.');
+  const grandTotal = rows.reduce((s,r)=>s+r.total,0);
+  return `<div class="card"><div class="cb">
+    <div style="display:flex;gap:16px;margin-bottom:16px">
+      <div class="att-card" style="flex:1"><div class="att-card-accent" style="background:var(--navy)"></div>
+        <div class="att-card-label">Total OT Hours</div><div class="att-card-value">${grandTotal.toFixed(1)}h</div></div>
+      <div class="att-card" style="flex:1"><div class="att-card-accent" style="background:#059669"></div>
+        <div class="att-card-label">Paid OT</div><div class="att-card-value">${rows.reduce((s,r)=>s+r.paidHrs,0).toFixed(1)}h</div></div>
+      <div class="att-card" style="flex:1"><div class="att-card-accent" style="background:#7C3AED"></div>
+        <div class="att-card-label">TOIL</div><div class="att-card-value">${rows.reduce((s,r)=>s+r.toilHrs,0).toFixed(1)}h</div></div>
+    </div>
+    <table class="dt" style="font-size:12.5px"><thead><tr>
+      <th>Employee</th><th>Dept</th><th>Approved Sessions</th><th>Paid OT Hours</th><th>TOIL Hours</th><th>Total Hours</th><th>Pending</th>
+    </tr></thead><tbody>${rows.map(r=>`<tr>
+      <td style="font-weight:600">${r.emp.name}</td><td>${r.emp.dept}</td>
+      <td style="text-align:center">${r.approved}</td>
+      <td style="text-align:center;color:#059669;font-weight:600">${r.paidHrs>0?r.paidHrs.toFixed(1)+'h':'—'}</td>
+      <td style="text-align:center;color:#7C3AED;font-weight:600">${r.toilHrs>0?r.toilHrs.toFixed(1)+'h':'—'}</td>
+      <td style="text-align:center;font-weight:700;color:var(--navy)">${r.total.toFixed(1)}h</td>
+      <td style="text-align:center;color:#D97706">${r.pending>0?r.pending:'—'}</td>
+    </tr>`).join('')}</tbody></table>
+  </div></div>`;
+}
+
+// ── 6. LATENESS REPORT ──────────────────────────────────────────────
+function _reportLateness(emps,att,from,to){
+  const lateRecs = [];
+  att.filter(r=>r.clockIn&&r.location!=='Leave'&&r.location!=='Permission').forEach(r=>{
+    const emp=gE(r.empId);
+    if(!emp) return;
+    const shift=getEmpShift(emp);
+    const [lh,lm]=shift.startTime.split(':').map(Number);
+    const ci=new Date(r.clockIn);
+    const ciMins=ci.getHours()*60+ci.getMinutes();
+    const lateMins=ciMins-(lh*60+lm);
+    if(lateMins>30) lateRecs.push({emp,date:r.date,clockIn:fmtTime(r.clockIn),lateMins:lateMins-30,shiftStart:shift.startTime});
+  });
+
+  if(!lateRecs.length) return _emptyReport('No late arrivals in this period. ✓');
+
+  const byEmp = {};
+  lateRecs.forEach(r=>{
+    if(!byEmp[r.emp.id]) byEmp[r.emp.id]={emp:r.emp,count:0,totalMins:0,max:0,instances:[]};
+    byEmp[r.emp.id].count++;
+    byEmp[r.emp.id].totalMins+=r.lateMins;
+    byEmp[r.emp.id].max=Math.max(byEmp[r.emp.id].max,r.lateMins);
+    byEmp[r.emp.id].instances.push(r);
+  });
+  const rows=Object.values(byEmp).sort((a,b)=>b.count-a.count);
+  const sevColor=(c)=>c>=5?'#FEE2E2':c>=3?'#FEF3C7':'#F0FDF4';
+
+  return `<div class="card"><div class="cb">
+    <div style="font-size:13px;color:var(--text3);margin-bottom:12px">${lateRecs.length} late arrivals across ${rows.length} employee(s)</div>
+    <table class="dt" style="font-size:12.5px"><thead><tr>
+      <th>Employee</th><th>Dept</th><th>Shift</th><th>Late Days</th><th>Avg Late</th><th>Max Late</th><th>Severity</th>
+    </tr></thead><tbody>${rows.map(r=>`<tr style="background:${sevColor(r.count)}22">
+      <td style="font-weight:600">${r.emp.name}</td><td>${r.emp.dept}</td>
+      <td style="font-size:11px">${r.instances[0]?.shiftStart||'08:30'}</td>
+      <td style="text-align:center;font-weight:700;color:#DC2626">${r.count}</td>
+      <td style="text-align:center">${Math.round(r.totalMins/r.count)} min</td>
+      <td style="text-align:center">${r.max} min</td>
+      <td>${r.count>=5?'🔴 High':r.count>=3?'🟡 Medium':'🟢 Low'}</td>
+    </tr>`).join('')}</tbody></table>
+  </div></div>`;
+}
+
+// ── 7. HEADCOUNT REPORT ─────────────────────────────────────────────
+function _reportHeadcount(emps){
+  const byDept={},byShift={},byTier={},byStatus={};
+  emps.forEach(e=>{
+    byDept[e.dept||'Unknown']=(byDept[e.dept||'Unknown']||0)+1;
+    byShift[e.shiftName||'Day']=(byShift[e.shiftName||'Day']||0)+1;
+    const tier=e.clockMode==='hod'?'Tier 3 — HOD':e.clockMode==='qr'?'Tier 2 — QR':'Tier 1 — Kiosk';
+    byTier[tier]=(byTier[tier]||0)+1;
+    byStatus[e.status||'active']=(byStatus[e.status||'active']||0)+1;
+  });
+  const section=(title,obj)=>`
+    <div style="margin-bottom:20px">
+      <div style="font-weight:700;font-size:13px;color:var(--navy);margin-bottom:8px">${title}</div>
+      <table class="dt" style="font-size:12.5px"><thead><tr><th>Category</th><th>Count</th><th>%</th></tr></thead>
+      <tbody>${Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr>
+        <td>${k}</td>
+        <td style="text-align:center;font-weight:700;color:var(--navy)">${v}</td>
+        <td style="text-align:center;color:var(--text3)">${Math.round(v/emps.length*100)}%</td>
+      </tr>`).join('')}</tbody></table>
+    </div>`;
+  return `<div class="card"><div class="cb">
+    <div style="font-size:20px;font-weight:700;color:var(--navy);margin-bottom:20px">Total Headcount: ${emps.length}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div>${section('By Department',byDept)}${section('By Status',byStatus)}</div>
+      <div>${section('By Shift',byShift)}${section('By Tier',byTier)}</div>
+    </div>
+  </div></div>`;
+}
+
+// ── 8. BIRTHDAYS & ANNIVERSARIES ────────────────────────────────────
+function _reportAnniversary(emps,from,to){
+  const fromMonth=parseInt(from.split('-')[1]);
+  const toMonth=parseInt(to.split('-')[1]);
+  const fromDay=parseInt(from.split('-')[2]);
+  const toDay=parseInt(to.split('-')[2]);
+  const rows=[];
+  emps.forEach(emp=>{
+    if(emp.start){
+      const [sy,sm,sd]=emp.start.split('-').map(Number);
+      const years=new Date().getFullYear()-sy;
+      const inRange=(sm>fromMonth||(sm===fromMonth&&sd>=fromDay))&&(sm<toMonth||(sm===toMonth&&sd<=toDay));
+      if(inRange&&years>0) rows.push({emp,date:emp.start,type:'🎉 Work Anniversary',detail:`${years} year${years!==1?'s':''} at ${fDate(emp.start)}`});
+    }
+  });
+  rows.sort((a,b)=>a.date.slice(5).localeCompare(b.date.slice(5)));
+  if(!rows.length) return _emptyReport('No anniversaries in this period.');
+  return `<div class="card"><div class="cb">
+    <table class="dt" style="font-size:12.5px"><thead><tr>
+      <th>Employee</th><th>Dept</th><th>Event</th><th>Anniversary Date</th><th>Detail</th>
+    </tr></thead><tbody>${rows.map(r=>`<tr>
+      <td style="font-weight:600">${r.emp.name}</td><td>${r.emp.dept}</td>
+      <td>${r.type}</td>
+      <td>${fDate(r.date)}</td>
+      <td style="color:var(--text3)">${r.detail}</td>
+    </tr>`).join('')}</tbody></table>
+  </div></div>`;
+}
+
+function _emptyReport(msg){
+  return `<div class="card"><div class="cb" style="text-align:center;padding:40px;color:var(--text3);font-size:14px">${msg}</div></div>`;
+}
+
+function exportHRReportCSV(){
+  if(!_hrrData) return;
+  const {tab,from,to,emps,att,lrs,ots} = _hrrData;
+  let rows=[], headers=[];
+  if(tab==='exception'){
+    headers=['Employee','Dept','Date','Type','Detail','Severity'];
+    att.forEach(r=>{
+      const emp=gE(r.empId); if(!emp||r.location==='Leave') return;
+      if(!r.clockOut) rows.push([emp.name,emp.dept,r.date,'Missing Clock-out','No clock-out recorded','High']);
+      else if((r.durationMinutes||0)<240) rows.push([emp.name,emp.dept,r.date,'Short Shift',fmtDuration(r.durationMinutes)+' worked','Medium']);
+    });
+  } else if(tab==='attendance'){
+    headers=['Employee','Dept','Shift','Days Present','Total Hours','Avg Daily Hours','Leave Days'];
+    emps.forEach(emp=>{
+      const empAtt=att.filter(r=>String(r.empId)===String(emp.id)&&r.location!=='Leave');
+      const present=empAtt.filter(r=>r.clockOut).length;
+      const totalMins=empAtt.reduce((s,r)=>s+(parseFloat(r.durationMinutes)||0),0);
+      rows.push([emp.name,emp.dept,emp.shiftName||'Day',present,fmtDuration(totalMins),present>0?fmtDuration(Math.round(totalMins/present)):'—','']);
+    });
+  } else if(tab==='lateness'){
+    headers=['Employee','Dept','Date','Clock In','Minutes Late'];
+    att.filter(r=>r.clockIn&&r.location!=='Leave').forEach(r=>{
+      const emp=gE(r.empId); if(!emp) return;
+      const shift=getEmpShift(emp);
+      const [lh,lm]=shift.startTime.split(':').map(Number);
+      const ci=new Date(r.clockIn);
+      const lateMins=(ci.getHours()*60+ci.getMinutes())-(lh*60+lm)-30;
+      if(lateMins>0) rows.push([emp.name,emp.dept,r.date,fmtTime(r.clockIn),lateMins]);
+    });
+  } else if(tab==='entitlement'){
+    headers=['Employee','Dept','Annual Remaining','Sick Remaining','Family Med Remaining','Bank Sick'];
+    emps.forEach(emp=>{
+      const bal=_leaveBalances[String(emp.id)]||{};
+      rows.push([emp.name,emp.dept,bal.employer_local||22,bal.sick||15,bal.family_medical||5,bal.bank_sick||0]);
+    });
+  } else if(tab==='overtime'){
+    headers=['Employee','Dept','Date','OT Start','OT End','Hours','Type','Status'];
+    ots.forEach(r=>{ const emp=gE(r.empId); if(!emp) return; rows.push([emp.name,emp.dept,r.date,r.otStart,r.otEnd,r.otHours,r.compensationType,r.status]); });
+  } else if(tab==='headcount'){
+    headers=['Employee','Dept','Sub-Dept','Shift','Tier','Status','Start Date'];
+    emps.forEach(e=>rows.push([e.name,e.dept,e.subDept||'',e.shiftName||'Day',e.clockMode||'kiosk',e.status,e.start]));
+  } else if(tab==='absenteeism'){
+    headers=['Employee','Dept','Absent Days','Dates'];
+    emps.forEach(emp=>{
+      const empAttDates=new Set(att.filter(r=>String(r.empId)===String(emp.id)).map(r=>r.date));
+      const workDays=[];
+      let c=new Date(from+'T00:00:00'),e=new Date(to+'T00:00:00');
+      while(c<=e){const dow=c.getDay();if(dow!==0&&dow!==6){const ds=`${c.getFullYear()}-${String(c.getMonth()+1).padStart(2,'0')}-${String(c.getDate()).padStart(2,'0')}`;if(!isDayHoliday(ds))workDays.push(ds);}c.setDate(c.getDate()+1);}
+      const absent=workDays.filter(d=>!empAttDates.has(d));
+      if(absent.length) rows.push([emp.name,emp.dept,absent.length,absent.join('; ')]);
+    });
+  } else if(tab==='anniversary'){
+    headers=['Employee','Dept','Anniversary Date','Years'];
+    emps.forEach(emp=>{
+      if(emp.start){const years=new Date().getFullYear()-parseInt(emp.start.split('-')[0]);rows.push([emp.name,emp.dept,emp.start,years]);}
+    });
+  }
+  if(!rows.length){ toast('No data to export.','error'); return; }
+  const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`HR-Report-${tab}-${from}-to-${to}.csv`; a.click();
+  dbAddAudit(CU?.name||'Admin',`Exported HR ${tab} report ${from} to ${to}`);
+  toast('Report exported.','success');
+}
+
+function exportHRReportDocx(){
+  // Trigger CSV for now — Word generation requires server-side processing
+  exportHRReportCSV();
+}
+// ═══════════════════════════════════════════════════════════════════
+// END HR REPORTS MODULE
+// ═══════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════
 // OVERTIME MODULE
@@ -22401,6 +22857,129 @@ async function bulkRejectLeaves(){
   hideLoader(); clearLeaveSelection(); renderLeaveTable();
   toast(`${ids.length} request${ids.length!==1?'s':''} rejected.`,'error');
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+// LEAVE SUMMARY REPORT
+// ═══════════════════════════════════════════════════════════════════
+function openLeaveSummaryReport(){
+  const today = todayStr();
+  const firstOfMonth = today.slice(0,7)+'-01';
+  openModal('leaveSummaryReport');
+  document.getElementById('mb').innerHTML = `
+    <div class="mh"><div class="mt">📊 Leave Summary Report</div><button class="mc" onclick="closeModal()">✕</button></div>
+    <div class="mb-body" style="padding:20px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+        <div class="fg"><label class="fl">From Date *</label><input class="fi" id="lsr-from" type="date" value="${firstOfMonth}"></div>
+        <div class="fg"><label class="fl">To Date *</label><input class="fi" id="lsr-to" type="date" value="${today}"></div>
+        <div class="fg"><label class="fl">Department</label>
+          <select class="fi" id="lsr-dept">
+            <option value="">All departments</option>
+            ${getDepts().map(d=>`<option>${d}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:16px">
+        <button class="btn" onclick="generateLeaveSummary()">Generate</button>
+        <button class="btn btn-primary" onclick="exportLeaveSummaryDocx()" id="lsr-export-btn" style="display:none">⬇ Download Word Report</button>
+      </div>
+      <div id="lsr-results"></div>
+    </div>`;
+}
+
+function generateLeaveSummary(){
+  const from = document.getElementById('lsr-from')?.value;
+  const to   = document.getElementById('lsr-to')?.value;
+  const dept = document.getElementById('lsr-dept')?.value||'';
+  if(!from||!to){ toast('Please select a date range.','error'); return; }
+
+  const emps = getScopedEmps().filter(e=>
+    e.status!=='offboarded' && (!dept||e.dept===dept)
+  );
+
+  const rows = emps.map(emp=>{
+    const bal = _leaveBalances[String(emp.id)]||{};
+    // Count approved leave days in range per type
+    const reqs = (_leaveRequests||[]).filter(r=>
+      String(r.empId)===String(emp.id) &&
+      r.status==='approved' &&
+      r.fromDate<=to && r.toDate>=from
+    );
+    const taken = {};
+    reqs.forEach(r=>{
+      const type = r.type==='employer_local'?'annual':r.type;
+      taken[type] = (taken[type]||0) + parseFloat(r.days||0);
+    });
+    return {emp, bal, taken};
+  });
+
+  const el = document.getElementById('lsr-results');
+  if(!rows.length){ el.innerHTML='<p style="color:var(--text3);text-align:center;padding:20px">No employees found.</p>'; return; }
+
+  document.getElementById('lsr-export-btn').style.display='inline-block';
+  window._lsrData = {rows, from, to, dept};
+
+  el.innerHTML = `
+    <div style="overflow-x:auto">
+    <table class="dt" style="font-size:12.5px">
+      <thead><tr>
+        <th>Employee</th><th>Dept</th>
+        <th>Annual<br><span style="font-weight:400;font-size:10px">Taken / Remaining</span></th>
+        <th>Sick<br><span style="font-weight:400;font-size:10px">Taken / Remaining</span></th>
+        <th>Family Med<br><span style="font-weight:400;font-size:10px">Taken / Remaining</span></th>
+        <th>Permission<br><span style="font-weight:400;font-size:10px">Taken</span></th>
+        <th>Total Days<br><span style="font-weight:400;font-size:10px">in range</span></th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(({emp,bal,taken})=>{
+          const remAnnual = parseFloat(bal.employer_local||bal.annual||22);
+          const remSick   = parseFloat(bal.sick||15);
+          const remFam    = parseFloat(bal.family_medical||5);
+          const totalTaken = (taken.annual||0)+(taken.employer_local||0)+(taken.sick||0)+(taken.family_medical||0)+(taken.permission||0);
+          const annualTaken = (taken.annual||0)+(taken.employer_local||0);
+          return `<tr>
+            <td style="font-weight:600">${emp.name}</td>
+            <td style="color:var(--text3)">${emp.dept}</td>
+            <td style="text-align:center">${annualTaken>0?`<span style="color:#DC2626;font-weight:600">${annualTaken}d</span>`:'-'} / <span style="color:#059669">${remAnnual}d</span></td>
+            <td style="text-align:center">${taken.sick>0?`<span style="color:#DC2626;font-weight:600">${taken.sick}d</span>`:'-'} / <span style="color:#059669">${remSick}d</span></td>
+            <td style="text-align:center">${taken.family_medical>0?`<span style="color:#DC2626;font-weight:600">${taken.family_medical}d</span>`:'-'} / <span style="color:#059669">${remFam}d</span></td>
+            <td style="text-align:center">${taken.permission>0?`<span style="font-weight:600">${taken.permission}d</span>`:'-'}</td>
+            <td style="text-align:center;font-weight:700;color:var(--navy)">${totalTaken>0?totalTaken+'d':'-'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px">
+      Period: ${fDate(from)} – ${fDate(to)} &nbsp;·&nbsp; ${rows.length} employee(s)
+    </div>`;
+}
+
+async function exportLeaveSummaryDocx(){
+  const {rows,from,to,dept} = window._lsrData||{};
+  if(!rows) return;
+  toast('Generating Word document…','info');
+
+  // Build CSV for download (Word requires server-side; use CSV as fallback)
+  const headers = ['Employee','Department','Annual Taken','Annual Remaining','Sick Taken','Sick Remaining','Family Med Taken','Family Med Remaining','Permission Taken','Total Taken'];
+  const csvRows = rows.map(({emp,bal,taken})=>{
+    const remAnnual = parseFloat(bal.employer_local||bal.annual||22);
+    const remSick   = parseFloat(bal.sick||15);
+    const remFam    = parseFloat(bal.family_medical||5);
+    const annualTaken = (taken.annual||0)+(taken.employer_local||0);
+    const totalTaken  = annualTaken+(taken.sick||0)+(taken.family_medical||0)+(taken.permission||0);
+    return [emp.name, emp.dept, annualTaken, remAnnual, taken.sick||0, remSick, taken.family_medical||0, remFam, taken.permission||0, totalTaken];
+  });
+  const csv = [headers,...csvRows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`Leave-Summary-${from}-to-${to}.csv`; a.click();
+  dbAddAudit(CU?.name||'Admin',`Exported leave summary report ${from} to ${to}`);
+  toast('Leave summary exported.','success');
+}
+// ═══════════════════════════════════════════════════════════════════
+// END LEAVE SUMMARY REPORT
+// ═══════════════════════════════════════════════════════════════════
 
 function exportLeaveCSV(){
   const rows=[['Employee','Department','Leave Type','From','To','Days','Status','Reason','Reviewed By','Notes']];
