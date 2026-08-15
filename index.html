@@ -2344,7 +2344,7 @@
       <div class="fld"><label>Company</label>
         <select id="u_company">
           <option value="">— none —</option>
-          <option value="CSS">CSS (admin, sees all)</option>
+          <option value="CSS">CSS — Corevest Shared Services</option>
           <option value="MTI">MTI (plan owner)</option>
           <option value="Moura">Moura (provider)</option>
           <option value="Valere">Valere (provider)</option>
@@ -3286,9 +3286,10 @@ function canEditSection(sec){
    MTI, so MTI's manager approves; a provider's own cash client is theirs. */
 /* ---- Who owns a request ----
    The owner is the company that answers for it and, for a plan client, carries
-   the remedy. CSS is the group administration account: it sees every company
-   and belongs to none, so it must never be stamped as an owner — a remedy
-   "carried by CSS" reaches no General Manager, because there isn't one.
+   the remedy. CSS is Corevest Shared Services: a real company, but not a
+   funeral one — it owns subscriptions and a board room, never a funeral. So it
+   is not stamped as the owner of a service request; a remedy "carried by CSS"
+   would reach no General Manager, because it has no funeral operation.
 
    An administrator creating a request on someone's behalf falls through to
    what the request itself says: a policy client is MTI's, anything else
@@ -4513,7 +4514,7 @@ function rpPeriodBar(){
    only appears for those roles; for everyone else the answer is already fixed. */
 function rpGroupWide(){
   return currentRole==='admin' || currentRole==='cro' || currentRole==='director'
-      || !currentCompany || currentCompany==='CSS';
+      || !currentCompany;
 }
 function rpCompany(){ return rpGroupWide() ? (RP.company||'') : (currentCompany||''); }
 function rpCoOk(co){
@@ -5622,7 +5623,7 @@ async function loadDirectComplaints(){
   }catch(e){ DIRECT = []; }   // table not created yet — the rest still works
 }
 function directVisible(){
-  if(currentRole==='admin' || currentRole==='cro' || !currentCompany || currentCompany==='CSS') return DIRECT;
+  if(currentRole==='admin' || currentRole==='cro' || !currentCompany) return DIRECT;
   return DIRECT.filter(d => d.owner_company===currentCompany || d.provider===currentCompany);
 }
 function openDirectComplaint(){
@@ -8154,7 +8155,7 @@ function vendorName(company){
 }
 
 const APP_NAME = 'Corevest Service Hub';
-const BUILD = '2026-08-15.1645';   // shown in the footer and available in the console as BUILD
+const BUILD = '2026-08-15.1720';   // shown in the footer and available in the console as BUILD
 console.log('%cCorevest Service Hub','color:#0E5A57;font-weight:700','build '+BUILD);
 /* ==================== RUNNING AN OLD COPY ====================
    index.html is one large file served from a CDN, so a browser can hold a
@@ -8961,7 +8962,8 @@ let currentName = '';                 // full_name from the signed-in user's pro
    read on a register, but better than nothing at all. */
 function whoAmI(){ return currentName || (currentUser&&currentUser.email) || currentRole || ''; }
 let currentCompany = null;
-/* Multi-tenant visibility: admins (and CSS) see everything; everyone else sees
+/* Multi-tenant visibility: administrators and directors see everything, and so
+   does a profile with no company at all; everyone else sees
    only requests their company owns or is assigned to execute. */
 /* What a company may see.
    Its own requests always. Somebody else's only once it has actually been
@@ -8984,7 +8986,7 @@ function planningHasIt(r){
   return !made || made < PLANNING_GATE_FROM;      // legacy record — leave it alone
 }
 function companyScope(list){
-  if(currentRole==='admin' || currentRole==='cro' || !currentCompany || currentCompany==='CSS') return list;
+  if(currentRole==='admin' || currentRole==='cro' || !currentCompany) return list;
   return (list||[]).filter(r =>
     r.ownerCompany===currentCompany ||
     (r.serviceProvider===currentCompany && !!(r.dispatchStatus||'').trim())
@@ -11865,7 +11867,7 @@ async function showReception(){
    are deliberate. This mirrors sees_all_companies() in the database exactly;
    if one changes the other must. */
 function recSeesAllCompanies(){
-  return ['admin','director'].includes(currentRole) || !currentCompany || currentCompany==='CSS';
+  return ['admin','director'].includes(currentRole) || !currentCompany;
 }
 /* profiles.company holds the code ('Moura'); calls reference companies.id. */
 function recMyCompanyId(){
