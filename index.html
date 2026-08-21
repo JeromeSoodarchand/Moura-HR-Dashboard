@@ -18381,16 +18381,18 @@ function toast(msg,type='info'){
 // ─── COMPANY SETTINGS ────────────────────────────────────────────────────────
 function getSettings(){
   const _ltDef=[
-    // annual leave removed per company preference
-    // {key:'annual', label:'Annual Leave', color:'#1D9E75',bg:'#E1F5EE',maxDays:22, paid:true, protected:true},
-    {key:'sick',     label:'Sick Leave',          color:'#378ADD',bg:'#E6F1FB',maxDays:15,  paid:true, protected:true},
-    {key:'casual',   label:'Casual Leave',        color:'#BA7517',bg:'#FAEEDA',maxDays:6,   paid:true, protected:false},
-    {key:'maternity',label:'Maternity Leave',     color:'#D4537E',bg:'#FDEEF4',maxDays:84,  paid:true, protected:false},
-    {key:'paternity',label:'Paternity Leave',     color:'#7F77DD',bg:'#EEEDFE',maxDays:5,   paid:true, protected:false},
-    {key:'unpaid',   label:'Unpaid Leave',        color:'#888780',bg:'#F1EFE8',maxDays:null,paid:false,protected:false},
-    {key:'compassionate',label:'Compassionate Leave',color:'#D85A30',bg:'#FAECE7',maxDays:3,paid:true, protected:false},
-    {key:'employer_local', label:'Local Leave',          color:'#1E1445',bg:'#EEEDFE',maxDays:22, paid:true, protected:true},
-    {key:'permission', label:'Permission (< 3hrs)', color:'#6D28D9',bg:'#EDE9FE',maxDays:0, paid:true, protected:false}
+    {key:'sick',          label:'Sick Leave',              color:'#378ADD',bg:'#E6F1FB',maxDays:15,  paid:true,  protected:true},
+    {key:'employer_local',label:'Annual Leave',            color:'#1E1445',bg:'#EEEDFE',maxDays:22,  paid:true,  protected:true},
+    {key:'annual_bank',   label:'Annual Leave Bank',       color:'#059669',bg:'#D1FAE5',maxDays:22,  paid:true,  protected:false},
+    {key:'paternity',     label:'Paternity Leave',         color:'#7F77DD',bg:'#EEEDFE',maxDays:30,  paid:true,  protected:false},
+    {key:'maternity',     label:'Maternity Leave',         color:'#D4537E',bg:'#FDEEF4',maxDays:120, paid:true,  protected:false},
+    {key:'special',       label:'Special Leave',           color:'#F59E0B',bg:'#FEF3C7',maxDays:60,  paid:true,  protected:false},
+    {key:'study',         label:'Study Leave',             color:'#2563EB',bg:'#DBEAFE',maxDays:10,  paid:true,  protected:false},
+    {key:'unpaid',        label:'Unpaid Leave',            color:'#888780',bg:'#F1EFE8',maxDays:30,  paid:false, protected:false},
+    {key:'juror',         label:'Juror Leave',             color:'#DC2626',bg:'#FEE2E2',maxDays:10,  paid:true,  protected:false},
+    {key:'compassionate', label:'Compassionate Leave',     color:'#D85A30',bg:'#FAECE7',maxDays:3,   paid:true,  protected:false},
+    {key:'marriage',      label:'Marriage Leave',          color:'#EC4899',bg:'#FCE7F3',maxDays:6,   paid:true,  protected:false},
+    {key:'permission',    label:'Permission (< 3hrs)',     color:'#6D28D9',bg:'#EDE9FE',maxDays:0,   paid:true,  protected:false},
   ];
   const _def={
     orgName:'',tagline:'Giving Comfort · Taking Care',
@@ -21761,7 +21763,7 @@ function getLEAVE_TYPES(){
   let types = getSettings().leaveTypes;
   if(typeof types==='string'){try{types=JSON.parse(types);}catch(e){types=[];}}
   if(!Array.isArray(types)) types=[];
-  types = types.filter(t => t.key !== 'annual' && t.key !== 'casual'); // removed leave types
+  types = types.filter(t => !['annual','casual','family_medical'].includes(t.key)); // removed leave types
   const obj = {};
   types.forEach(t=>{ obj[t.key] = {label:t.label, color:t.color, bg:t.bg, maxDays:t.maxDays||0}; });
   return obj;
@@ -26648,7 +26650,7 @@ async function deductLeaveBalance(req){
       annual:         'annual',
       sick:           'sick',
       employer_local: 'employer_local',
-      family_medical: 'family_medical',
+
     };
     const field = fieldMap[req.type];
     if(!field) return; // permission, bank_sick etc — no deduction needed
@@ -27107,7 +27109,7 @@ This will restore the leave balance.`)) return;
       }
       const empBalKey = String(req.empId);
       const bal = _leaveBalances[String(empBalKey)] || _leaveBalances[empBalKey];
-      const refundFieldMap = {annual:'annual', sick:'sick', employer_local:'employer_local', family_medical:'family_medical'};
+      const refundFieldMap = {annual:'annual', sick:'sick', employer_local:'employer_local'};
       const refundField = refundFieldMap[req.type];
       if(bal && refundField && bal[refundField] !== undefined){
         const maxMap = {annual:22, sick:15, employer_local:22, family_medical:5};
