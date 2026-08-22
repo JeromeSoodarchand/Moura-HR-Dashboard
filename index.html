@@ -12495,6 +12495,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         <div class="ph-title">Attendance</div>
         <div class="ph-actions">
           <button class="btn" onclick="exportAttendanceCSV()">&#x2B07; Export CSV</button>
+          <button class="btn btn-primary" onclick="exportAttendanceExcel()">&#x2B07; Export Excel</button>
           <button class="btn btn-primary" onclick="openAddAttRecordModal()" style="display:${hasPerm('edit_attendance')?'inline-flex':'none'}">&#43; Add Record</button>
           <button class="btn btn-blue" onclick="openAttendanceModal('scanQR')">&#128247; Clock In / Out</button>
           <button class="btn btn-primary ahr-btn" onclick="openAttendanceModal('manageLocations')">&#127970; Manage Locations</button>
@@ -12528,6 +12529,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
               </select>
               <button class="btn btn-primary" onclick="renderAttendanceReport()">Filter</button>
               <button class="btn" onclick="exportAttendanceCSV()">&#x2B07; CSV</button>
+              <button class="btn btn-primary" onclick="exportAttendanceExcel()">&#x2B07; Excel</button>
             </div>
           </div>
           <!-- Sub-tab bar -->
@@ -21095,9 +21097,193 @@ async function deleteAttRecord(recId){
   await renderAttendance();toast('Record deleted.','info');
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+// ATTENDANCE EXCEL EXPORT — One sheet per employee
+// ═══════════════════════════════════════════════════════════════════
+async function exportAttendanceExcel(){
+  // Load SheetJS dynamically if not already loaded
+  if(typeof XLSX === 'undefined'){
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  // Apply same filters as current view
+  const empSearch = (document.getElementById('att-emp-search')?.value||'').toLowerCase().trim();
+  const deptF     = document.getElementById('att-dept-filter')?.value||'';
+  const fromF     = document.getElementById('att-from')?.value||'';
+  const toF       = document.getElementById('att-to')?.value||'';
+  const scopedEmps = getScopedEmps();
+  const filteredEmps = scopedEmps.filter(e=>
+    e.status !== 'offboarded' &&
+    (!deptF||e.dept===deptF) &&
+    (!empSearch||e.name.toLowerCase().includes(empSearch))
+  );
+  const empIdSet = new Set(filteredEmps.flatMap(e=>[String(e.id),e.userId?String(e.userId):''].filter(Boolean)));
+  let list = (_attendance||[]).filter(r=>{
+    if(!empIdSet.has(String(r.empId))) return false;
+    if(fromF && r.date < fromF) return false;
+    if(toF   && r.date > toF)   return false;
+    return true;
+  });
+
+  if(!list.length){ toast('No records to export.','error'); return; }
+
+  showLoader('Generating Excel…');
+
+  // Group records by employee
+  const byEmp = {};
+  list.forEach(r=>{
+    const key = String(r.empId);
+    if(!byEmp[key]) byEmp[key] = [];
+    byEmp[key].push(r);
+  });
+
+  // Period label
+  const periodLabel = fromF && toF ? `${fDate(fromF)} to ${fDate(toF)}` : toF ? `Up to ${fDate(toF)}` : fromF ? `From ${fDate(fromF)}` : 'All dates';
+
+  // Create workbook
+  const wb = XLSX.utils.book_new();
+  wb.Props = {
+    Title: 'Attendance Report',
+    Subject: periodLabel,
+    Author: 'SolentraHR',
+    CreatedDate: new Date()
+  };
+
+  // SUMMARY sheet (first sheet)
+  const summaryData = [
+    ['SOLENTRAHR — ATTENDANCE REPORT'],
+    [`Period: ${periodLabel}`],
+    [`Generated: ${new Date().toLocaleString('en-GB')}`],
+    [`Department: ${deptF||'All'}`],
+    [],
+    ['Employee', 'Department', 'Days Present', 'Total Hours', 'Avg Hours/Day', 'Late Arrivals', 'Missing Clock-outs'],
+  ];
+
+  filteredEmps.forEach(emp=>{
+    const empRecs = (byEmp[String(emp.id)]||[]).filter(r=>r.location!=='Leave'&&r.location!=='Permission');
+    const daysPresent   = empRecs.length;
+    const totalMins     = empRecs.reduce((s,r)=>s+(parseFloat(r.durationMinutes)||0),0);
+    const totalHrs      = (totalMins/60).toFixed(1);
+    const avgHrs        = daysPresent>0?(totalMins/daysPresent/60).toFixed(1):'0';
+    const shift         = getEmpShift(emp);
+    const [lh,lm]       = shift.startTime.split(':').map(Number);
+    const graceMins     = lh*60+lm+30;
+    const lateCount     = empRecs.filter(r=>r.clockIn&&(new Date(r.clockIn).getHours()*60+new Date(r.clockIn).getMinutes())>graceMins).length;
+    const missingOut    = empRecs.filter(r=>!r.clockOut).length;
+    summaryData.push([emp.name, emp.dept||'', daysPresent, totalHrs+'h', avgHrs+'h', lateCount, missingOut]);
+  });
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+  // Style summary header
+  wsSummary['A1'] = {v:'SOLENTRAHR — ATTENDANCE REPORT', t:'s'};
+  wsSummary['!cols'] = [{wch:30},{wch:20},{wch:14},{wch:14},{wch:14},{wch:14},{wch:18}];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+  // One sheet per employee
+  Object.keys(byEmp).forEach(empId=>{
+    const emp = gE(empId);
+    if(!emp) return;
+    const recs = byEmp[empId].sort((a,b)=>a.date.localeCompare(b.date));
+
+    // Sheet name max 31 chars, no special chars
+    const sheetName = emp.name.replace(/[\/*?:\[\]]/g,'').slice(0,31);
+
+    // Employee header rows
+    const sheetData = [
+      ['ATTENDANCE RECORD'],
+      [`Employee: ${emp.name}`],
+      [`Department: ${emp.dept||''}${emp.subDept?' — '+emp.subDept:''}`],
+      [`Shift: ${emp.shiftName||'Day'} (${emp.shiftStart||'08:30'} – ${emp.shiftEnd||'17:00'})`],
+      [`Period: ${periodLabel}`],
+      [],
+      ['Date', 'Day', 'Clock In', 'Clock Out', 'Duration', 'Hours', 'Location', 'Status', 'Notes'],
+    ];
+
+    let totalMins = 0;
+    let lateCount = 0;
+    let presentDays = 0;
+    const shift = getEmpShift(emp);
+    const [lh,lm] = shift.startTime.split(':').map(Number);
+    const graceMins = lh*60+lm+30;
+
+    recs.forEach(r=>{
+      const isLeave   = r.location==='Leave'||r.location==='Permission';
+      const dur       = parseFloat(r.durationMinutes)||0;
+      const hrs       = isLeave ? '' : (dur/60).toFixed(1);
+      const ci        = r.clockIn ? fmtTime(r.clockIn) : '—';
+      const co        = r.clockOut ? fmtTime(r.clockOut) : 'Open';
+      const durStr    = r.durationMinutes ? fmtDuration(r.durationMinutes) : '—';
+      const dayName   = r.date ? new Date(r.date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'short'}) : '';
+      let status = '✓ Normal';
+      if(isLeave) status = 'On Leave';
+      else if(!r.clockOut) status = '⚠ Missing clock-out';
+      else if(dur<240) status = '⚠ Short shift';
+      else if(r.clockIn && (new Date(r.clockIn).getHours()*60+new Date(r.clockIn).getMinutes())>graceMins){
+        const mLate = (new Date(r.clockIn).getHours()*60+new Date(r.clockIn).getMinutes()) - (lh*60+lm);
+        status = `⚠ Late +${mLate}min`;
+        lateCount++;
+      }
+      if(!isLeave){ totalMins+=dur; presentDays++; }
+      sheetData.push([r.date, dayName, ci, co, durStr, hrs?hrs+'h':'', r.location||'', status, r.notes||'']);
+    });
+
+    // Summary footer
+    sheetData.push([]);
+    sheetData.push(['TOTALS']);
+    sheetData.push(['Days Present', presentDays]);
+    sheetData.push(['Total Hours', (totalMins/60).toFixed(1)+'h']);
+    sheetData.push(['Avg Hours/Day', presentDays>0?((totalMins/presentDays)/60).toFixed(1)+'h':'—']);
+    sheetData.push(['Late Arrivals', lateCount]);
+    sheetData.push(['Missing Clock-outs', recs.filter(r=>!r.clockOut&&r.location!=='Leave').length]);
+
+    const ws = XLSX.utils.aoa_to_sheet(sheetData);
+    ws['!cols'] = [{wch:12},{wch:6},{wch:10},{wch:10},{wch:12},{wch:8},{wch:24},{wch:22},{wch:40}];
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+
+  // Generate file
+  const fromLabel = fromF||'all';
+  const toLabel   = toF||todayStr();
+  const filename  = `Attendance_${deptF?deptF+'_':''}${fromLabel}_to_${toLabel}.xlsx`;
+  XLSX.writeFile(wb, filename);
+
+  hideLoader();
+  dbAddAudit(CU?.name||'Admin', `Exported attendance Excel (${Object.keys(byEmp).length} employees, ${periodLabel})`);
+  toast(`Excel exported — ${Object.keys(byEmp).length} employee sheet${Object.keys(byEmp).length!==1?'s':''}!`, 'success');
+}
+// ═══════════════════════════════════════════════════════════════════
+// END ATTENDANCE EXCEL EXPORT
+// ═══════════════════════════════════════════════════════════════════
+
 function exportAttendanceCSV(){
   const rows=[['Employee','Department','Date','Clock In','Clock Out','Duration','Location','Notes']];
-  [..._attendance].sort((a,b)=>new Date(b.clockIn)-new Date(a.clockIn)).forEach(r=>{
+  // Apply same filters as the current view
+  const empSearch = (document.getElementById('att-emp-search')?.value||'').toLowerCase().trim();
+  const deptF     = document.getElementById('att-dept-filter')?.value||'';
+  const fromF     = document.getElementById('att-from')?.value||'';
+  const toF       = document.getElementById('att-to')?.value||'';
+  const tabEl     = document.querySelector('#page-attendance .tbb.active');
+  const tab       = tabEl?.dataset?.tab||'all';
+  const scopedEmps = getScopedEmps();
+  const allEmps = scopedEmps.filter(e=>
+    (!deptF||e.dept===deptF) &&
+    (!empSearch||e.name.toLowerCase().includes(empSearch))
+  );
+  const empIdSet = new Set(allEmps.flatMap(e=>[String(e.id),e.userId?String(e.userId):''].filter(Boolean)));
+  let list = (_attendance||[]).filter(r=>{
+    if(!empIdSet.has(String(r.empId))) return false;
+    if(fromF && r.date < fromF) return false;
+    if(toF   && r.date > toF)   return false;
+    return true;
+  });
+  list.sort((a,b)=>new Date(b.clockIn)-new Date(a.clockIn));
+  list.forEach(r=>{
     const emp=gE(r.empId);
     rows.push([emp?emp.name:'',emp?emp.dept:'',r.date,fmtTime(r.clockIn),fmtTime(r.clockOut),fmtDuration(r.durationMinutes),r.location||'',r.notes||'']);
   });
