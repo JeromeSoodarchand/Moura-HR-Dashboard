@@ -1012,8 +1012,20 @@ async function addCompany(){
   const name = input?.value.trim();
   if(!name){ toast('Enter a company name.','error'); return; }
   showLoader('Adding company…');
-  const company = await dbSaveCompany({name});
-  _companiesCache = null;
+  // Direct insert to Supabase
+  if(sbReady()){
+    const {data,error} = await _sb.from('companies').insert({
+      name, slug: name.toLowerCase().replace(/[^a-z0-9]/g,'-'),
+      active: true, platform: 'full'
+    }).select();
+    if(error){ toast('Error: '+error.message,'error'); hideLoader(); return; }
+    // Update localStorage cache with new company
+    const newComp = data?.[0];
+    const local = S.get('companies',[]);
+    if(newComp) local.push({id:newComp.id, name:newComp.name, slug:newComp.slug||'', active:true});
+    S.set('companies', local);
+  }
+  _companiesCache = null; // force re-fetch
   await populateCompanyDropdowns();
   await renderCompanyMgmt();
   if(input) input.value='';
