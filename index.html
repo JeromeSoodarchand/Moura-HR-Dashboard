@@ -18384,8 +18384,17 @@ function parseCSVRow(row){
   vals.push(cur);return vals;
 }
 
+let _importRunning=false;
 async function executeImport(){
+  // Guard against a second click while the first run is still saving. Without
+  // this, concurrent runs each work from their own snapshot, cannot see each
+  // other's inserts, and mint the same employee numbers twice over.
+  if(_importRunning){toast('Import already running — please wait.','info');return;}
   if(!parsedCSVData){toast('No CSV data loaded.','error');return;}
+  _importRunning=true;
+  const _btn=document.getElementById('import-btn');
+  if(_btn){_btn.disabled=true;_btn.textContent='Importing…';}
+  try{
   const {headers,data}=parsedCSVData;
   const targetCid=parseInt(document.getElementById('imp-company')?.value || _COMPANY_ID || 1);
   const newStatus=document.getElementById('imp-status')?.value || 'onboarding';
@@ -18399,6 +18408,7 @@ async function executeImport(){
 
   for(let i=0;i<data.length;i++){
     const row=data[i];
+    if(i%5===0) showLoader('Importing '+(i+1)+' of '+data.length+'…');
     if(!row.name){errors.push('Row '+(i+2)+': missing name');continue;}
     const shift=_parseShiftCell(row.shift);
     const existing=_findImportMatch(row,emps);
@@ -18506,6 +18516,15 @@ async function executeImport(){
   if(createdUsers.length) setTimeout(()=>showCSVWhatsAppSummary(createdUsers),500);
   renderDashboard();
   toast('Imported: '+added+' new, '+updated+' updated, '+createdUsers.length+' accounts created.','success');
+  }catch(err){
+    hideLoader();
+    console.error('Import failed:',err);
+    toast('Import failed: '+(err.message||err),'error');
+    const b=document.getElementById('import-btn');
+    if(b){b.disabled=false;b.textContent='Import records';}
+  }finally{
+    _importRunning=false;
+  }
 }
 
 function showCSVWhatsAppSummary(users){
