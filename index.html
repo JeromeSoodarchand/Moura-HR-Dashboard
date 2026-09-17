@@ -19747,26 +19747,83 @@ async function checkAndAlertOverdueTraining(){
 }
 
 // ─── EMAIL NOTIFICATIONS ──────────────────────────────────────────────────────
-async function sendHRAlert(type, to, data){
-  if(!sbReady()){
-    console.log('Email skipped — Supabase not connected');
-    return;
+// Minimal escaping so a name or free-text reason can't break the markup.
+function _esc(v){
+  return String(v==null?'':v)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+// Subject, strapline and body rows for each alert type.
+function _hrAlertContent(type, d){
+  d = d || {};
+  const row = (label, val) => (val==null||val==='') ? '' :
+    `<tr><td style="padding:6px 0;color:#6b7280;width:130px">${_esc(label)}</td><td style="padding:6px 0">${_esc(val)}</td></tr>`;
+  switch(type){
+    case 'onboarding_complete':
+      return {subject:`Onboarding complete — ${d.employeeName}`, strap:'Onboarding Complete',
+        lead:`<strong>${_esc(d.employeeName)}</strong> has completed onboarding and is now Active.`,
+        rows:row('Employee',d.employeeName)+row('Department',d.dept)+row('Role',d.role)+row('Start date',d.startDate)+row('Completed',d.completedDate)};
+    case 'new_employee':
+      return {subject:`New employee added — ${d.employeeName}`, strap:'New Employee',
+        lead:`<strong>${_esc(d.employeeName)}</strong> has been added to SolentraHR.`,
+        rows:row('Employee',d.employeeName)+row('Department',d.dept)+row('Role',d.role)+row('Manager',d.manager)+row('Start date',d.startDate)+row('Added by',d.addedBy)};
+    case 'event_logged':
+      return {subject:`Event logged — ${d.employeeName} (${d.eventType})`, strap:'Employee Event Logged',
+        lead:`An event has been logged against <strong>${_esc(d.employeeName)}</strong>.`,
+        rows:row('Employee',d.employeeName)+row('Event type',d.eventType)+row('Date',d.eventDate)+row('Description',d.description)+row('Logged by',d.loggedBy)};
+    case 'offboarding':
+      return {subject:`Offboarding — ${d.employeeName}`, strap:'Offboarding Initiated',
+        lead:`<strong>${_esc(d.employeeName)}</strong> has been offboarded. Their login is disabled.`,
+        rows:row('Employee',d.employeeName)+row('Department',d.dept)+row('Last day',d.lastDay)+row('Reason',d.reason)+row('Initiated by',d.initiatedBy)};
+    case 'training_overdue': {
+      const list=Array.isArray(d.assignments)?d.assignments:[];
+      const cells=list.map(a=>
+        `<tr><td style="padding:6px 0">${_esc(a.employeeName)}</td><td style="padding:6px 0">${_esc(a.programName)}</td><td style="padding:6px 0;color:#DC2626">${_esc(a.dueDate)}</td></tr>`).join('');
+      return {subject:`Overdue training — ${list.length} assignment${list.length===1?'':'s'}`, strap:'Overdue Training',
+        lead:`${list.length} training assignment${list.length===1?' is':'s are'} overdue.`,
+        rows:`<tr><td style="padding:6px 0;color:#6b7280;font-weight:600">Employee</td><td style="padding:6px 0;color:#6b7280;font-weight:600">Programme</td><td style="padding:6px 0;color:#6b7280;font-weight:600">Due</td></tr>`+cells};
+    }
+    default:
+      return {subject:`SolentraHR notification — ${type}`, strap:'Notification',
+        lead:'An event occurred in SolentraHR.',
+        rows:Object.keys(d).map(k=>row(k,d[k])).join('')};
   }
-  // Get HR email recipients from settings if not specified
+}
+
+// HR alerts go through the same Cloudflare worker as the leave emails.
+// (They previously called a Supabase Edge Function named 'send-hr-alert'
+// that was never deployed, so none of them ever sent.)
+async function sendHRAlert(type, to, data){
   const cs = getSettings();
   const recipients = to || cs.hrEmail || null;
   if(!recipients){
     console.log('Email skipped — no HR email configured in Company Settings');
     return;
   }
+  const c = _hrAlertContent(type, data);
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+      <div style="background:#1E1445;padding:20px 24px;border-radius:8px 8px 0 0">
+        <h2 style="color:#C9A84C;margin:0;font-size:20px">SolentraHR</h2>
+        <p style="color:#CADCFC;margin:4px 0 0;font-size:13px">${_esc(c.strap)}</p>
+      </div>
+      <div style="background:#f9f9f9;padding:24px;border:1px solid #e5e7eb;border-radius:0 0 8px 8px">
+        <p style="margin:0 0 16px;font-size:14px;color:#374151">${c.lead}</p>
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:20px">
+          <table style="width:100%;font-size:13px;border-collapse:collapse">${c.rows}</table>
+        </div>
+        <div style="border-top:1px solid #e5e7eb;padding-top:16px;font-size:12px;color:#9ca3af">
+          This is an automated notification from SolentraHR. Please do not reply to this email.
+        </div>
+      </div>
+    </div>`;
   try{
-    const {data:result, error} = await _sb.functions.invoke('send-hr-alert',{
-      body:{ type, to: recipients, data }
-    });
-    if(error) console.error('Email error:',error);
-    else console.log('Email sent:',type, result);
+    const result = await sendEmail({to: recipients, subject: c.subject, html});
+    console.log('HR alert sent:', type, result);
+    return result;
   } catch(e){
-    console.error('Email send failed:',e);
+    console.error('HR alert send failed:', type, e);
   }
 }
 
