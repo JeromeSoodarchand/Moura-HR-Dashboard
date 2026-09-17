@@ -12483,7 +12483,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         <div class="ph-actions">
           <input class="si" placeholder="Search…" oninput="filterEmp(this.value)">
           <button class="btn" onclick="exportCSV('employees')">⬇ CSV</button>
-          <button class="btn btn-amber" data-perm-btn="add_employees" onclick="openModal('csvImport')">⬆ Import CSV</button>
+          <button class="btn btn-amber" data-perm-btn="add_employees" onclick="openModal('csvImport')">⬆ Import</button>
           <button class="btn btn-blue ahr-btn" onclick="openAccountAudit()">🔍 Account Audit</button>
           <button class="btn btn-primary" data-perm-btn="add_employees" onclick="openModal('addEmployee')">+ Add Employee</button>
         </div>
@@ -17393,28 +17393,48 @@ function openModal(type,pid,pid2){
   } else if(type==='csvImport'){
     if(!canEdit()){toast('Access denied.','error');return;}
     mb.className='modal-box wide';
-    mb.innerHTML=`<div class="modal-title">Import Employees via CSV <button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Upload a CSV file to add or update employee records. Existing employees matched by email will be updated; new emails will create new records.</div>
+    mb.innerHTML=`<div class="modal-title">Import Employees <button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Upload a CSV or Excel file to add or update employee records. Existing staff are matched on employee number first, then email, then phone — anything unmatched creates a new record.</div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+        <div class="fg" style="flex:1;min-width:180px;margin:0">
+          <label class="fl">Import into company</label>
+          <select class="fs" id="imp-company"></select>
+        </div>
+        <div class="fg" style="flex:1;min-width:170px;margin:0">
+          <label class="fl">Status for new records</label>
+          <select class="fs" id="imp-status">
+            <option value="active">Active — existing staff</option>
+            <option value="onboarding">Onboarding — new hires</option>
+          </select>
+        </div>
+        <div class="fg" style="flex:1;min-width:170px;margin:0">
+          <label class="fl">Auto employee number</label>
+          <input class="fi" id="imp-prefix" placeholder="e.g. MTI — blank to skip">
+        </div>
+      </div>
 
       <div style="background:var(--bg2);border-radius:var(--radius);padding:12px;margin-bottom:14px;font-size:12px;color:var(--text2)">
-        <div style="font-weight:600;margin-bottom:5px">Required columns:</div>
-        <div style="font-family:monospace;font-size:11.5px;color:var(--text3)">name, email</div>
+        <div style="font-weight:600;margin-bottom:5px">Required:</div>
+        <div style="font-family:monospace;font-size:11.5px;color:var(--text3)">name &nbsp;(or first name + last name)</div>
         <div style="font-weight:600;margin:8px 0 5px">Optional columns:</div>
-        <div style="font-family:monospace;font-size:11.5px;color:var(--text3)">phone, role, dept, manager, start, status, salary, currency</div>
+        <div style="font-family:monospace;font-size:11.5px;color:var(--text3)">emp_no, nic, email, phone, role (or post), dept (or department), shift, manager, start, status, salary, currency</div>
+        <div style="margin-top:8px;font-size:11.5px;color:var(--text3)">Shift accepts <code>08:30 - 16:30</code> or a shift name such as <code>Roster</code>.</div>
         <div style="margin-top:8px"><a href="#" onclick="downloadTemplate();return false;" style="color:var(--blue);font-size:12px;">⬇ Download template CSV</a></div>
       </div>
 
       <div class="upload-zone" id="upload-zone" onclick="document.getElementById('csv-file').click()" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFile(event)">
-        <input type="file" id="csv-file" accept=".csv" onchange="handleCSVFile(this.files[0])">
+        <input type="file" id="csv-file" accept=".csv,.xlsx,.xls" onchange="handleCSVFile(this.files[0])">
         <div class="upload-icon">📄</div>
         <div class="upload-title">Click to upload or drag & drop</div>
-        <div class="upload-sub">CSV files only · max 5MB</div>
+        <div class="upload-sub">CSV or Excel · max 5MB</div>
       </div>
       <div id="csv-preview-area"></div>
       <div class="mf">
         <button class="btn" onclick="closeModal()">Cancel</button>
         <button class="btn btn-primary" id="import-btn" onclick="executeImport()" style="display:none">Import records</button>
       </div>`;
+    _initImportTargets();
   }
   // Init post-render hooks for employee modals
   setTimeout(()=>{
@@ -18164,41 +18184,140 @@ function submitEditUser(id){
 let parsedCSVData=null;
 
 function downloadTemplate(){
-  const headers='name,email,phone,role,dept,manager,start,status,salary,currency';
-  const example='John Smith,john@company.com,+230 5700 0000,Software Engineer,Engineering,Jane Doe,2025-01-01,active,55000,USD';
+  const headers='emp_no,name,email,phone,role,dept,shift,manager,start,status,salary,currency';
+  const example='MTI001,John Smith,john@company.com,+230 5700 0000,Sales Representative,Sales,08:30 - 16:30,Jane Doe,2025-01-01,active,55000,MUR';
   const csv=headers+'\n'+example;
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='employee_import_template.csv';a.click();
+}
+
+// Populate the import modal's company selector. Super admin can import into any
+// company; everyone else is locked to the company they are signed in to.
+async function _initImportTargets(){
+  const sel=document.getElementById('imp-company');
+  if(!sel) return;
+  const isSuperAdmin = CU && CU.username==='jerome848';
+  let companies=[];
+  try{ companies=await dbGetCompanies(); }catch(e){ companies=[]; }
+  const current = _COMPANY_ID || 1;
+  const list = isSuperAdmin ? companies : companies.filter(c=>String(c.id)===String(current));
+  sel.innerHTML = (list.length?list:[{id:current,name:'Current company'}])
+    .map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  sel.value = String(current);
+  if(!isSuperAdmin) sel.disabled = true;
+}
+
+// SheetJS is loaded on demand — same CDN and pattern as the attendance export.
+async function _ensureXLSX(){
+  if(typeof XLSX !== 'undefined') return;
+  await new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload=resolve; s.onerror=()=>reject(new Error('Could not load the Excel reader.'));
+    document.head.appendChild(s);
+  });
+}
+
+// Accept the column names HR actually sends, not just our own.
+const _IMPORT_ALIASES={
+  'employee no':'emp_no','employee number':'emp_no','employee #':'emp_no','emp no':'emp_no',
+  'empno':'emp_no','staff no':'emp_no','staff number':'emp_no','payroll no':'emp_no','emp_no':'emp_no',
+  'nic':'nic','nic no':'nic','national id':'nic','id number':'nic',
+  'last name':'lastname','lastname':'lastname','surname':'lastname','family name':'lastname',
+  'first name':'firstname','firstname':'firstname','given name':'firstname','other names':'firstname',
+  'full name':'name','name':'name','employee name':'name',
+  'post':'role','position':'role','job title':'role','designation':'role','title':'role','role':'role',
+  'department':'dept','dept':'dept','division':'dept',
+  'shift':'shift','working hours':'shift','hours':'shift',
+  'manager':'manager','supervisor':'manager','reports to':'manager',
+  'email':'email','email address':'email','e-mail':'email',
+  'phone':'phone','mobile':'phone','contact':'phone','telephone':'phone','phone number':'phone',
+  'start':'start','start date':'start','date joined':'start','joining date':'start','hire date':'start',
+  'status':'status','salary':'salary','currency':'currency','sub dept':'subdept','sub-department':'subdept',
+};
+function _normHeader(h){
+  const k=String(h||'').trim().toLowerCase().replace(/["']/g,'').replace(/\s+/g,' ');
+  return _IMPORT_ALIASES[k] || k;
+}
+
+// "08:30 - 16:30" → fixed times. Anything else is treated as a named shift
+// (a roster, for example) with no fixed start and end.
+function _parseShiftCell(raw){
+  const v=String(raw||'').trim();
+  if(!v) return null;
+  const m=v.match(/^(\d{1,2})[:.h](\d{2})\s*(?:-|–|—|to)\s*(\d{1,2})[:.h](\d{2})$/i);
+  if(m){
+    const pad=n=>String(parseInt(n,10)).padStart(2,'0');
+    return {name:'Day', start:pad(m[1])+':'+m[2], end:pad(m[3])+':'+m[4]};
+  }
+  // "Roaster" is how the shift is spelled on the MTI list — treat it as Roster.
+  const name = /^roa?ster$/i.test(v) ? 'Roster' : v;
+  return {name, start:null, end:null};
+}
+
+// Row → the shape the rest of the importer works with.
+function _buildImportRow(obj){
+  const r={...obj};
+  if(!r.name){
+    const fn=(r.firstname||'').trim(), ln=(r.lastname||'').trim();
+    if(fn||ln) r.name=(fn+' '+ln).trim();
+  }
+  return r;
 }
 
 function dragOver(e){e.preventDefault();document.getElementById('upload-zone').classList.add('drag-over');}
 function dragLeave(e){document.getElementById('upload-zone').classList.remove('drag-over');}
 function dropFile(e){e.preventDefault();document.getElementById('upload-zone').classList.remove('drag-over');const f=e.dataTransfer.files[0];if(f)handleCSVFile(f);}
 
-function handleCSVFile(file){
-  if(!file||!file.name.endsWith('.csv')){toast('Please upload a .csv file.','error');return;}
+async function handleCSVFile(file){
+  if(!file){return;}
+  const nm=file.name.toLowerCase();
+  const isExcel=nm.endsWith('.xlsx')||nm.endsWith('.xls');
+  if(!isExcel && !nm.endsWith('.csv')){toast('Please upload a .csv, .xlsx or .xls file.','error');return;}
   if(file.size>5*1024*1024){toast('File too large. Max 5MB.','error');return;}
-  const reader=new FileReader();
-  reader.onload=e=>{
-    try{
-      const text=e.target.result;
+  try{
+    let headers=[], rawRows=[];
+    if(isExcel){
+      await _ensureXLSX();
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const aoa=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false,defval:''});
+      // HR files often carry a title or blank rows above the real header.
+      // The header is the first row that names something we recognise.
+      let hIdx=aoa.findIndex(r=>r.some(c=>['name','lastname','firstname','emp_no'].includes(_normHeader(c))));
+      if(hIdx<0) hIdx=0;
+      headers=aoa[hIdx].map(_normHeader);
+      rawRows=aoa.slice(hIdx+1).map(r=>{
+        const obj={};headers.forEach((h,i)=>obj[h]=String(r[i]==null?'':r[i]).trim());
+        return obj;
+      });
+    } else {
+      const text=await file.text();
       const rows=text.trim().split(/\r?\n/);
-      const headers=rows[0].split(',').map(h=>h.trim().toLowerCase().replace(/["']/g,''));
-      const required=['name','email'];
-      const missing=required.filter(r=>!headers.includes(r));
-      if(missing.length>0){
-        document.getElementById('csv-preview-area').innerHTML=`<div class="import-result error">❌ Missing required columns: <strong>${missing.join(', ')}</strong></div>`;
-        return;
-      }
-      const data=rows.slice(1).filter(r=>r.trim()).map(row=>{
+      headers=rows[0].split(',').map(_normHeader);
+      rawRows=rows.slice(1).filter(r=>r.trim()).map(row=>{
         const vals=parseCSVRow(row);
         const obj={};headers.forEach((h,i)=>obj[h]=(vals[i]||'').trim().replace(/^["']|["']$/g,''));
         return obj;
       });
+    }
+    const hasName = headers.includes('name') || (headers.includes('firstname')&&headers.includes('lastname'));
+    if(!hasName){
+      document.getElementById('csv-preview-area').innerHTML=`<div class="import-result error">❌ No name column found. The file needs <strong>name</strong>, or <strong>first name</strong> and <strong>last name</strong>.</div>`;
+      return;
+    }
+    const data=rawRows.map(_buildImportRow).filter(r=>r.name);
+    if(!data.length){
+      document.getElementById('csv-preview-area').innerHTML=`<div class="import-result error">❌ No usable rows found in that file.</div>`;
+      return;
+    }
+    if(!headers.includes('name')) headers=['name',...headers.filter(h=>h!=='firstname'&&h!=='lastname')];
       parsedCSVData={headers,data};
-      const existing=getEmps();
+      const targetCid=String(document.getElementById('imp-company')?.value || _COMPANY_ID || 1);
+      const existing=getEmps().filter(e=>String(e.companyId||1)===targetCid);
       let newCount=0,updateCount=0;
       data.forEach(row=>{
-        if(existing.find(e=>e.email.toLowerCase()===row.email.toLowerCase()))updateCount++;
+        if(_findImportMatch(row,existing))updateCount++;
         else newCount++;
       });
       const preview=data.slice(0,5);
@@ -18212,11 +18331,47 @@ function handleCSVFile(file){
       </div>`;
       document.getElementById('csv-preview-area').innerHTML=previewHTML;
       document.getElementById('import-btn').style.display='inline-flex';
-    }catch(err){
-      document.getElementById('csv-preview-area').innerHTML=`<div class="import-result error">❌ Failed to parse CSV: ${err.message}</div>`;
-    }
-  };
-  reader.readAsText(file);
+  }catch(err){
+    document.getElementById('csv-preview-area').innerHTML=`<div class="import-result error">❌ Failed to read that file: ${err.message}</div>`;
+  }
+}
+
+// Match order: employee number, then NIC, then email, then phone. Name is never
+// used on its own — two people can share a name.
+function _findImportMatch(row,pool){
+  const num=String(row.emp_no||'').trim().toLowerCase();
+  if(num){
+    const m=pool.find(e=>String(e.empNo||'').trim().toLowerCase()===num);
+    if(m) return m;
+  }
+  const nic=String(row.nic||'').trim().toLowerCase();
+  if(nic){
+    const m=pool.find(e=>String(e.nic||'').trim().toLowerCase()===nic);
+    if(m) return m;
+  }
+  const em=String(row.email||'').trim().toLowerCase();
+  if(em){
+    const m=pool.find(e=>String(e.email||'').trim().toLowerCase()===em);
+    if(m) return m;
+  }
+  const ph=String(row.phone||'').replace(/[^0-9]/g,'');
+  if(ph){
+    const m=pool.find(e=>String(e.phone||'').replace(/[^0-9]/g,'')===ph);
+    if(m) return m;
+  }
+  return null;
+}
+
+// Next free number for a prefix, so re-running an import continues the sequence
+// instead of colliding with what is already there.
+function _nextEmpNoSeq(prefix,pool){
+  const rx=new RegExp('^'+prefix.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(\\d+)$','i');
+  let max=0;
+  pool.forEach(e=>{
+    const m=String(e.empNo||'').trim().match(rx);
+    if(m) max=Math.max(max,parseInt(m[1],10)||0);
+  });
+  return max+1;
 }
 
 function parseCSVRow(row){
@@ -18232,42 +18387,67 @@ function parseCSVRow(row){
 async function executeImport(){
   if(!parsedCSVData){toast('No CSV data loaded.','error');return;}
   const {headers,data}=parsedCSVData;
-  const emps=getEmps();
+  const targetCid=parseInt(document.getElementById('imp-company')?.value || _COMPANY_ID || 1);
+  const newStatus=document.getElementById('imp-status')?.value || 'onboarding';
+  const prefix=(document.getElementById('imp-prefix')?.value||'').trim();
+  const emps=getEmps().filter(e=>String(e.companyId||1)===String(targetCid));
   let added=0,updated=0,errors=[],newEmpsWithPhone=[];
+  let seq = prefix ? _nextEmpNoSeq(prefix,emps) : 0;
+  const assignedNos=new Set(emps.map(e=>String(e.empNo||'').trim().toLowerCase()).filter(Boolean));
 
   showLoader('Importing…');
 
   for(let i=0;i<data.length;i++){
     const row=data[i];
     if(!row.name){errors.push('Row '+(i+2)+': missing name');continue;}
-    const existing=emps.find(e=>
-      (row.email&&e.email&&e.email.toLowerCase()===row.email.toLowerCase())||
-      (row.phone&&e.phone&&e.phone.replace(/[^0-9]/g,'')===row.phone.replace(/[^0-9]/g,''))
-    );
+    const shift=_parseShiftCell(row.shift);
+    const existing=_findImportMatch(row,emps);
     if(existing){
       if(row.name)existing.name=row.name;
+      if(row.emp_no)existing.empNo=row.emp_no;
+      if(row.nic)existing.nic=row.nic;
+      if(row.email)existing.email=row.email.trim();
       if(row.phone)existing.phone=row.phone;
       if(row.role)existing.role=row.role;
       if(row.dept)existing.dept=row.dept;
+      if(row.subdept)existing.subDept=row.subdept;
       if(row.manager)existing.manager=row.manager;
       if(row.start)existing.start=row.start;
+      if(shift){
+        existing.shiftName=shift.name;
+        if(shift.start){existing.shiftStart=shift.start;existing.shiftEnd=shift.end;}
+      }
       if(row.status&&['active','onboarding','offboarded'].includes(row.status))existing.status=row.status;
       if(row.salary&&!isNaN(parseFloat(row.salary))){
         const amt=parseFloat(row.salary);
-        if(!existing.salary)existing.salary={amount:amt,currency:row.currency||'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[{date:td(),amount:amt,note:'CSV import'}]};
+        if(!existing.salary)existing.salary={amount:amt,currency:row.currency||'MUR',frequency:'Monthly',lastReview:null,nextReview:null,history:[{date:td(),amount:amt,note:'Bulk import'}]};
         else{existing.salary.amount=amt;if(row.currency)existing.salary.currency=row.currency;}
       }
-      try{ await dbSaveEmployee(existing); }catch(e){}
-      updated++;
+      try{ await dbSaveEmployee(existing); updated++; }
+      catch(err){ console.error('Import row error:',err); errors.push('Row '+(i+2)+': '+row.name+' — update failed'); }
     } else {
       const sal=row.salary&&!isNaN(parseFloat(row.salary))?parseFloat(row.salary):null;
       const phone=(row.phone||'').trim();
+      // Use the number from the file if there is one; otherwise mint the next
+      // one in the prefix sequence, skipping any that are already taken.
+      let empNo=(row.emp_no||'').trim()||null;
+      if(!empNo && prefix){
+        do{ empNo=prefix+String(seq++).padStart(3,'0'); }
+        while(assignedNos.has(empNo.toLowerCase()));
+      }
+      if(empNo) assignedNos.add(empNo.toLowerCase());
       const newEmp={
         id:Date.now()+i+Math.random(),name:row.name,
+        empNo,nic:(row.nic||'').trim()||null,
         email:(row.email||'').trim(),phone,
-        role:row.role||'—',dept:row.dept||'',
-        manager:row.manager||'—',start:row.start||td(),status:'onboarding',
-        salary:sal?{amount:sal,currency:row.currency||'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[{date:td(),amount:sal,note:'CSV import'}]}:null,
+        role:row.role||'—',dept:row.dept||'',subDept:row.subdept||null,
+        manager:row.manager||'—',start:row.start||td(),
+        status:(row.status&&['active','onboarding','offboarded'].includes(row.status))?row.status:newStatus,
+        companyId:targetCid,
+        shiftName:shift?shift.name:'Day',
+        shiftStart:shift&&shift.start?shift.start:'08:30',
+        shiftEnd:shift&&shift.end?shift.end:'17:00',
+        salary:sal?{amount:sal,currency:row.currency||'MUR',frequency:'Monthly',lastReview:null,nextReview:null,history:[{date:td(),amount:sal,note:'Bulk import'}]}:null,
         checklist:(()=>{const d=(getSettings().checklistDefaults||['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done']);return Object.fromEntries(d.map(k=>[k,false]));})(),
         files:[],photoUrl:null,clockMode:'qr'
       };
@@ -18275,6 +18455,7 @@ async function executeImport(){
         const saved=await dbSaveEmployee(newEmp);
         const s=saved||newEmp;
         _cache.emps.unshift(s);
+        emps.push(s);
         if(phone) newEmpsWithPhone.push(s);
         added++;
       }catch(err){
@@ -18309,14 +18490,16 @@ async function executeImport(){
   if(createdUsers.length) S.set('users',_userCache);
 
   hideLoader();
-  addAudit(CU.name,'CSV import: '+added+' added, '+updated+' updated, '+createdUsers.length+' accounts created');
-  addNotif('CSV import: '+added+' new, '+updated+' updated, '+createdUsers.length+' accounts created','success');
+  const cName=(document.getElementById('imp-company')?.selectedOptions?.[0]?.textContent)||('company '+targetCid);
+  addAudit(CU.name,'Employee import into '+cName+': '+added+' added, '+updated+' updated, '+createdUsers.length+' accounts created');
+  addNotif('Employee import into '+cName+': '+added+' new, '+updated+' updated, '+createdUsers.length+' accounts created','success');
   parsedCSVData=null;
 
-  const resultMsg='✅ Import complete: <strong>'+added+' added</strong>, '+updated+' updated.'+
+  const resultMsg='✅ Import complete into <strong>'+cName+'</strong>: <strong>'+added+' added</strong>, '+updated+' updated.'+
     (errors.length?' ⚠ '+errors.length+' row(s) skipped.':'')+
     (createdUsers.length?' 🔑 '+createdUsers.length+' login accounts created.':'');
-  document.getElementById('csv-preview-area').innerHTML+='<div class="import-result success">'+resultMsg+'</div>';
+  document.getElementById('csv-preview-area').innerHTML+='<div class="import-result success">'+resultMsg+'</div>'+
+    (errors.length?'<div class="import-result error" style="margin-top:8px"><div style="font-weight:600;margin-bottom:4px">Skipped rows</div>'+errors.map(x=>'<div style="font-size:11.5px">'+x+'</div>').join('')+'</div>':'');
   document.getElementById('import-btn').textContent='✓ Done';
   document.getElementById('import-btn').disabled=true;
 
