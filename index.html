@@ -18577,8 +18577,9 @@ function exportCSV(type){
   const showSal=hasPerm('view_salary');
   let rows,fn;
   if(type==='employees'){
-    rows=[['Name','Email','Phone','Department','Role','Manager','Start Date','Status',...(showSal?['Salary','Currency','Frequency','Next Review']:[])],
-      ...getEmps().map(e=>[e.name,e.email,e.phone||'',e.dept,e.role,e.manager,e.start,e.status,...(showSal?[e.salary?.amount||'',e.salary?.currency||'',e.salary?.frequency||'',e.salary?.nextReview||'']:[])])];fn='employees.csv';
+    // Employee No. leads — it is the key payroll matches on when importing.
+    rows=[['Employee No','NIC','Name','Email','Phone','Department','Role','Shift','Manager','Start Date','Status',...(showSal?['Salary','Currency','Frequency','Next Review']:[])],
+      ...getEmps().map(e=>[e.empNo||'',e.nic||'',e.name,e.email,e.phone||'',e.dept,e.role,e.shiftName||'',e.manager,e.start,e.status,...(showSal?[e.salary?.amount||'',e.salary?.currency||'',e.salary?.frequency||'',e.salary?.nextReview||'']:[])])];fn='employees.csv';
   } else if(type==='events'){
     rows=[['Date','Employee','Dept','Type','Description','Logged By','Notified'],
       ...getEvts().map(ev=>{const emp=gE(ev.empId);return[ev.date,emp?.name||'',emp?.dept||'',ev.type,ev.desc,ev.loggedBy,ev.notified?'Yes':'No'];})];fn='events.csv';
@@ -20896,10 +20897,12 @@ const LEAVE_DEFAULTS = {annual:20, sick:15, casual:10};
 const LEAVE_TYPES = getLEAVE_TYPES(); // snapshot at load time
 // For dynamic access use getLEAVE_TYPES() — refreshed each call
 
-const MAURITIUS_HOLIDAYS_2025 = [
-  '2025-01-01','2025-01-02','2025-02-01','2025-03-12','2025-05-01',
-  '2025-11-01','2025-11-02','2025-12-25','2025-08-15','2025-09-03'
-];
+// Public holidays are configured, not hardcoded — several Mauritian holidays
+// move each year (Cavadee, Maha Shivaratree, Eid, Divali, Chinese Spring
+// Festival), so they are maintained in the holiday screen and stored globally
+// under the 'globalPublicHolidays' setting. This array is kept empty
+// deliberately: a stale hardcoded year silently overrode the real list.
+const MAURITIUS_HOLIDAYS_2025 = [];
 
 let _leaveRequests = [];
 let _leaveBalances = {};
@@ -25282,13 +25285,21 @@ function renderCustomHolidaysList(){
   const pubHols = getGlobalPublicHolidays().map(h=>({...h,type:'public_holiday'}));
   const empLeave = getEmployerLeaveDays().map(h=>({...h,type:'employer_leave'}));
   const all = [...pubHols, ...empLeave].sort((a,b)=>a.date.localeCompare(b.date));
+  // Loud warning if the current year has no public holidays. Without this the
+  // gap is silent — overtime simply gets paid at weekday rates all year.
+  const thisYear = String(new Date().getFullYear());
+  const haveThisYear = pubHols.some(h=>String(h.date||'').startsWith(thisYear));
+  const warning = haveThisYear ? '' :
+    '<div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:var(--radius);padding:10px 12px;margin-bottom:12px;font-size:12.5px;color:#991B1B">'+
+    '<strong>⚠ No public holidays set for '+thisYear+'.</strong> Overtime on a public holiday will be '+
+    'calculated at ordinary weekday rates until these are added.</div>';
   if(!all.length){
-    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0">No custom days added yet.</div>';
+    el.innerHTML = warning + '<div style="font-size:12px;color:var(--text3);padding:8px 0">No custom days added yet.</div>';
     return;
   }
   const byYear = {};
   all.forEach(h=>{ const y=h.date.slice(0,4); if(!byYear[y]) byYear[y]=[]; byYear[y].push(h); });
-  el.innerHTML = Object.entries(byYear).sort((a,b)=>b[0]-a[0]).map(([year,days])=>{
+  el.innerHTML = warning + Object.entries(byYear).sort((a,b)=>b[0]-a[0]).map(([year,days])=>{
     const empCount = days.filter(h=>h.type==='employer_leave').length;
     return '<div style="margin-bottom:14px">'+
       '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">'+
