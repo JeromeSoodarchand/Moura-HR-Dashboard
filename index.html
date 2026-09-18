@@ -15152,7 +15152,9 @@ async function loginClockIn(empId, locationId, locationName){
   dbAddAudit(CU.name,'Auto clock-in at '+locationName+' on login');
   // Update GPS in background
   getGPSLocation().then(({coords,address})=>{
-    if(!coords&&!address) return;
+    const g = applyGeofence(rec, coords);
+    if(g.status==='out') toast('Clocked in, but you are '+g.distance+'m from '+g.name+'. Flagged for HR.','error');
+    if(!coords && !address && g.status==='unfenced') return;
     rec.lat=coords?coords.lat:null; rec.lng=coords?coords.lng:null;
     if(address){rec.location=address;rec.notes='Auto clock-in on login | '+address;}
     dbSaveAttendance(rec).catch(()=>{});
@@ -20043,7 +20045,9 @@ async function dbGetLocations(){
     if(_COMPANY_ID) q = q.eq('company_id', _COMPANY_ID);
     const {data,error} = await q;
     if(error){ return local.length ? local : [{id:1,name:'Main Office',qrCode:'LOC-MAIN-001',address:''}]; }
-    const locs = data.map(r => ({id:r.id,name:r.name,qrCode:r.qr_code,address:r.address||'',companyId:r.company_id||_COMPANY_ID}));
+    const locs = data.map(r => ({id:r.id,name:r.name,qrCode:r.qr_code,address:r.address||'',companyId:r.company_id||_COMPANY_ID,
+      lat:(r.lat==null||r.lat==='')?null:r.lat, lng:(r.lng==null||r.lng==='')?null:r.lng,
+      radius:(r.radius_m==null||r.radius_m==='')?null:parseInt(r.radius_m)}));
     S.set('attLocations', locs);
     return locs;
   } catch(e){ return local.length ? local : [{id:1,name:'Main Office',qrCode:'LOC-MAIN-001',address:''}]; }
@@ -20057,7 +20061,10 @@ async function dbSaveLocation(loc){
   _attLocations = local;
   if(!sbReady()) return loc;
   try{
-    const row = {name:loc.name, qr_code:loc.qrCode, address:loc.address||'', company_id:loc.companyId||_COMPANY_ID||1};
+    const row = {name:loc.name, qr_code:loc.qrCode, address:loc.address||'', company_id:loc.companyId||_COMPANY_ID||1,
+      lat: (loc.lat==null||loc.lat==='') ? null : String(loc.lat),
+      lng: (loc.lng==null||loc.lng==='') ? null : String(loc.lng),
+      radius_m: (loc.radius==null||loc.radius==='') ? null : String(parseInt(loc.radius)||GEOFENCE_DEFAULT_RADIUS)};
     if(loc.id && String(loc.id).length <= 12){
       // Update existing
       const {error} = await _sb.from('att_locations').update(row).eq('id',loc.id);
@@ -20099,16 +20106,68 @@ function rowToAtt(r){
   return { id:r.id, empId:r.emp_id, clockIn:r.clock_in, clockOut:r.clock_out,
     date:r.date, durationMinutes:r.duration_minutes,
     location:r.location, locationId:r.location_id,
-    lat:r.lat, lng:r.lng, notes:r.notes||'' };
+    lat:r.lat, lng:r.lng, notes:r.notes||'',
+    geoStatus:r.geo_status||null, geoDistance:r.geo_distance!=null?parseInt(r.geo_distance):null };
 }
 function attToRow(r){
   const row = { emp_id:r.empId, clock_in:r.clockIn, clock_out:r.clockOut||null,
     date:r.date, duration_minutes:r.durationMinutes||null,
     location:r.location||'', location_id:r.locationId||null,
     lat:r.lat||null, lng:r.lng||null, notes:r.notes||'',
+    geo_status: r.geoStatus||null,
+    geo_distance: r.geoDistance!=null ? String(r.geoDistance) : null,
     company_id: r.companyId || _COMPANY_ID || 1 };
   Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
   return row;
+}
+
+// ── GEOFENCE ─────────────────────────────────────────────────────────────────
+// Locations may carry coordinates and a radius. When they do, a clock-in is
+// measured against them and flagged if it falls outside. Flagging only — a
+// clock-in is never refused, because GPS indoors is unreliable and nobody
+// should be unable to record their attendance because of a weak signal.
+
+const GEOFENCE_DEFAULT_RADIUS = 150; // metres
+
+// Great-circle distance in metres.
+function distanceMetres(lat1, lng1, lat2, lng2){
+  const toRad = d => d * Math.PI / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+  return Math.round(2 * R * Math.asin(Math.min(1, Math.sqrt(a))));
+}
+
+// status: 'ok' | 'out' | 'no_gps' | 'unfenced'
+function evaluateGeofence(locationId, coords){
+  const loc = (_attLocations||[]).find(l=>String(l.id)===String(locationId));
+  if(!loc || loc.lat==null || loc.lng==null || loc.lat==='' || loc.lng===''){
+    return {status:'unfenced', distance:null, radius:null, name:loc?loc.name:''};
+  }
+  const radius = parseInt(loc.radius) || GEOFENCE_DEFAULT_RADIUS;
+  if(!coords || coords.lat==null){
+    return {status:'no_gps', distance:null, radius, name:loc.name};
+  }
+  const d = distanceMetres(parseFloat(coords.lat), parseFloat(coords.lng),
+                           parseFloat(loc.lat),    parseFloat(loc.lng));
+  return {status: d<=radius ? 'ok' : 'out', distance:d, radius, name:loc.name};
+}
+
+// Stamp the outcome onto an attendance record. Returns the evaluation so the
+// caller can warn the employee.
+function applyGeofence(rec, coords){
+  const g = evaluateGeofence(rec.locationId, coords);
+  rec.geoStatus   = g.status;
+  rec.geoDistance = g.distance;
+  if(g.status==='out'){
+    rec.notes = (rec.notes ? rec.notes+' | ' : '') +
+                '⚠ Out of range: '+g.distance+'m from '+g.name+' (limit '+g.radius+'m)';
+  } else if(g.status==='no_gps'){
+    rec.notes = (rec.notes ? rec.notes+' | ' : '') + 'Location unverified — no GPS';
+  }
+  return g;
 }
 // ── GPS + REVERSE GEOCODE HELPER ─────────────────────────────────────────────
 async function getGPSLocation(){
@@ -20319,6 +20378,9 @@ async function renderAttendanceReport(){
 
   // Anomaly detection helper
   function isAnomalous(r){
+    // Clocked in away from the location's geofence — checked first, since it
+    // says something different from a timing problem.
+    if(r.geoStatus==='out') return {flag:true, reason:'Out of range'+(r.geoDistance?' ('+r.geoDistance+'m)':'')};
     if(!r.clockOut) return {flag:true, reason:'Missing clock-out'};
     const dur = r.durationMinutes||0;
     if(dur < 240) return {flag:true, reason:'Short shift (under 4h)'};
@@ -20635,6 +20697,23 @@ function editLocation(id){
       <input class="fi" id="edit-loc-name" value="${loc.name}" placeholder="e.g. Main Entrance"></div>
     <div class="fg"><label class="fl">Address</label>
       <input class="fi" id="edit-loc-addr" value="${loc.address||''}" placeholder="Optional"></div>
+
+    <div class="fsec">Geofence</div>
+    <div style="font-size:11.5px;color:var(--text3);margin-bottom:8px">
+      Set coordinates to flag clock-ins made away from this location. Leave blank to disable.
+      Stand at the branch and tap <strong>Use my current location</strong> for the most accurate fix.
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+      <div class="fg"><label class="fl">Latitude</label>
+        <input class="fi" id="edit-loc-lat" value="${loc.lat!=null?loc.lat:''}" placeholder="-20.123456"></div>
+      <div class="fg"><label class="fl">Longitude</label>
+        <input class="fi" id="edit-loc-lng" value="${loc.lng!=null?loc.lng:''}" placeholder="57.123456"></div>
+      <div class="fg"><label class="fl">Radius (m)</label>
+        <input class="fi" id="edit-loc-radius" type="number" min="25" step="25" value="${loc.radius!=null?loc.radius:''}" placeholder="${GEOFENCE_DEFAULT_RADIUS}"></div>
+    </div>
+    <button class="btn btn-sm" onclick="captureLocationCoords()">📍 Use my current location</button>
+    <div id="loc-coord-status" style="font-size:11.5px;color:var(--text3);margin:6px 0 12px"></div>
+
     <div style="background:var(--bg2);border-radius:var(--radius);padding:8px 10px;font-size:11px;color:var(--text3);font-family:monospace;margin-bottom:12px">${loc.qrCode}</div>
     <div class="mf">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -20650,6 +20729,16 @@ async function saveEditLocation(id){
   if(!name){ toast('Name required.','error'); return; }
   loc.name = name;
   loc.address = document.getElementById('edit-loc-addr')?.value.trim()||'';
+  const latV = (document.getElementById('edit-loc-lat')?.value||'').trim();
+  const lngV = (document.getElementById('edit-loc-lng')?.value||'').trim();
+  const radV = (document.getElementById('edit-loc-radius')?.value||'').trim();
+  // Both coordinates or neither — half a fix is worse than none.
+  if((latV && !lngV) || (!latV && lngV)){ toast('Enter both latitude and longitude, or leave both blank.','error'); return; }
+  if(latV && (isNaN(parseFloat(latV)) || Math.abs(parseFloat(latV))>90)){ toast('Latitude must be between -90 and 90.','error'); return; }
+  if(lngV && (isNaN(parseFloat(lngV)) || Math.abs(parseFloat(lngV))>180)){ toast('Longitude must be between -180 and 180.','error'); return; }
+  loc.lat = latV || null;
+  loc.lng = lngV || null;
+  loc.radius = latV ? (parseInt(radV)||GEOFENCE_DEFAULT_RADIUS) : null;
   showLoader('Saving...');
   await dbSaveLocation(loc);
   hideLoader();
@@ -20658,6 +20747,33 @@ async function saveEditLocation(id){
   const content = document.getElementById('att-modal-content');
   renderManageLocations(content);
   toast('Location updated.','success');
+}
+
+// Fill the coordinate fields from the device's own GPS. Meant to be used
+// standing at the branch — high accuracy, no cached fix.
+async function captureLocationCoords(){
+  const statusEl = document.getElementById('loc-coord-status');
+  const set = (msg,color) => { if(statusEl){ statusEl.textContent = msg; statusEl.style.color = color||'var(--text3)'; } };
+  if(!navigator.geolocation){ set('This device has no GPS.','var(--red)'); return; }
+  set('Getting a fix…');
+  const coords = await new Promise(resolve=>{
+    navigator.geolocation.getCurrentPosition(
+      pos=>resolve({lat:pos.coords.latitude.toFixed(6), lng:pos.coords.longitude.toFixed(6), acc:Math.round(pos.coords.accuracy)}),
+      err=>resolve({error:err.message||'Could not get a fix'}),
+      {timeout:15000, maximumAge:0, enableHighAccuracy:true}
+    );
+  });
+  if(!coords || coords.error){ set(coords?.error||'Could not get a fix. Try outdoors or near a window.','var(--red)'); return; }
+  const latEl=document.getElementById('edit-loc-lat'), lngEl=document.getElementById('edit-loc-lng'), radEl=document.getElementById('edit-loc-radius');
+  if(latEl) latEl.value = coords.lat;
+  if(lngEl) lngEl.value = coords.lng;
+  if(radEl && !radEl.value) radEl.value = GEOFENCE_DEFAULT_RADIUS;
+  // A radius tighter than the fix's own error margin will flag honest staff.
+  if(coords.acc > GEOFENCE_DEFAULT_RADIUS){
+    set('Captured, but accurate only to ±'+coords.acc+'m — set the radius above that, or recapture outdoors.','var(--amber)');
+  } else {
+    set('Captured — accurate to ±'+coords.acc+'m.','var(--green)');
+  }
 }
 
 function renderManageLocations(content){
@@ -20677,6 +20793,9 @@ function renderManageLocations(content){
                 <div>
                   <div style="font-weight:600;font-size:13.5px">${loc.name}</div>
                   ${loc.address?`<div style="font-size:12px;color:var(--text3)">${loc.address}</div>`:''}
+                  <div style="font-size:11.5px;margin-top:2px">${loc.lat!=null&&loc.lng!=null
+                    ? `<span style="color:var(--green)">📍 Geofenced — ${loc.radius||GEOFENCE_DEFAULT_RADIUS}m</span>`
+                    : `<span style="color:var(--text3)">No geofence set</span>`}</div>
                 </div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap">
                   <button class="btn btn-sm" onclick="editLocation('${loc.id}')">✏ Edit</button>
@@ -21346,9 +21465,11 @@ async function processClockAction(locationId, locationName, isClockedIn, empId){
     dbAddAudit(CU.name,'Clock in: '+(emp?emp.name:empId)+' at '+locationName);
     // Update GPS in background
     getGPSLocation().then(({coords,address})=>{
-      if(!coords&&!address) return;
+      const g = applyGeofence(rec, coords);
+      if(g.status==='out') toast('Clocked in, but you are '+g.distance+'m from '+g.name+'. Flagged for HR.','error');
+      if(!coords && !address && g.status==='unfenced') return;
       rec.lat=coords?coords.lat:null; rec.lng=coords?coords.lng:null;
-      if(address){rec.location=address;rec.notes='GPS: '+address;}
+      if(address){rec.location=address;rec.notes=(rec.notes?rec.notes+' | ':'')+'GPS: '+address;}
       dbSaveAttendance(rec).catch(()=>{});
     }).catch(()=>{});
   }
@@ -23656,9 +23777,11 @@ async function empClockIn(empId, locationId, locationName){
     _attendance.push(rec);
     // Update GPS in background
     getGPSLocation().then(({coords,address})=>{
-      if(!coords&&!address) return;
+      const g = applyGeofence(rec, coords);
+      if(g.status==='out') toast('Clocked in, but you are '+g.distance+'m from '+g.name+'. Flagged for HR.','error');
+      if(!coords && !address && g.status==='unfenced') return;
       rec.lat=coords?coords.lat:null; rec.lng=coords?coords.lng:null;
-      if(address){rec.location=address;rec.notes='QR clock-in | '+address;}
+      if(address){rec.location=address;rec.notes=(rec.notes?rec.notes+' | ':'')+'QR clock-in | '+address;}
       const la=S.get('attendance',[]);
       const idx=la.findIndex(r=>String(r.id)===String(rec.id));
       if(idx>=0){la[idx]=rec;S.set('attendance',la);}
