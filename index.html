@@ -13364,6 +13364,20 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
                   <div style="font-size:11px;color:var(--text3);margin-top:3px">Emergency/disaster rate</div>
                 </div>
               </div>
+              <div style="margin-top:14px;padding:10px 12px;background:var(--bg2);border-radius:var(--radius);border:1px solid var(--border)">
+                <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer">
+                  <input type="checkbox" id="settings-ot-shift-rules" checked style="width:15px;height:15px;accent-color:var(--gold);margin-top:2px">
+                  <div>
+                    <div style="font-weight:600">Shift overtime rules (Mauritius) — on for all companies</div>
+                    <div style="font-size:11.5px;color:var(--text3);margin-top:2px">
+                      Splits a shift crossing midnight and pays each part at its own calendar day's rate.
+                      Hours on the day the shift started are normal; hours after midnight are overtime.
+                      No break is deducted. Only turn this off to fall back to the old daily-threshold
+                      calculation — it changes what people are paid.
+                    </div>
+                  </div>
+                </label>
+              </div>
               <div style="margin-top:14px">
                 <button class="btn btn-primary" onclick="saveWorkingHoursSettings()">💾 Save working hours &amp; OT rates</button>
               </div>
@@ -18704,6 +18718,8 @@ function renderSettings(){
   if(owEl) owEl.value = cs.otWeekday || 1.5;
   if(owdEl) owdEl.value = cs.otWeekend || 2.0;
   if(ohdEl) ohdEl.value = cs.otHoliday || 2.5;
+  const shiftRulesEl = document.getElementById('settings-ot-shift-rules');
+  if(shiftRulesEl) shiftRulesEl.checked = ![false,'false','0',0].includes(cs.otShiftRules);
   const workDays = cs.workDays || [1,2,3,4,5];
   [0,1,2,3,4,5,6].forEach(d=>{
     const cb = document.getElementById('work-day-'+d);
@@ -25079,10 +25095,12 @@ function saveWorkingHoursSettings(){
   cs.otWeekday  = parseFloat(document.getElementById('settings-ot-weekday')?.value) || 1.5;
   cs.otWeekend  = parseFloat(document.getElementById('settings-ot-weekend')?.value) || 2.0;
   cs.otHoliday  = parseFloat(document.getElementById('settings-ot-holiday')?.value) || 2.5;
+  const shiftEl = document.getElementById('settings-ot-shift-rules');
+  if(shiftEl) cs.otShiftRules = shiftEl.checked;
   S.set('companySettings', cs);
   // Also persist to Supabase for each key
   if(sbReady()){
-    ['workStart','workEnd','workHours','workDays','otWeekday','otWeekend','otHoliday'].forEach(k=>{
+    ['workStart','workEnd','workHours','workDays','otWeekday','otWeekend','otHoliday','otShiftRules'].forEach(k=>{
       dbSetSetting(k, JSON.stringify(cs[k])).catch(()=>{});
     });
   }
@@ -25093,7 +25111,105 @@ function saveWorkingHoursSettings(){
 // Patch renderSettings to load working hours values
 // ── Overtime calculation ──────────────────────────────────────────────────────
 
+// ═══════════════════════════════════════════════════════════════════
+// MAURITIUS SHIFT OVERTIME ENGINE
+// Confirmed with MTI HR (Nihad), 18 September 2026.
+//
+// The rule: every hour is paid at the rate of the CALENDAR DAY it falls
+// in. A shift crossing midnight splits at midnight. Hours on the day the
+// shift started are normal hours; hours after midnight are overtime.
+//
+// No break is deducted — 08:30-17:00 pays 8.5h, 17:00-08:30 pays 15.5h.
+//
+// Worked examples this satisfies:
+//   Mon 08:30-17:00        8.5h normal, weekday                    x1.0
+//   Tue 17:00 - Wed 08:30  7.0h normal x1.0  +  8.5h OT x1.5
+//   Sat 17:00 - Sun 08:30  7.0h normal x1.0  +  8.5h OT x2.0 (Sunday)
+//   Sun 08:30-17:00        8.0h x2.0  +  0.5h x3.0
+//   25 Dec (PH) 17:00 ->   7.0h normal x2.0  +  8.5h OT x1.5 (26th ordinary)
+//   24 Dec      17:00 ->   7.0h normal x1.0  +  8.5h OT x2.0 (25th is PH)
+// ═══════════════════════════════════════════════════════════════════
+
+const OT_RULES_MU = {
+  normal:   { weekday: 1.0, sunday: 2.0, holiday: 2.0 },
+  overtime: { weekday: 1.5, sunday: 2.0, holiday: 2.0 },
+  // On a Sunday, normal hours beyond this threshold move to a higher rate.
+  // Public holidays never reach 3.0 — confirmed by HR.
+  sundayThresholdHours: 8,
+  sundayBeyondThreshold: 3.0,
+};
+
+// Holiday beats Sunday. Saturday counts as an ordinary weekday — MTI's rate
+// table lists only weekday, Sunday and public holiday.
+function otDayType(dateStr){
+  if(isDayHoliday(dateStr)) return 'holiday';
+  const d = new Date(dateStr+'T00:00:00');
+  return d.getDay() === 0 ? 'sunday' : 'weekday';
+}
+
+// Split a worked span into one segment per calendar day. Local date parts
+// throughout — toISOString would shift everything by the UTC+4 offset and
+// put night shifts on the wrong day.
+function splitShiftAtMidnight(clockIn, clockOut){
+  const segs = [];
+  if(!clockIn || !clockOut) return segs;
+  let start = new Date(clockIn);
+  const end = new Date(clockOut);
+  if(isNaN(start) || isNaN(end) || !(end > start)) return segs;
+  let guard = 0;
+  while(start < end && guard++ < 14){
+    const midnight = new Date(start.getFullYear(), start.getMonth(), start.getDate()+1, 0, 0, 0, 0);
+    const segEnd = midnight < end ? midnight : end;
+    const ds = start.getFullYear() + '-' +
+               String(start.getMonth()+1).padStart(2,'0') + '-' +
+               String(start.getDate()).padStart(2,'0');
+    segs.push({ date: ds, minutes: Math.round((segEnd - start) / 60000) });
+    start = segEnd;
+  }
+  return segs;
+}
+
+// Full breakdown for one attendance record.
+function calcShiftPay(rec){
+  const out = { segments: [], normalMins: 0, otMins: 0, weightedMins: 0, workedMins: 0 };
+  const segs = splitShiftAtMidnight(rec.clockIn, rec.clockOut);
+  segs.forEach((s, i) => {
+    const kind = i === 0 ? 'normal' : 'overtime';
+    const type = otDayType(s.date);
+    if(kind === 'normal' && type === 'sunday'){
+      // Sunday normal hours: the first 8 at 2.0, anything beyond at 3.0.
+      const thr   = OT_RULES_MU.sundayThresholdHours * 60;
+      const first = Math.min(s.minutes, thr);
+      const rest  = Math.max(0, s.minutes - thr);
+      if(first) out.segments.push({date:s.date, minutes:first, kind, type, rate:OT_RULES_MU.normal.sunday});
+      if(rest)  out.segments.push({date:s.date, minutes:rest,  kind, type, rate:OT_RULES_MU.sundayBeyondThreshold});
+    } else {
+      out.segments.push({date:s.date, minutes:s.minutes, kind, type, rate:OT_RULES_MU[kind][type]});
+    }
+  });
+  out.segments.forEach(s => {
+    if(s.kind === 'normal') out.normalMins += s.minutes; else out.otMins += s.minutes;
+    out.weightedMins += s.minutes * s.rate;
+    out.workedMins   += s.minutes;
+  });
+  return out;
+}
+
+// Applied across every company. The setting exists only as a kill switch:
+// set otShiftRules to false to fall back to the old daily-threshold
+// calculation if something ever needs unpicking.
+function usesMauritiusShiftRules(){
+  return ![false,'false','0',0].includes(getSettings().otShiftRules);
+}
+
 function calcOvertimeForRecord(rec, wh){
+  if(usesMauritiusShiftRules() && rec.clockIn && rec.clockOut){
+    const p = calcShiftPay(rec);
+    const dominant = p.segments.find(s=>s.kind==='overtime') || p.segments[0] || {};
+    return { normalMins:p.normalMins, otMins:p.otMins, type:dominant.type||'weekday',
+             rate:dominant.rate||1, workedMins:p.workedMins, segments:p.segments,
+             weightedMins:p.weightedMins };
+  }
   if(!rec.durationMinutes) return {normalMins:0, otMins:0, type:'normal'};
   const date    = rec.date || rec.clockIn?.slice(0,10);
   const dow     = new Date(date+'T00:00:00').getDay(); // 0=Sun
@@ -25322,6 +25438,12 @@ function renderCustomHolidaysList(){
   }).join('');
 }
 function calcOTMins(rec, settings){
+  if(usesMauritiusShiftRules() && rec.clockIn && rec.clockOut){
+    const p = calcShiftPay(rec);
+    const dominant = p.segments.find(s=>s.kind==='overtime') || p.segments[0] || {};
+    return { otMins:p.otMins, regularMins:p.normalMins, type:dominant.type||'weekday',
+             segments:p.segments, weightedMins:p.weightedMins };
+  }
   // Always derive from clockIn/clockOut — durationMinutes in DB may be stale or wrong
   let worked = 0;
   if(rec.clockIn){
@@ -25415,10 +25537,19 @@ async function runOvertimeReport(){
     const dayBreakdown = {};
 
     dedupedRecs.forEach(rec=>{
-      const {otMins,regularMins,type} = calcOTMins(rec, settings);
+      const {otMins,regularMins,type,segments} = calcOTMins(rec, settings);
       totalRegMins += regularMins;
       totalOTMins  += otMins;
-      if(otMins>0){
+      if(segments && segments.length){
+        // Under the shift rules a single record can span two days at two
+        // different rates, so attribute each segment to its own date.
+        segments.filter(s=>s.kind==='overtime').forEach(s=>{
+          if(!dayBreakdown[s.date]) dayBreakdown[s.date] = {otMins:0, type:s.type, rate:s.rate, location:rec.location||''};
+          dayBreakdown[s.date].otMins += s.minutes;
+          dayBreakdown[s.date].rate = s.rate;
+          dayBreakdown[s.date].type = s.type;
+        });
+      } else if(otMins>0){
         if(!dayBreakdown[rec.date]) dayBreakdown[rec.date] = {otMins:0, type, location:rec.location||''};
         dayBreakdown[rec.date].otMins += otMins;
       }
