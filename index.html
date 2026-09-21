@@ -788,7 +788,25 @@ async function emailLeaveRequestToHOD(emp, hod, req){
             ${req.reason?`<tr><td style="padding:6px 0;color:#6b7280">Reason</td><td style="padding:6px 0">${req.reason}</td></tr>`:''}
           </table>
         </div>
-        ${(()=>{ const b=getEmpBalance(emp.id); const bt=b?.byType?.[req.type]; if(!bt) return ''; const remDays=bt.unlimited?null:bt.remaining; const usedDays=bt.used||0; const maxDays=bt.max||0; const pct=maxDays>0?Math.min(100,Math.round((usedDays/maxDays)*100)):0; const barColor=pct>80?'#DC2626':pct>50?'#D97706':'#059669'; return bt.unlimited ? `<div style="background:#FEF9C3;border:1px solid #FDE047;border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px;color:#713F12">ℹ️ ${leaveLabel} — no balance limit</div>` : `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:14px;margin-bottom:16px"><p style="margin:0 0 8px;font-size:11px;font-weight:700;color:#065F46;letter-spacing:0.5px">LEAVE BALANCE — ${leaveLabel.toUpperCase()}</p><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:#374151"><strong style="color:${barColor}">${remDays} days remaining</strong></span><span style="color:#6b7280">${usedDays} of ${maxDays} used</span></div><div style="height:8px;background:#E5E7EB;border-radius:4px;overflow:hidden"><div style="height:8px;width:${pct}%;background:${barColor};border-radius:4px"></div></div></div>`; })()}
+        ${(()=>{
+          // Remaining only. The old version also showed "X of 22 used", but 22 was
+          // a hardcoded statutory maximum, not the employee's own entitlement, and
+          // "used" counts only what is recorded in SolentraHR this calendar year —
+          // which understates anyone who transferred in mid-year with leave already
+          // taken elsewhere. Remaining is the one figure that is true for everyone.
+          const b = getEmpBalance(emp.id);
+          const bt = b?.byType?.[req.type];
+          if(!bt) return '';
+          if(bt.unlimited) return `<div style="background:#FEF9C3;border:1px solid #FDE047;border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px;color:#713F12">ℹ️ ${leaveLabel} — no balance limit</div>`;
+          const remDays = bt.remaining;
+          const afterThis = Math.round((remDays - (parseFloat(req.days)||0)) * 10) / 10;
+          const tone = remDays <= 2 ? '#DC2626' : remDays <= 5 ? '#D97706' : '#059669';
+          return `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:14px;margin-bottom:16px">
+            <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#065F46;letter-spacing:0.5px">LEAVE BALANCE — ${leaveLabel.toUpperCase()}</p>
+            <div style="font-size:20px;font-weight:700;color:${tone};line-height:1.2">${remDays} day${remDays===1?'':'s'} remaining</div>
+            <div style="font-size:12px;color:#6b7280;margin-top:4px">${afterThis} remaining if you approve this request</div>
+          </div>`;
+        })()}
         ${approveUrl ? `
         <div style="display:flex;gap:12px;margin-bottom:20px">
           <a href="${approveUrl}" style="flex:1;display:block;background:#059669;color:#fff;text-align:center;padding:14px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:700">
