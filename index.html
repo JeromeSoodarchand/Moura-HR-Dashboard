@@ -22503,9 +22503,14 @@ async function dbGetLeaveBalances(){
     const {data,error} = await _sb.from('leave_balances').select('*');
     if(error){ console.error('dbGetLeaveBalances:', error); return local; }
     const out = {};
+    // A stored 0 is a real balance, not a missing one. `parseFloat(x)||22` turned
+    // every zero back into a full entitlement, so someone who had used all their
+    // leave -- or a probationer with none yet -- was shown 22 days and could book it.
+    const balNum = (v, dflt) =>
+      (v === null || v === undefined || v === '' || isNaN(parseFloat(v))) ? dflt : parseFloat(v);
     data.forEach(r=>{
       if(companyEmpIds.includes(String(r.emp_id))){
-        out[r.emp_id]={annual:parseFloat(r.annual)||22,sick:parseFloat(r.sick)||15,casual:parseFloat(r.casual)||10,sickCarryover:parseFloat(r.sick_carryover)||0,bankSick:parseFloat(r.bank_sick)||0,employer_local:r.employer_local!==null&&r.employer_local!==undefined?parseFloat(r.employer_local):null,family_medical:r.family_medical!==null&&r.family_medical!==undefined?parseFloat(r.family_medical):null};
+        out[r.emp_id]={annual:balNum(r.annual,22),sick:balNum(r.sick,15),casual:balNum(r.casual,10),sickCarryover:balNum(r.sick_carryover,0),bankSick:balNum(r.bank_sick,0),employer_local:r.employer_local!==null&&r.employer_local!==undefined?parseFloat(r.employer_local):null,family_medical:r.family_medical!==null&&r.family_medical!==undefined?parseFloat(r.family_medical):null};
       }
     });
     S.set('leaveBalances', out);
