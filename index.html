@@ -15887,10 +15887,10 @@ function _reportEntitlement(emps){
       <th>Bank Sick</th>
       <th>Status</th>
     </tr></thead><tbody>${rows.map(({emp,bal})=>{
-      const remAnn=parseFloat(bal.employer_local||bal.annual||22);
-      const remSick=parseFloat(bal.sick||15);
-      const remFam=parseFloat(bal.family_medical||5);
-      const bankSick=parseFloat(bal.bank_sick||0);
+      const remAnn=balNum(bal.employer_local, balNum(bal.annual, 22));
+      const remSick=balNum(bal.sick, 15);
+      const remFam=balNum(bal.family_medical, 5);
+      const bankSick=balNum(bal.bank_sick, 0);
       const annPct=Math.round((1-remAnn/22)*100);
       const sickPct=Math.round((1-remSick/15)*100);
       const color=(pct)=>pct>=80?'#DC2626':pct>=50?'#D97706':'#059669';
@@ -16079,7 +16079,7 @@ function exportHRReportCSV(){
     headers=['Employee','Dept','Annual Remaining','Sick Remaining','Family Med Remaining','Bank Sick'];
     emps.forEach(emp=>{
       const bal=_leaveBalances[String(emp.id)]||{};
-      rows.push([emp.name,emp.dept,bal.employer_local||22,bal.sick||15,bal.family_medical||5,bal.bank_sick||0]);
+      rows.push([emp.name,emp.dept,balNum(bal.employer_local,balNum(bal.annual,22)),balNum(bal.sick,15),balNum(bal.family_medical,5),balNum(bal.bank_sick,0)]);
     });
   } else if(tab==='overtime'){
     headers=['Employee','Dept','Date','OT Start','OT End','Hours','Type','Status'];
@@ -22493,6 +22493,13 @@ async function dbSaveLeaveRequest(req){
   } catch(e){ console.error('dbSaveLeaveRequest exception:',e); toast('Leave save error: '+e.message,'error'); return req; }
 }
 
+// A stored 0 is a real balance, not a missing one. `x || 22` treats zero as absent
+// and hands back a full entitlement, so someone who had used all their leave -- or a
+// probationer with none yet -- was shown 22 days and could book against them.
+// Top-level on purpose: the balance displays live in a different <script> block.
+function balNum(v, dflt){
+  return (v === null || v === undefined || v === '' || isNaN(parseFloat(v))) ? dflt : parseFloat(v);
+}
 async function dbGetLeaveBalances(){
   ensureSB();
   const local = _leaveBalances || S.get('leaveBalances', {});
@@ -22503,11 +22510,6 @@ async function dbGetLeaveBalances(){
     const {data,error} = await _sb.from('leave_balances').select('*');
     if(error){ console.error('dbGetLeaveBalances:', error); return local; }
     const out = {};
-    // A stored 0 is a real balance, not a missing one. `parseFloat(x)||22` turned
-    // every zero back into a full entitlement, so someone who had used all their
-    // leave -- or a probationer with none yet -- was shown 22 days and could book it.
-    const balNum = (v, dflt) =>
-      (v === null || v === undefined || v === '' || isNaN(parseFloat(v))) ? dflt : parseFloat(v);
     data.forEach(r=>{
       if(companyEmpIds.includes(String(r.emp_id))){
         out[r.emp_id]={annual:balNum(r.annual,22),sick:balNum(r.sick,15),casual:balNum(r.casual,10),sickCarryover:balNum(r.sick_carryover,0),bankSick:balNum(r.bank_sick,0),employer_local:r.employer_local!==null&&r.employer_local!==undefined?parseFloat(r.employer_local):null,family_medical:r.family_medical!==null&&r.family_medical!==undefined?parseFloat(r.family_medical):null};
@@ -23559,9 +23561,9 @@ function generateLeaveSummary(){
       </tr></thead>
       <tbody>
         ${rows.map(({emp,bal,taken})=>{
-          const remAnnual = parseFloat(bal.employer_local||bal.annual||22);
-          const remSick   = parseFloat(bal.sick||15);
-          const remFam    = parseFloat(bal.family_medical||5);
+          const remAnnual = balNum(bal.employer_local, balNum(bal.annual, 22));
+          const remSick   = balNum(bal.sick, 15);
+          const remFam    = balNum(bal.family_medical, 5);
           const totalTaken = (taken.annual||0)+(taken.employer_local||0)+(taken.sick||0)+(taken.family_medical||0)+(taken.permission||0);
           const annualTaken = (taken.annual||0)+(taken.employer_local||0);
           return `<tr>
@@ -23590,9 +23592,9 @@ async function exportLeaveSummaryDocx(){
   // Build CSV for download (Word requires server-side; use CSV as fallback)
   const headers = ['Employee','Department','Annual Taken','Annual Remaining','Sick Taken','Sick Remaining','Family Med Taken','Family Med Remaining','Permission Taken','Total Taken'];
   const csvRows = rows.map(({emp,bal,taken})=>{
-    const remAnnual = parseFloat(bal.employer_local||bal.annual||22);
-    const remSick   = parseFloat(bal.sick||15);
-    const remFam    = parseFloat(bal.family_medical||5);
+    const remAnnual = balNum(bal.employer_local, balNum(bal.annual, 22));
+    const remSick   = balNum(bal.sick, 15);
+    const remFam    = balNum(bal.family_medical, 5);
     const annualTaken = (taken.annual||0)+(taken.employer_local||0);
     const totalTaken  = annualTaken+(taken.sick||0)+(taken.family_medical||0)+(taken.permission||0);
     return [emp.name, emp.dept, annualTaken, remAnnual, taken.sick||0, remSick, taken.family_medical||0, remFam, taken.permission||0, totalTaken];
