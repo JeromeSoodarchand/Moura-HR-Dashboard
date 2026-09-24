@@ -985,13 +985,7 @@ async function setCompanyAccessMode(companyId, mode){
   // Save globally (company_id=0 means global/super-admin setting)
   if(sbReady()){
     try{
-      await _sb.from('company_settings').delete().eq('key','companyAccessModes').eq('company_id',0);
-      await _sb.from('company_settings').insert({
-        key:'companyAccessModes',
-        value: JSON.stringify(modes),
-        company_id: 0,
-        updated_at: new Date().toISOString()
-      });
+      await dbSetSetting('companyAccessModes', modes, 0);
     } catch(e){ console.warn('Access mode save error:', e); }
   }
 
@@ -14109,16 +14103,40 @@ async function dbGetSetting(key){
   } catch(e){ console.warn('dbGetSetting error:',e); return null; }
 }
 
-async function dbSetSetting(key,value){
+async function dbSetSetting(key,value,companyIdOverride){
   if(!sbReady()) return;
-  const cid = _COMPANY_ID||1;
+  // Explicit check, not `||`: company 0 is the real id for global settings and
+  // would otherwise be turned into company 1.
+  const cid = (companyIdOverride !== undefined && companyIdOverride !== null)
+    ? companyIdOverride : (_COMPANY_ID||1);
   try{
-    // Delete existing row for this key+company first, then insert fresh
-    await _sb.from('company_settings').delete().eq('key',key).eq('company_id',cid);
-    if(value!==null && value!==undefined && value!=='null'){
+    // Update in place, never delete-then-insert. There is no DELETE policy on
+    // company_settings for the anon role, so the old delete was silently refused
+    // and every save appended a duplicate row -- which then resolved at random,
+    // because the settings loader reads rows unordered. UPDATE is permitted, and
+    // granting anon DELETE would let anyone holding the public key wipe every
+    // company's configuration.
+    //
+    // String() on an array yields "[object Object],[object Object]" and loses the
+    // setting entirely: it reads back unparseable and falls through to the
+    // built-in defaults, so a saved leave type never survived a reload. Scalars
+    // stay as-is, because dbGetSetting returns them raw, without parsing.
+    const stored = (value === null || value === undefined || value === 'null')
+      ? ''
+      : (typeof value === 'object' ? JSON.stringify(value) : String(value));
+
+    const {data:found} = await _sb.from('company_settings')
+      .select('id').eq('key',key).eq('company_id',cid)
+      .order('id',{ascending:false}).limit(1);
+    const existingId = Array.isArray(found) ? found[0]?.id : found?.id;
+
+    if(existingId){
+      await _sb.from('company_settings')
+        .update({ value: stored, updated_at: new Date().toISOString() })
+        .eq('id', String(existingId));
+    } else {
       await _sb.from('company_settings').insert({
-        key, value: String(value),
-        company_id: cid,
+        key, value: stored, company_id: cid,
         updated_at: new Date().toISOString()
       });
     }
@@ -18985,8 +19003,10 @@ function removeLogo(){
   // Remove from Supabase
   if(sbReady()){
     const cid = _COMPANY_ID||1;
+    // Blanked rather than deleted: anon has no DELETE policy, so the old delete
+    // was refused and the logo reappeared on the next reload.
     ['logoB64','logoMime','logoDataUrl'].forEach(key=>{
-      _sb.from('company_settings').delete().eq('key',key).eq('company_id',cid).then(()=>{});
+      dbSetSetting(key, '', cid).catch(()=>{});
     });
   }
   toast('Logo removed.','success');
@@ -22512,7 +22532,7 @@ async function dbGetLeaveBalances(){
     const out = {};
     data.forEach(r=>{
       if(companyEmpIds.includes(String(r.emp_id))){
-        out[r.emp_id]={annual:balNum(r.annual,22),sick:balNum(r.sick,15),casual:balNum(r.casual,10),sickCarryover:balNum(r.sick_carryover,0),bankSick:balNum(r.bank_sick,0),employer_local:r.employer_local!==null&&r.employer_local!==undefined?parseFloat(r.employer_local):null,family_medical:r.family_medical!==null&&r.family_medical!==undefined?parseFloat(r.family_medical):null};
+        out[r.emp_id]={vacation:balNum(r.vacation,0),annual:balNum(r.annual,22),sick:balNum(r.sick,15),casual:balNum(r.casual,10),sickCarryover:balNum(r.sick_carryover,0),bankSick:balNum(r.bank_sick,0),employer_local:r.employer_local!==null&&r.employer_local!==undefined?parseFloat(r.employer_local):null,family_medical:r.family_medical!==null&&r.family_medical!==undefined?parseFloat(r.family_medical):null};
       }
     });
     S.set('leaveBalances', out);
@@ -22540,12 +22560,13 @@ async function dbSaveLeaveBalance(empId, balances){
     const bankSick   = bal?.bankSick ?? bal?.bank_sick ?? null;
     const empLocal   = bal?.employer_local ?? null;
     const famMedical = bal?.family_medical ?? null;
+    const vacation   = bal?.vacation ?? null;
     const empObj = getEmps().find(e=>String(e.id)===String(eid));
     const compId = empObj?.companyId || bal?.company_id || _COMPANY_ID || 1;
     const row = {
       emp_id:eid, company_id:compId, annual:ann, sick:sick, casual:cas,
       sick_carryover:carryover, bank_sick:bankSick,
-      employer_local:empLocal, family_medical:famMedical,
+      employer_local:empLocal, family_medical:famMedical, vacation:vacation,
       updated_at:new Date().toISOString()
     };
     // Check if row exists first — custom REST client doesn't support onConflict
@@ -22598,6 +22619,10 @@ function getEmpBalance(empId){
       employer_local:{label:'Annual Leave',          max:LOCAL_MAX,  used:parseFloat(used.employer_local||0), remaining:parseFloat(bal.employer_local!==undefined&&bal.employer_local!==null?bal.employer_local:LOCAL_MAX), unlimited:false},
       family_medical:{label:'Family Medical Leave', max:FAMILY_MAX, used:parseFloat(used.family_medical||0), remaining:parseFloat(bal.family_medical!==undefined&&bal.family_medical!==null?bal.family_medical:FAMILY_MAX), unlimited:false},
       permission:    {label:'Permission',           max:0,          used:parseFloat(used.permission||0),     remaining:null, unlimited:true},
+      // Vacation has no statutory ceiling -- one person carries 25 days, above the
+      // 22-day annual max -- so the entitlement is whatever HR loaded, and it
+      // defaults to nothing rather than to a maximum.
+      vacation:      {label:'Vacation Leave',       max:(parseFloat(bal.vacation)||0)+parseFloat(used.vacation||0), used:parseFloat(used.vacation||0), remaining:Math.max(0,parseFloat(bal.vacation)||0), unlimited:false},
     },
   };
 }
@@ -23297,9 +23322,9 @@ async function submitLeaveRequest(){
   }
 
   // Check balance
-  if(['annual','sick','casual','employer_local','family_medical'].includes(type)){
+  if(['annual','sick','casual','employer_local','family_medical','vacation'].includes(type)){
     const b = getEmpBalance(empId);
-    const rem = {annual:b.remAnnual, sick:b.remSick, casual:b.remCasual, employer_local:b.byType?.employer_local?.remaining||0, family_medical:b.byType?.family_medical?.remaining||0}[type];
+    const rem = {annual:b.remAnnual, sick:b.remSick, casual:b.remCasual, employer_local:b.byType?.employer_local?.remaining||0, family_medical:b.byType?.family_medical?.remaining||0, vacation:b.byType?.vacation?.remaining||0}[type];
     if(days>rem){
       if(type==='sick'){
         const overflow=days-(rem||0), bankRem=b.remBankSick||0;
@@ -23401,11 +23426,14 @@ function openEditBalance(empId){
         <input class="fi" id="bal-family" type="number" value="${b.byType?.family_medical?.remaining??5}" min="0" max="30" step="0.5">
         <div class="txs tm" style="margin-top:3px">Max 5 days/year</div>
       </div>
+      <div class="fg"><label class="fl">Vacation Leave</label>
+        <input class="fi" id="bal-vacation" type="number" value="${b.byType?.vacation?.remaining??0}" min="0" max="365" step="0.5">
+        <div class="txs tm" style="margin-top:3px">Only for staff who have it</div>
+      </div>
       <div class="fg"><label class="fl">Bank Sick</label>
         <input class="fi" id="bal-banksick" type="number" value="${b.bankSick||0}" min="0" max="365">
         <div class="txs tm" style="margin-top:3px">Activated when sick leave exhausted</div>
       </div>
-      <div class="fg"></div>
     </div>
     <div class="mf">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -23418,6 +23446,7 @@ async function saveBalance(empId){
   const local       = parseFloat(document.getElementById('bal-local')?.value)||0;
   const familyMed   = parseFloat(document.getElementById('bal-family')?.value)||0;
   const bankSick    = parseFloat(document.getElementById('bal-banksick')?.value)||0;
+  const vacation    = parseFloat(document.getElementById('bal-vacation')?.value)||0;
   showLoader('Saving…');
   try{
     const existing = _leaveBalances[String(empId)]||_leaveBalances[empId]||{};
@@ -23427,6 +23456,7 @@ async function saveBalance(empId){
       employer_local: String(local),
       family_medical: String(familyMed),
       bank_sick:      String(bankSick),
+      vacation:       String(vacation),
       bankSick:       bankSick,
     });
     _leaveBalances = await dbGetLeaveBalances();
@@ -25323,10 +25353,9 @@ async function saveGlobalPublicHolidays(list){
   localStorage.setItem('globalPublicHolidays', JSON.stringify(list));
   if(!sbReady()) return;
   try{
-    await _sb.from('company_settings').delete().eq('key','globalPublicHolidays').eq('company_id',0);
-    if(list.length){
-      await _sb.from('company_settings').insert({key:'globalPublicHolidays', value:JSON.stringify(list), company_id:0, updated_at:new Date().toISOString()});
-    }
+    // An empty list stores as '[]' -- which reads back as an empty list, rather
+    // than as "no row", which fell through to the built-in holiday defaults.
+    await dbSetSetting('globalPublicHolidays', list, 0);
   } catch(e){ console.warn('saveGlobalPublicHolidays error:',e); }
 }
 
@@ -27861,11 +27890,14 @@ This will restore the leave balance.`)) return;
       }
       const empBalKey = String(req.empId);
       const bal = _leaveBalances[String(empBalKey)] || _leaveBalances[empBalKey];
-      const refundFieldMap = {annual:'annual', sick:'sick', employer_local:'employer_local'};
+      const refundFieldMap = {annual:'annual', sick:'sick', employer_local:'employer_local', vacation:'vacation'};
       const refundField = refundFieldMap[req.type];
       if(bal && refundField && bal[refundField] !== undefined){
         const maxMap = {annual:22, sick:15, employer_local:22, family_medical:5};
-        bal[refundField] = Math.min(maxMap[req.type]||22, (parseFloat(bal[refundField])||0) + (parseFloat(req.days)||0));
+        // Vacation is uncapped -- capping a refund at 22 would quietly eat days
+        // from someone who holds more than that.
+        const refunded = (parseFloat(bal[refundField])||0) + (parseFloat(req.days)||0);
+        bal[refundField] = req.type==='vacation' ? refunded : Math.min(maxMap[req.type]||22, refunded);
         await dbSaveLeaveBalance(req.empId, bal).catch(()=>{});
       }
     }
