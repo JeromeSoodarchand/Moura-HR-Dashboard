@@ -721,6 +721,11 @@ html {
 }
 @media (max-width: 768px) {
   #mobile-bottom-nav { display: flex !important; }
+  /* The employee clock-in screen and the mobile portal are full-screen overlays
+     with their own navigation, and both hide #app -- which is what this nav's
+     buttons switch pages inside. The rule above is !important, so an inline
+     style can never turn it off; only a more specific selector can. */
+  body.emp-overlay-open #mobile-bottom-nav { display: none !important; }
   #content { padding-bottom: 80px !important; }
 }
 .mob-nav-item {
@@ -29080,10 +29085,10 @@ function renderUserAuditSummary(){
         const mp = document.getElementById('mobile-portal');
         const covered = (ov && ov.style.display && ov.style.display !== 'none')
                      || (mp && mp.style.display && mp.style.display !== 'none');
-        if(covered){
-          if(mn.style.display !== 'none') mn.style.display = 'none';
-          return;
-        }
+        // Must be a class, not an inline style: the media query rule is
+        // !important and an inline style loses to it every time.
+        document.body.classList.toggle('emp-overlay-open', !!covered);
+        if(covered) return;
         if(mn.style.display === 'none') mn.style.display = 'flex';
       };
       // Run immediately and on any DOM changes
