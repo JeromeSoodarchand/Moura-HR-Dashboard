@@ -29069,7 +29069,22 @@ function renderUserAuditSummary(){
         const sb = document.getElementById('sidebar');
         if(sb && sb.style.display !== 'none') sb.style.display = 'none';
         const mn = document.getElementById('mobile-bottom-nav');
-        if(mn && mn.style.display === 'none') mn.style.display = 'flex';
+        if(!mn) return;
+        // The employee clock-in screen and the mobile portal are full-screen
+        // overlays with their own navigation, and both hide #app. This timer
+        // used to put the HR platform's bottom nav back over them three times a
+        // second -- and every button on it calls showPage(), which switches a
+        // page inside the hidden #app. Tapping Leave therefore did nothing at
+        // all: the page really did change, underneath the overlay.
+        const ov = document.getElementById('emp-clock-overlay');
+        const mp = document.getElementById('mobile-portal');
+        const covered = (ov && ov.style.display && ov.style.display !== 'none')
+                     || (mp && mp.style.display && mp.style.display !== 'none');
+        if(covered){
+          if(mn.style.display !== 'none') mn.style.display = 'none';
+          return;
+        }
+        if(mn.style.display === 'none') mn.style.display = 'flex';
       };
       // Run immediately and on any DOM changes
       setInterval(_forceMobile, 300);
