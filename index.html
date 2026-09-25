@@ -23796,6 +23796,11 @@ async function showEmployeeClockInScreen(user){
   const isClockedIn = !!openRec;
   const isHRRole = user.role==='admin'||user.role==='hr'||user.role==='manager';
   const empClockMode = emp?.clockMode||'qr';
+  // Kiosk staff clock on the biometric terminal. Offering them the location
+  // list let them clock from anywhere -- and with 14 branches it also pushed
+  // Request Leave off the bottom of the screen, which is what they actually
+  // came here for.
+  const clocksInApp = empClockMode !== 'kiosk';
   const isHODClockMode = empClockMode==='hod'||user.role==='manager';
   const cs = getSettings();
   const logoSrc = cs.logoDataUrl||(cs.logoB64?'data:'+(cs.logoMime||'image/png')+';base64,'+cs.logoB64:'');
@@ -23851,11 +23856,19 @@ async function showEmployeeClockInScreen(user){
 
       <!-- Action buttons -->
       <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
-        ${isClockedIn?`
+        ${(isClockedIn && clocksInApp)?`
           <button onclick="empClockOut('${openRec?.id}')"
             style="padding:16px;background:var(--red);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit">
             🔴 Clock Out
           </button>`:
+          !clocksInApp?`
+          <button onclick="empRequestLeave()"
+            style="padding:18px;background:var(--navy);color:#fff;border:none;border-radius:12px;font-size:17px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:10px;width:100%">
+            <span style="font-size:22px">📅</span> Request Leave
+          </button>
+          <div style="text-align:center;color:var(--text3);font-size:12.5px;padding:2px 8px;line-height:1.5">
+            You clock in and out at the office terminal, so there is nothing to clock here.
+          </div>`:
           _attLocations.length===0?`
           <div style="text-align:center;color:var(--text3);font-size:13px;padding:20px">
             No locations configured. Contact your HR administrator.
@@ -23881,10 +23894,10 @@ async function showEmployeeClockInScreen(user){
 
       <!-- Secondary actions -->
       <div style="display:flex;gap:8px">
-        <button onclick="empRequestLeave()"
+        ${clocksInApp?`<button onclick="empRequestLeave()"
           style="flex:1;padding:12px;background:#fff;border:1px solid var(--border);border-radius:10px;font-size:13px;cursor:pointer;font-family:inherit">
           📅 Request Leave
-        </button>
+        </button>`:''}
         <button onclick="empViewAttHistory()"
           style="flex:1;padding:12px;background:#fff;border:1px solid var(--border);border-radius:10px;font-size:13px;cursor:pointer;font-family:inherit">
           📋 My Attendance
