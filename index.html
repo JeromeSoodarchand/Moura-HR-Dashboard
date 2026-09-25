@@ -937,7 +937,10 @@ async function populateCompanyDropdowns(){
   if(loginSel){
     const cur = loginSel.value;
     loginSel.innerHTML = '<option value="">— Select your company —</option>' + opts;
-    if(cur) loginSel.value = cur;
+    // Setting .value in code does NOT fire onchange, so restoring the company
+    // here used to leave the name list empty while a company was plainly
+    // selected -- the employee then had nobody to pick and could not sign in.
+    if(cur){ loginSel.value = cur; loadLoginEmployees(cur); }
   }
   // Sidebar switcher
   const sw = document.getElementById('company-switcher');
@@ -24202,6 +24205,14 @@ function toggleLoginMode(){
   }
   passSection.style.display = showingPass ? 'none' : '';
   pinSection.style.display  = showingPass ? '' : 'none';
+  // Belt and braces: load the names on every switch into PIN mode, whatever set
+  // the company and whether or not onchange ever fired. Also retries after a
+  // failed load, which otherwise left the employee stuck with no way back.
+  if(showingPass){
+    const _c = document.getElementById('login-company');
+    const _n = document.getElementById('login-emp');
+    if(_c && _c.value && _n && _n.options.length <= 1) loadLoginEmployees(_c.value);
+  }
   if(btn) btn.textContent = showingPass
     ? '← Back to HR login'
     : 'Employee clock-in (PIN)';
