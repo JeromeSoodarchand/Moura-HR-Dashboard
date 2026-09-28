@@ -23966,6 +23966,7 @@ function openFullHRPlatform(){
 
 async function empClockIn(empId, locationId, locationName){
   try{
+    if(!confirmQuickRestart(empId)) return null;
     const rec = {
       id: 'local-'+Date.now(),
       empId: String(empId),
@@ -24010,6 +24011,24 @@ function confirmShortShift(clockInIso){
   const secs = Math.max(1, Math.round(ms/1000));
   const howLong = secs < 90 ? (secs + ' seconds') : (Math.round(secs/60) + ' minutes');
   return confirm('You clocked in only ' + howLong + ' ago.\n\nClock out now anyway?');
+}
+
+// The mirror of confirmShortShift. Clock In and Clock Out render in the same
+// position, so a second tap straight after clocking out lands on Clock In and
+// opens a fresh shift seconds later, usually with a poor GPS fix that then reads
+// as out of range. Guarding only the clock-out direction left this one open.
+function confirmQuickRestart(empId){
+  const today = todayStr();
+  const outs = (_attendance||[])
+    .filter(r => String(r.empId)===String(empId) && r.date===today && r.clockOut)
+    .map(r => new Date(r.clockOut).getTime())
+    .filter(n => !isNaN(n));
+  if(!outs.length) return true;
+  const ms = Date.now() - Math.max(...outs);
+  if(!(ms >= 0) || ms >= MIN_CLOCKOUT_GAP_MS) return true;
+  const secs = Math.max(1, Math.round(ms/1000));
+  const howLong = secs < 90 ? (secs + ' seconds') : (Math.round(secs/60) + ' minutes');
+  return confirm('You clocked out only ' + howLong + ' ago.\n\nStart a new shift?');
 }
 
 async function empClockOut(recId){
@@ -26981,6 +27000,8 @@ function getRoleDesc(role){
 
 // QR clock-in for mobile — opens camera to scan location QR code
 async function mobileQRClockIn(empId, locationId, locationName){
+  // Checked before the camera opens, so an accidental tap costs nothing.
+  if(!confirmQuickRestart(empId)) return;
   // Show a pre-scan screen — user taps the big button to start camera
   const mb = document.getElementById('mbox');
   const backdrop = document.getElementById('mb');
