@@ -20220,7 +20220,10 @@ function rowToAtt(r){
 }
 function attToRow(r){
   const row = { emp_id:r.empId, clock_in:r.clockIn, clock_out:r.clockOut||null,
-    date:r.date, duration_minutes:r.durationMinutes||null,
+    // 0 is a real duration. `||null` turned a same-minute shift into "no
+    // duration recorded", which reads as missing data rather than as the
+    // mistake it actually was.
+    date:r.date, duration_minutes:(r.durationMinutes===undefined||r.durationMinutes===null)?null:r.durationMinutes,
     location:r.location||'', location_id:r.locationId||null,
     lat:r.lat||null, lng:r.lng||null, notes:r.notes||'',
     geo_status: r.geoStatus||null,
@@ -21597,6 +21600,9 @@ async function processClockAction(locationId, locationName, isClockedIn, empId){
   if(isClockedIn){
     const rec=getEmployeeActiveRecord(empId);
     if(rec){
+      hideLoader();
+      if(!confirmShortShift(rec.clockIn)) return;
+      showLoader('Clocking out...');
       rec.clockOut=new Date().toISOString();
       rec.durationMinutes=calcDuration(rec.clockIn,rec.clockOut);
       await dbSaveAttendance(rec);
@@ -23969,11 +23975,28 @@ async function empClockIn(empId, locationId, locationName){
   } catch(e){ console.error('empClockIn error:',e); throw e; }
 }
 
+// Clock-in and clock-out render in the same place on the screen, so a second
+// impatient tap lands on Clock Out and closes the day seconds after it opened.
+// The terminal sync has had a minimum-gap rule from the start; this is the same
+// idea for the app, but it asks rather than refuses -- somebody who clocked in
+// by mistake must still be able to undo it.
+const MIN_CLOCKOUT_GAP_MS = 5 * 60 * 1000;
+function confirmShortShift(clockInIso){
+  const ms = Date.now() - new Date(clockInIso).getTime();
+  if(!(ms >= 0) || ms >= MIN_CLOCKOUT_GAP_MS) return true;
+  const secs = Math.max(1, Math.round(ms/1000));
+  const howLong = secs < 90 ? (secs + ' seconds') : (Math.round(secs/60) + ' minutes');
+  return confirm('You clocked in only ' + howLong + ' ago.\n\nClock out now anyway?');
+}
+
 async function empClockOut(recId){
   try{
     showLoader('Clocking out...');
     const rec = (_attendance||[]).find(r=>String(r.id)===String(recId));
     if(!rec){ hideLoader(); toast('Attendance record not found.','error'); return; }
+    hideLoader();
+    if(!confirmShortShift(rec.clockIn)) return;
+    showLoader('Clocking out...');
     rec.clockOut = new Date().toISOString();
     const mins = Math.round((new Date(rec.clockOut)-new Date(rec.clockIn))/60000);
     rec.durationMinutes = mins;
