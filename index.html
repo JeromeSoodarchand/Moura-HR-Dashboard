@@ -25703,7 +25703,11 @@ async function runOvertimeReport(){
   try{ _cache.emps = await dbGetEmployees(); } catch(e){}
 
   const settings = getOTSettings();
-  let emps = getScopedEmps().filter(e=>e.status!=='offboarded'&&(!deptF||e.dept===deptF));
+  // Only employees who can actually claim overtime. Before eligibility existed
+  // this listed everyone, which read as though the whole company were owed
+  // hours. Staff who are not eligible still appear in the attendance reports --
+  // their extra hours remain visible there, they are simply not payable here.
+  let emps = getScopedEmps().filter(e=>e.status!=='offboarded'&&e.otEligible&&(!deptF||e.dept===deptF));
 
   // Fetch attendance — filter by scoped employee IDs
   let recs = [];
@@ -25716,7 +25720,9 @@ async function runOvertimeReport(){
   // Populate dept filter
   const deptSel = document.getElementById('ot-dept-filter');
   if(deptSel && deptSel.options.length<=1){
-    const depts = [...new Set(getScopedEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
+    // Same population as the table, or the filter offers departments that can
+    // only ever come back empty.
+    const depts = [...new Set(getScopedEmps().filter(e=>e.status!=='offboarded'&&e.otEligible).map(e=>e.dept).filter(Boolean))].sort();
     depts.forEach(d=>{ const o=document.createElement('option'); o.value=d; o.textContent=d; deptSel.appendChild(o); });
   }
 
@@ -25966,7 +25972,9 @@ function initOTDateRange(){
   // Populate dept filter
   const deptSel = document.getElementById('ot-dept-filter');
   if(deptSel && deptSel.options.length<=1){
-    const depts = [...new Set(getScopedEmps().filter(e=>e.status!=='offboarded').map(e=>e.dept).filter(Boolean))].sort();
+    // Same population as the table, or the filter offers departments that can
+    // only ever come back empty.
+    const depts = [...new Set(getScopedEmps().filter(e=>e.status!=='offboarded'&&e.otEligible).map(e=>e.dept).filter(Boolean))].sort();
     depts.forEach(d=>{ const o=document.createElement('option'); o.value=d; o.textContent=d; deptSel.appendChild(o); });
   }
 }
