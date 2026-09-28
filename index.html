@@ -14179,7 +14179,7 @@ function rowToEmp(r){
   return{id:r.id,empNo:r.emp_no||null,nic:r.nic||null,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
     salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:typeof r.salary_history==='string'?JSON.parse(r.salary_history||'[]'):(r.salary_history||[])}:null,
     checklist:typeof r.checklist==='string'?JSON.parse(r.checklist||'{}'):(r.checklist||{}),offChecklist:typeof r.off_checklist==='string'?JSON.parse(r.off_checklist||'{}'):(r.off_checklist||{}),lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
-    photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,pinAttempts:parseInt(r.pin_attempts)||0,pinLockedUntil:r.pin_locked_until||null,pinLockedOut:[true,'true',1].includes(r.pin_locked_out)||false,attendanceEditor:[true,'true','1',1].includes(r.att_editor),isHOD:[true,'true','1',1].includes(r.is_hod),isSeniorHOD:[true,'true','1',1].includes(r.is_senior_hod),
+    photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,pinAttempts:parseInt(r.pin_attempts)||0,pinLockedUntil:r.pin_locked_until||null,pinLockedOut:[true,'true',1].includes(r.pin_locked_out)||false,attendanceEditor:[true,'true','1',1].includes(r.att_editor),isHOD:[true,'true','1',1].includes(r.is_hod),isSeniorHOD:[true,'true','1',1].includes(r.is_senior_hod),otEligible:[true,'true','1',1].includes(r.ot_eligible),
     companyId:r.company_id||1,
     workStart:r.work_start||null, workEnd:r.work_end||null,
     workDays:typeof r.work_days==='string'?JSON.parse(r.work_days||'null'):(r.work_days||null),
@@ -14223,6 +14223,8 @@ function empToRow(e){
     att_editor:           String(e.attendanceEditor || false),
     is_hod:               String(e.isHOD || false),
     is_senior_hod:        String(e.isSeniorHOD || false),
+    // Absent means NOT eligible: nobody gains overtime by being overlooked.
+    ot_eligible:          String(e.otEligible || false),
     updated_at:           new Date().toISOString(),
     work_start:           e.workStart||null,
     work_end:             e.workEnd||null,
@@ -16323,7 +16325,17 @@ function clearOTFilters(){
 
 function openSubmitOT(){
   const today = todayStr();
-  const emps = getScopedEmps().filter(e=>e.status!=='offboarded');
+  const _isHROrAdmin = CU && (CU.role==='admin'||CU.role==='hr');
+  if(!_isHROrAdmin){
+    // Say so up front rather than letting someone fill in a request that is
+    // refused on submit -- or worse, accepted and then rejected by payroll.
+    const myEmp = getEmps().find(e=>String(e.userId)===String(CU?.id)||e.email===CU?.email);
+    if(!myEmp || !myEmp.otEligible){
+      toast('Overtime is not enabled for your position. Speak to HR if that looks wrong.','error');
+      return;
+    }
+  }
+  const emps = getScopedEmps().filter(e=>e.status!=='offboarded' && e.otEligible);
   const empOptions = emps.map(e=>`<option value="${e.id}">${e.name} — ${e.dept||''}</option>`).join('');
   openModal('submitOT');
   document.getElementById('mb').innerHTML = `
@@ -16404,6 +16416,7 @@ async function submitOTRequest(){
   const otHours = parseFloat((mins/60).toFixed(2));
   const emp = gE(empId);
   if(!emp){ toast('Employee not found.','error'); return; }
+  if(!emp.otEligible){ toast(emp.name + ' is not eligible for overtime.','error'); return; }
 
   showLoader('Submitting…');
   const {data,error} = await _sb.from('overtime_requests').insert({
@@ -17274,6 +17287,15 @@ function openModal(type,pid,pid2){
         </div>
         <span id="fis-senior-hod-badge" style="display:${emp?.isSeniorHOD?'inline-flex':'none'};background:#7F77DD20;color:#7F77DD;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">Sr. HOD</span>
       </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#eefaf3;border-radius:var(--radius);margin-bottom:12px;border:1px solid #9fd8bb">
+        <input type="checkbox" id="fis-ot-eligible" style="width:16px;height:16px;accent-color:#059669;cursor:pointer;flex-shrink:0"
+          ${emp?.otEligible?'checked':''} onchange="document.getElementById('fis-ot-eligible-badge').style.display=this.checked?'inline-flex':'none'">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:500">Eligible for overtime</div>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:1px">Off by default. Only employees ticked here can submit or be given overtime.</div>
+        </div>
+        <span id="fis-ot-eligible-badge" style="display:${emp?.otEligible?'inline-flex':'none'};background:#05966920;color:#059669;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">OT</span>
+      </div>
       <div class="fsec">Compensation</div>
       <div class="fr3"><div class="fg"><label class="fl">Salary amount</label><input class="fi" id="fsal" type="number" value="${emp?.salary?.amount||''}" placeholder="50000"></div>
       <div class="fg"><label class="fl">Currency</label><select class="fs" id="fcur">${['USD','EUR','GBP','MUR','AUD','CAD'].map(c=>`<option ${emp?.salary?.currency===c?'selected':''}>${c}</option>`).join('')}</select></div>
@@ -17644,6 +17666,7 @@ async function submitAdd(){
     attendanceEditor:document.getElementById('fatt-editor')?.checked||false,
     isHOD:document.getElementById('fis-hod')?.checked||false,
     isSeniorHOD:document.getElementById('fis-senior-hod')?.checked||false,
+    otEligible:document.getElementById('fis-ot-eligible')?.checked||false,
     pinHash:(()=>{const p=(document.getElementById('femp-pin')?.value||'').replace(/[^0-9]/g,'');return p.length===4?simpleHash(p):null;})(),
     ..._readClockModeSchedule(),
   };
