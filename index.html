@@ -14989,7 +14989,12 @@ async function doLogin(){
   } else if(user.role==='hod'||user.role==='manager'){
     const _cachedModes = S.get('globalAccessModes', {});
     const _hodMode = _cachedModes[String(_COMPANY_ID)] || _cachedModes[_COMPANY_ID] || 'full_kiosk';
-    if(_hodMode === 'leave_portal'){
+    // Also require an actual mobile device. The access mode alone sent managers
+    // to the phone portal even on a laptop -- and the session-restore path has
+    // this branch disabled, so a refresh landed them on the full platform
+    // instead. Same login, two different screens depending on whether you had
+    // just signed in or just reloaded.
+    if(_hodMode === 'leave_portal' && shouldShowMobilePortal(user, _dLoginEmp)){
       showMobilePortal(user, _dLoginEmp);
     } else {
       loadAndRenderDashboard();
