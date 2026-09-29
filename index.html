@@ -27432,6 +27432,10 @@ function getLeaveApprovalContext(){
     isHOD,
     isSeniorHOD,
     canCrossView: isSeniorHOD || u?.crossLeaveVisibility || false,
+    // The account flag on its own. canCrossView folds in isSeniorHOD, which
+    // would hand a Senior HOD everything again -- the opposite of what the
+    // Senior HOD rule is for.
+    crossView:    !!(u && u.crossLeaveVisibility),
     userName:     CU.name,
     userEmpId:    CU.empId||null,
     userData:     u,
@@ -27465,6 +27469,15 @@ function canApproveRequest(req){
 function canViewRequest(req){
   const ctx = getLeaveApprovalContext();
   if(ctx.isHR) return true;
+  // Whole-company visibility, granted per user account. It lets a general
+  // manager see every request and step in when an approver is away, without
+  // making him the default approver -- the employee's own manager is still who
+  // the notification goes to. The flag existed and was read nowhere.
+  if(ctx.crossView){
+    const crossEmp = gE(req.empId);
+    if(crossEmp && isEmpAdminOrHR(crossEmp)) return false;
+    return true;
+  }
   if(ctx.isSeniorHOD){
     // A Senior HOD approves leave submitted by MANAGERS -- which is exactly what
     // the employee form promises ("Can approve leave submitted by other HODs").
