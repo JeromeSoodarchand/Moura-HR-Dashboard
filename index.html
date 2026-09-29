@@ -1363,6 +1363,14 @@ async function renderMobilePortal(user, emp, isHOD, tab){
   const portal = document.getElementById('mobile-portal');
   if(!portal) return;
 
+  // The portal shows team names through gE(), and falls back to the raw employee
+  // id when the lookup misses -- which is why an approver saw "265" instead of a
+  // colleague's name. Nothing else here loads the staff list, so do it once.
+  if(!getEmps().length){
+    try{ const _fresh = await dbGetEmployees(); if(_fresh && _fresh.length) _cache.emps = _fresh; }
+    catch(e){ console.warn('[Portal] Could not load employees:', e); }
+  }
+
   const b = getEmpBalance(emp.id) || {remAnnual:20,annual:20,remSick:15,sick:15,remCasual:10,casual:10,usedAnnual:0,usedSick:0,usedCasual:0};
   const initials = emp.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
 
@@ -1399,10 +1407,20 @@ async function renderMobilePortal(user, emp, isHOD, tab){
     } catch(e){}
   }
 
-  // Team pending leaves (HOD only)
+  // Team pending leaves (HOD only).
+  // This used to be every pending request in the company bar the approver's own
+  // -- so a head of department was offered Approve and Reject on staff who do
+  // not report to them. Scope it the way canViewRequest does: the employee's
+  // manager is this person.
   let teamPending = [];
   if(isHOD){
-    teamPending = (_leaveRequests||[]).filter(r=>r.status==='pending'&&String(r.empId)!==String(emp.id)).slice(0,5);
+    const _myName = emp?.name || user?.name;
+    teamPending = (_leaveRequests||[]).filter(r=>{
+      if(r.status!=='pending') return false;
+      if(String(r.empId)===String(emp.id)) return false;
+      const _re = gE(r.empId);
+      return !!(_re && _re.manager === _myName);
+    }).slice(0,5);
   }
 
   const fmtShort = s => s ? new Date(s+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : '';
@@ -15256,6 +15274,10 @@ async function loginClockIn(empId, locationId, locationName){
   getGPSLocation({precise:true}).then(({coords,address})=>{
     const g = applyGeofence(rec, coords);
     if(g.status==='out') toast('Clocked in, but you are '+g.distance+'m from '+g.name+'. Flagged for HR.','error');
+    // Until now this was silent: the fix is fetched after the record is saved,
+    // so an employee whose phone refuses Location saw a normal clock-in and had
+    // no idea HR would receive it as unverified.
+    else if(g.status==='no_gps') toast('Clocked in, but your phone did not share its location — HR will see this as unverified. Please allow Location for this site.','error');
     if(!coords && !address && g.status==='unfenced') return;
     rec.lat=coords?coords.lat:null; rec.lng=coords?coords.lng:null;
     if(address){rec.location=address;rec.notes='Auto clock-in on login | '+address;}
@@ -16755,8 +16777,13 @@ function openGrantHRAccess(empId){
   document.getElementById('ghr-password').value = '';
   document.getElementById('ghr-password2').value = '';
   document.getElementById('ghr-err').style.display = 'none';
-  // If editing, password is optional
-  const passLabel = document.querySelector('#grant-hr-modal .lf:nth-child(3) label');
+  // If editing, password is optional.
+  // Find the label from the password INPUT, not by position: `.lf:nth-child(3)`
+  // means "a .lf that is the 3rd child of its parent", not "the 3rd .lf" -- so
+  // it was relabelling the Username field, and the form showed three
+  // password-looking boxes with the username hiding in the first.
+  const passInput = document.getElementById('ghr-password');
+  const passLabel = passInput ? passInput.parentElement.querySelector('label') : null;
   if(passLabel) passLabel.textContent = existing ? 'New Password (leave blank to keep)' : 'Password';
   document.getElementById('grant-hr-modal').style.display = 'flex';
   closeModal(); // Close employee profile modal
@@ -20319,6 +20346,9 @@ function applyGeofence(rec, coords){
 async function attachClockOutGPS(rec){
   try{
     const {coords, address} = await getGPSLocation({precise:true});
+    if(!coords){
+      toast('Clocked out, but your phone did not share its location — HR will see this as unverified. Please allow Location for this site.','error');
+    }
     if(!coords && !address) return;
     rec.latOut        = coords ? coords.lat : null;
     rec.lngOut        = coords ? coords.lng : null;
@@ -21644,6 +21674,10 @@ async function processClockAction(locationId, locationName, isClockedIn, empId){
     getGPSLocation({precise:true}).then(({coords,address})=>{
       const g = applyGeofence(rec, coords);
       if(g.status==='out') toast('Clocked in, but you are '+g.distance+'m from '+g.name+'. Flagged for HR.','error');
+      // Until now this was silent: the fix is fetched after the record is saved,
+      // so an employee whose phone refuses Location saw a normal clock-in and had
+      // no idea HR would receive it as unverified.
+      else if(g.status==='no_gps') toast('Clocked in, but your phone did not share its location — HR will see this as unverified. Please allow Location for this site.','error');
       if(!coords && !address && g.status==='unfenced') return;
       rec.lat=coords?coords.lat:null; rec.lng=coords?coords.lng:null;
       if(address){rec.location=address;rec.notes=(rec.notes?rec.notes+' | ':'')+'GPS: '+address;}
@@ -23987,6 +24021,10 @@ async function empClockIn(empId, locationId, locationName){
     getGPSLocation({precise:true}).then(({coords,address})=>{
       const g = applyGeofence(rec, coords);
       if(g.status==='out') toast('Clocked in, but you are '+g.distance+'m from '+g.name+'. Flagged for HR.','error');
+      // Until now this was silent: the fix is fetched after the record is saved,
+      // so an employee whose phone refuses Location saw a normal clock-in and had
+      // no idea HR would receive it as unverified.
+      else if(g.status==='no_gps') toast('Clocked in, but your phone did not share its location — HR will see this as unverified. Please allow Location for this site.','error');
       if(!coords && !address && g.status==='unfenced') return;
       rec.lat=coords?coords.lat:null; rec.lng=coords?coords.lng:null;
       if(address){rec.location=address;rec.notes=(rec.notes?rec.notes+' | ':'')+'QR clock-in | '+address;}
@@ -27423,10 +27461,25 @@ function canViewRequest(req){
   const ctx = getLeaveApprovalContext();
   if(ctx.isHR) return true;
   if(ctx.isSeniorHOD){
-    // Senior HOD sees HOD requests but not admin/hr
+    // A Senior HOD approves leave submitted by MANAGERS -- which is exactly what
+    // the employee form promises ("Can approve leave submitted by other HODs").
+    // Returning true for every request made them a second HR, so the MD of a
+    // company saw all 106 staff requests rather than his managers'.
     const reqEmp2 = gE(req.empId);
     if(reqEmp2 && isEmpAdminOrHR(reqEmp2)) return false;
-    return true;
+    // Always their own.
+    if(CU.empId && String(req.empId)===String(CU.empId)) return true;
+    const isManager = e => !!(e && (e.isHOD || e.isSeniorHOD ||
+                                    e.clockMode==='hod' || e.role==='manager'));
+    if(!isManager(reqEmp2)) return false;
+    // Where managers actually report to this person by name, that IS the list --
+    // the same rule the team scope uses. Where none do, fall back to every
+    // manager in the company, so a Senior HOD with no reporting line recorded
+    // (an MD, typically) still sees his managers rather than an empty screen.
+    const myManagerReports = getEmps().filter(e =>
+      e.status!=='offboarded' && isManager(e) && e.manager === CU.name);
+    if(!myManagerReports.length) return true;
+    return myManagerReports.some(e => String(e.id)===String(req.empId));
   }
   if(ctx.isHOD){
     const reqEmp = gE(req.empId);
@@ -28301,8 +28354,15 @@ function getScopedEmps(){
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
     const myName = hodEmp?.name || CU.name;
     const myDept = hodEmp?.dept || null;
-    // Team = direct reports + same dept employees (excluding admin/hr accounts)
-    const team = all.filter(e=>
+    // Where a reporting line has actually been recorded, that IS the team.
+    // Adding "same department" on top pulled in colleagues who do not report to
+    // this person -- at MTI it put the Managing Director inside the General
+    // Manager's team, because both sit in Sales.
+    // Where no reporting line has been set, the department fallback still
+    // applies, so an HOD whose team was never recorded keeps the view they had.
+    const reports = all.filter(e =>
+      e.manager === myName && String(e.id) !== String(hodEmp?.id) && !isEmpAdminOrHR(e));
+    const team = reports.length ? reports : all.filter(e=>
       !isEmpAdminOrHR(e) &&
       (e.manager === myName ||
       (myDept && e.dept === myDept && String(e.id) !== String(hodEmp?.id)))
