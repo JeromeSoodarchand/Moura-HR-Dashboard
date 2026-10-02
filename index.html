@@ -28450,16 +28450,27 @@ function getScopedLeaveEmps(){
   if(hodEmp?.isHOD || hodEmp?.isSeniorHOD || CU.role==='manager'){
     const myName = hodEmp?.name || CU.name;
     const myDept = hodEmp?.dept || null;
-    // Own team (excluding admin/hr)
-    const teamIds = new Set(all
-      .filter(e=> !isEmpAdminOrHR(e) &&
-        (e.manager===myName || (myDept && e.dept===myDept && String(e.id)!==String(hodEmp?.id))))
-      .map(e=>String(e.id))
+    // Own team — reporting line wins, same rule as getScopedEmps().
+    // Where direct reports have been recorded, those ARE the team. The
+    // department fallback only applies to an HOD whose team was never
+    // recorded, so it keeps working for them without pulling in colleagues
+    // who report to somebody else (Yogeeta was seeing Administration staff
+    // who report to Aatish purely because they share her department).
+    const _directReports = all.filter(e =>
+      e.manager === myName && String(e.id) !== String(hodEmp?.id) && !isEmpAdminOrHR(e));
+    const _team = _directReports.length ? _directReports : all.filter(e =>
+      !isEmpAdminOrHR(e) &&
+      (e.manager === myName ||
+       (myDept && e.dept === myDept && String(e.id) !== String(hodEmp?.id)))
     );
-    // Other HODs — only senior HODs see all HOD leave; regular HODs see same dept
+    const teamIds = new Set(_team.map(e=>String(e.id)));
+    // Other managers — a senior HOD sees the managers who report to them; only
+    // a senior HOD with no reporting line recorded falls back to all managers.
     if(hodEmp?.isSeniorHOD || CU.seniorHOD){
-      all.filter(e=>(e.isHOD||e.isSeniorHOD) && !isEmpAdminOrHR(e))
-         .forEach(e=>teamIds.add(String(e.id)));
+      const _isMgr = e => !!(e && (e.isHOD || e.isSeniorHOD || e.clockMode==='hod' || e.role==='manager'));
+      const _myMgrs = all.filter(e => _isMgr(e) && !isEmpAdminOrHR(e) && e.manager === myName);
+      (_myMgrs.length ? _myMgrs : all.filter(e => _isMgr(e) && !isEmpAdminOrHR(e)))
+        .forEach(e=>teamIds.add(String(e.id)));
     }
     // Include self
     if(hodEmp) teamIds.add(String(hodEmp.id));
