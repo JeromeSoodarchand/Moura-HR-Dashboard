@@ -20489,12 +20489,23 @@ function renderAttLiveBoard(){
           const c = aColor(emp.name);
           const since = rec ? fmtTime(rec.clockIn) : null;
           const elapsed = rec ? calcDuration(rec.clockIn,new Date().toISOString()) : null;
+          // Someone on approved leave has a closed record, so they used to look
+          // identical to someone who simply had not turned up. HR could not tell
+          // an absence from a booked day off.
+          const leaveRec = !rec && (_attendance||[]).find(r =>
+            String(r.empId)===String(emp.id) && r.date===todayStr() &&
+            (r.location==='Leave' || r.location==='Permission'));
+          const leaveNote = leaveRec
+            ? (String(leaveRec.notes||'').split('—')[0].trim() || 'On leave')
+            : null;
           return '<div class="att-emp-card '+(rec?'clocked-in':'clocked-out')+'">'+
             '<div class="att-status-dot '+(rec?'in':'out')+'"></div>'+
             '<div class="avatar" style="background:'+c+'22;color:'+c+';width:28px;height:28px;font-size:10px;flex-shrink:0">'+inits(emp.name)+'</div>'+
             '<div class="att-emp-info">'+
               '<div class="att-emp-name">'+emp.name+'</div>'+
-              '<div class="att-emp-time">'+(rec?'In since '+since:'Not clocked in')+'</div>'+
+              '<div class="att-emp-time">'+(rec ? 'In since '+since
+                 : leaveNote ? '🌴 '+leaveNote
+                 : 'Not clocked in')+'</div>'+
               (rec&&elapsed?'<div class="att-emp-hours">'+fmtDuration(elapsed)+'</div>':'')+
             '</div></div>';
         }).join('')+
@@ -22587,6 +22598,7 @@ async function dbGetLeaveRequests(){
       id:r.id, empId:r.emp_id, type:r.type, fromDate:r.from_date, toDate:r.to_date,
       days:r.days, reason:r.reason||'', status:r.status,
       companyId:r.company_id||null,
+      halfPeriod:r.half_period||null,
       hodStatus:r.hod_status||'pending',
       hodApprovedBy:r.hod_approved_by||'',
       hodApprovedAt:r.hod_approved_at||null,
@@ -22615,6 +22627,7 @@ async function dbSaveLeaveRequest(req){
     const row = {
       emp_id:req.empId, type:req.type, from_date:req.fromDate, to_date:req.toDate,
       days:req.days, reason:req.reason||'', status:req.status,
+      half_period:req.halfPeriod||null,
       hod_status:req.hodStatus||'pending',
       hod_approved_by:req.hodApprovedBy||null,
       hod_approved_at:req.hodApprovedAt||null,
@@ -23343,6 +23356,19 @@ function openLeaveRequestModal(empId){
           <span style="font-size:13px;font-weight:600">Half Day (0.5)</span>
         </label>
       </div>
+      <div id="lv-halfperiod-row" style="display:none;margin-top:8px">
+        <label class="fl">Which half</label>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);cursor:pointer">
+            <input type="radio" name="lv-halfperiod" id="lv-half-am" value="am" checked>
+            <span style="font-size:13px;font-weight:600">Morning</span>
+          </label>
+          <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);cursor:pointer">
+            <input type="radio" name="lv-halfperiod" id="lv-half-pm" value="pm">
+            <span style="font-size:13px;font-weight:600">Afternoon</span>
+          </label>
+        </div>
+      </div>
     </div>
     <div id="lv-permission-time-row" style="display:none;margin-bottom:12px">
       <label class="fl">Permission Period</label>
@@ -23427,6 +23453,8 @@ function updateLeaveDays(){
   if(to<from){ el.innerHTML='<span style="color:var(--red)">End date must be after start date</span>'; return; }
   const rawDays = countWorkingDays(from, to);
   const isHalf = document.getElementById('lv-halfday')?.checked;
+  const hpRow = document.getElementById('lv-halfperiod-row');
+  if(hpRow) hpRow.style.display = isHalf ? 'block' : 'none';
   const days = (isHalf && rawDays > 0) ? 0.5 : rawDays;
   el.innerHTML = `<strong>${days} working day${days!==1?'s':''}</strong> (excluding weekends & public holidays)`;
 }
@@ -23446,6 +23474,9 @@ async function submitLeaveRequest(){
   if(to<from){ toast('End date must be after start date.','error'); _submittingLeave=false; return; }
 
   const isHalfDay = document.getElementById('lv-halfday')?.checked && type==='employer_local';
+  const halfPeriod = isHalfDay
+    ? (document.getElementById('lv-half-pm')?.checked ? 'pm' : 'am')
+    : null;
   const rawDays = countWorkingDays(from, to);
   const days = (isHalfDay && rawDays > 0) ? 0.5 : rawDays;
   if(rawDays===0 && type!=='permission'){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
@@ -23518,7 +23549,7 @@ async function submitLeaveRequest(){
 
   const req = {
     id:Date.now(), empId, type, fromDate:from, toDate:to,
-    days, reason,
+    days, reason, halfPeriod,
     companyId: _COMPANY_ID || CU?.companyId || 1,
     // Two-stage approval for regular employees, one-stage for HODs
     status:'pending',
@@ -27630,9 +27661,19 @@ async function createLeaveAttendanceRecords(req){
         // Skip public holidays
         const dateStr = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
         if(!isDayHoliday(dateStr)){
-          // Build clock_in and clock_out timestamps for the leave day
-          const clockIn  = new Date(dateStr + 'T' + workStart + ':00');
-          const clockOut = new Date(dateStr + 'T' + workEnd   + ':00');
+          // Build clock_in and clock_out timestamps for the leave day.
+          // A half-day request stores days = 0.5, but this used to write the
+          // whole shift regardless -- so half a day's leave showed as a full
+          // day absent. Halve the shift when that is what was approved.
+          const isHalfDay = parseFloat(req.days) === 0.5;
+          const dayStart  = new Date(dateStr + 'T' + workStart + ':00');
+          const dayEnd    = new Date(dateStr + 'T' + workEnd   + ':00');
+          const midday    = new Date(dayStart.getTime() + Math.round((dayEnd - dayStart) / 2));
+          // Afternoon leave runs midday to shift end; morning (the default, and
+          // what older requests carry) runs shift start to midday.
+          const isPM      = isHalfDay && req.halfPeriod === 'pm';
+          const clockIn   = isHalfDay && isPM ? midday   : dayStart;
+          const clockOut  = isHalfDay ? (isPM ? dayEnd : midday) : dayEnd;
           const durationMinutes = Math.round((clockOut - clockIn) / 60000);
 
           rows.push({
@@ -27642,7 +27683,10 @@ async function createLeaveAttendanceRecords(req){
             clock_out:        clockOut.toISOString(),
             duration_minutes: durationMinutes,
             location:         'Leave',
-            notes:            leaveLabel + ' — approved leave',
+            notes:            leaveLabel + (isHalfDay
+                                ? (isPM ? ' — approved half-day leave (afternoon)'
+                                        : ' — approved half-day leave (morning)')
+                                : ' — approved leave'),
             company_id:       req.companyId || _COMPANY_ID || emp.companyId || 1,
           });
         }
