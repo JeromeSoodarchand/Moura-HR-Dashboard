@@ -13408,6 +13408,29 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
                   <div style="font-size:11px;color:var(--text3);margin-top:3px">Emergency/disaster rate</div>
                 </div>
               </div>
+              <div class="fsec" style="margin-top:16px">When an Hour Becomes Overtime</div>
+              <div class="fr2">
+                <div class="fg"><label class="fl">Overtime basis</label>
+                  <select class="fs" id="settings-ot-basis" onchange="toggleOTThresholdRow()">
+                    <option value="midnight">Calendar day &mdash; overtime starts after midnight</option>
+                    <option value="daily">Daily threshold &mdash; overtime starts past N hours in the day</option>
+                  </select>
+                  <div style="font-size:11px;color:var(--text3);margin-top:3px">This setting is per company.</div>
+                </div>
+                <div class="fg" id="ot-threshold-row" style="display:none"><label class="fl">Daily threshold (hours)</label>
+                  <input class="fi" id="settings-ot-daily-threshold" type="number" min="1" max="24" step="0.5" value="8">
+                  <div style="font-size:11px;color:var(--text3);margin-top:3px">Counted across every clock-in/out in the day.</div>
+                </div>
+              </div>
+              <div style="margin-top:8px;padding:10px 12px;background:var(--bg2);border-radius:var(--radius);border:1px solid var(--border);font-size:11.5px;color:var(--text3);line-height:1.55">
+                <b style="color:var(--text2)">Calendar day</b> &mdash; every hour pays at its own calendar day's rate and a shift
+                crossing midnight splits there: hours before midnight normal, hours after it overtime.
+                Suits a fixed day/night roster.<br>
+                <b style="color:var(--text2)">Daily threshold</b> &mdash; the day's hours are added up across every clock-in and
+                clock-out, and anything past the threshold is overtime. Suits a 24/7 operation where
+                shifts start at any hour and a day may be split into several.
+                Sunday and public-holiday multipliers apply under both.
+              </div>
               <div style="margin-top:14px;padding:10px 12px;background:var(--bg2);border-radius:var(--radius);border:1px solid var(--border)">
                 <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer">
                   <input type="checkbox" id="settings-ot-shift-rules" checked style="width:15px;height:15px;accent-color:var(--gold);margin-top:2px">
@@ -15141,7 +15164,9 @@ async function promptLoginClockIn(user){
   if(emp){
     let todayAtt = [];
     try{
-      todayAtt = await dbGetAttendance(todayStr(), todayStr());
+      // Two-day window: a night shift clocked in yesterday is still the open
+      // shift this morning, so a today-only fetch could never find it.
+      todayAtt = await dbGetAttendance(yesterdayStr(), todayStr());
       // Sync to localStorage
       const localAtt = S.get('attendance',[]);
       todayAtt.forEach(rec=>{
@@ -15150,12 +15175,10 @@ async function promptLoginClockIn(user){
       });
       S.set('attendance', localAtt);
     } catch(e){
-      todayAtt = S.get('attendance',[]).filter(r=>r.date===todayStr());
+      todayAtt = S.get('attendance',[]);
     }
-    const alreadyIn = todayAtt.find(r=>
-      String(r.empId)===String(emp.id) && r.date===todayStr() && !r.clockOut
-    );
-    if(alreadyIn) return; // already clocked in today — don't prompt again
+    const alreadyIn = findOpenShift(emp.id, todayAtt);
+    if(alreadyIn) return; // shift still open — don't prompt again
   }
 
   const modal   = document.getElementById('att-modal');
@@ -15368,7 +15391,7 @@ function autoLogout(){
       }
       if(emp){
         const localAtt = S.get('attendance',[]);
-        const openRec = localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
+        const openRec = findOpenShift(emp.id, localAtt);
         if(openRec){
           openRec.clockOut = new Date().toISOString();
           openRec.durationMinutes = calcDuration(openRec.clockIn, openRec.clockOut);
@@ -18859,6 +18882,11 @@ function renderSettings(){
   if(owEl) owEl.value = cs.otWeekday || 1.5;
   if(owdEl) owdEl.value = cs.otWeekend || 2.0;
   if(ohdEl) ohdEl.value = cs.otHoliday || 2.5;
+  const basisEl = document.getElementById('settings-ot-basis');
+  if(basisEl) basisEl.value = (cs.otBasis === 'daily') ? 'daily' : 'midnight';
+  const thrEl = document.getElementById('settings-ot-daily-threshold');
+  if(thrEl) thrEl.value = otDailyThresholdHours(cs);
+  toggleOTThresholdRow();
   const shiftRulesEl = document.getElementById('settings-ot-shift-rules');
   if(shiftRulesEl) shiftRulesEl.checked = ![false,'false','0',0].includes(cs.otShiftRules);
   const workDays = cs.workDays || [1,2,3,4,5];
@@ -20421,16 +20449,52 @@ function todayStr(){
   const d = new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
+function yesterdayStr(){
+  const d = new Date(Date.now() - 86400000);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+// ── OPEN SHIFT LOOKUP ──────────────────────────────────────────────────
+// A shift is not "today's record" -- it is the record nobody has closed yet.
+// Every lookup used to be pinned to todayStr(), so a night shift could never be
+// clocked out: at 08:30 the app looked for an open record dated today, found
+// none, opened a second shift, and left the first one open for ever.
+//
+// Valere runs 24/7 with legitimate shifts up to 18 hours, so an open record
+// stays "the current shift" for MAX_OPEN_SHIFT_HOURS after its clock-in. Past
+// that it is treated as a missed clock-out: it is left open for a manager to
+// correct from the anomaly report, and the next punch starts a new shift. The
+// record keeps its clock-in date, which is what splitShiftAtMidnight() expects.
+const MAX_OPEN_SHIFT_HOURS = 20;
+
+function _openShiftIds(empId){
+  const ids = new Set([String(empId)]);
+  let emp = null;
+  try { emp = gE(empId); } catch(e){}
+  if(emp && emp.userId) ids.add(String(emp.userId));
+  return ids;
+}
+
+// Most recent open record for this id-set, within the window. Newest first, so
+// a stale open record can never shadow the shift actually running.
+function findOpenShiftByIds(ids, list){
+  const src = Array.isArray(list) ? list : (_attendance || []);
+  const cutoff = Date.now() - MAX_OPEN_SHIFT_HOURS * 3600 * 1000;
+  return src
+    .filter(r => r && !r.clockOut && r.clockIn &&
+                 ids.has(String(r.empId)) &&
+                 new Date(r.clockIn).getTime() >= cutoff)
+    .sort((a,b) => new Date(b.clockIn) - new Date(a.clockIn))[0] || null;
+}
+
+function findOpenShift(empId, list){
+  return findOpenShiftByIds(_openShiftIds(empId), list);
+}
+
 function getEmployeeActiveRecord(empId){
-  // Primary match: by empId
-  const byId = _attendance.find(r=>String(r.empId)===String(empId)&&r.date===todayStr()&&!r.clockOut);
-  if(byId) return byId;
-  // Fallback: if the employee has a linked HR user, check by their HR user ID too
-  const emp = gE(empId);
-  if(emp && emp.userId){
-    return _attendance.find(r=>String(r.empId)===String(emp.userId)&&r.date===todayStr()&&!r.clockOut)||null;
-  }
-  return null;
+  // Matches on the employee id and, for an HR user who clocked in under their
+  // user id, on that too -- findOpenShift() covers both.
+  return findOpenShift(empId);
 }
 
 async function renderAttendance(){
@@ -20460,7 +20524,11 @@ async function renderAttendance(){
 
 function renderAttLiveBoard(){
   const emps = getScopedEmps().filter(e=>e.status!=='offboarded');
-  const clockedIn = _attendance.filter(r=>r.date===todayStr()&&!r.clockOut);
+  // "On site" means the shift is still open, not that it started today -- a
+  // night shift clocked in yesterday is very much on site this morning.
+  const _openCutoff = Date.now() - MAX_OPEN_SHIFT_HOURS * 3600 * 1000;
+  const clockedIn = _attendance.filter(r=>
+    r && !r.clockOut && r.clockIn && new Date(r.clockIn).getTime() >= _openCutoff);
   const lc = document.getElementById('att-live-count');
   if(lc) lc.textContent = clockedIn.length+' on site';
   const board = document.getElementById('att-live-board');
@@ -20810,7 +20878,7 @@ function _openAttendanceModalInner(modal, content){
     let activeRec = emp ? getEmployeeActiveRecord(emp.id) : null;
     if(!activeRec){
       const fallbackIds = new Set([String(CU.id), String(CU.empId||'')].filter(Boolean));
-      activeRec = _attendance.find(r=>fallbackIds.has(String(r.empId))&&r.date===todayStr()&&!r.clockOut)||null;
+      activeRec = findOpenShiftByIds(fallbackIds, _attendance);
     }
     const isClockedIn=!!activeRec;
     const clockMode=emp?.clockMode||'qr';
@@ -21791,7 +21859,9 @@ async function exportAttendanceExcel(){
 
   filteredEmps.forEach(emp=>{
     const empRecs = (byEmp[String(emp.id)]||[]).filter(r=>r.location!=='Leave'&&r.location!=='Permission');
-    const daysPresent   = empRecs.length;
+    // Distinct dates, not record count -- a split shift is one day present, not
+    // two, or the average-hours-per-day figure halves for 24/7 staff.
+    const daysPresent   = new Set(empRecs.map(r=>r.date||(r.clockIn||'').slice(0,10)).filter(Boolean)).size;
     const totalMins     = empRecs.reduce((s,r)=>s+(parseFloat(r.durationMinutes)||0),0);
     const totalHrs      = (totalMins/60).toFixed(1);
     const avgHrs        = daysPresent>0?(totalMins/daysPresent/60).toFixed(1):'0';
@@ -24443,7 +24513,7 @@ function renderKioskEmpList(filter){
   el.innerHTML = filtered.map(emp=>{
     const c = aColor(emp.name);
     const localAtt = S.get('attendance',[]);
-    const onSite = localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
+    const onSite = findOpenShift(emp.id, localAtt);
     return `<div onclick="kioskSelectEmp(${JSON.stringify(emp.id)})"
       style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;margin-bottom:6px;background:rgba(255,255,255,${onSite?'.1':'.04'});border:1px solid rgba(255,255,255,${onSite?'.2':'.07'});transition:background .12s"
       onmouseover="this.style.background='rgba(255,255,255,.13)'" onmouseout="this.style.background='rgba(255,255,255,${onSite?'.1':'.04'})'">
@@ -24486,25 +24556,27 @@ function kioskSelectEmp(empId){
   async function _findOpenAndProceed(){
     // Check local first
     let _la = S.get('attendance',[]);
-    let _or = _la.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut)||null;
+    let _or = findOpenShift(emp.id, _la);
     // If not found locally, check Supabase
     if(!_or && sbReady()){
       try{
         const {data} = await _sb.from('attendance')
           .select('*')
           .eq('emp_id', String(emp.id))
-          .eq('date', todayStr())
-          .limit(10);
+          .gte('date', yesterdayStr())
+          .lte('date', todayStr())
+          .limit(20);
         if(data && data.length){
-          const row = data.find(r=>!r.clock_out);
+          const mapped = data.map(row=>({
+            id: row.id, empId: row.emp_id,
+            date: row.date, clockIn: row.clock_in,
+            clockOut: row.clock_out, location: row.location,
+            locationId: row.location_id, durationMinutes: row.duration_minutes,
+            notes: row.notes
+          }));
+          const row = findOpenShift(emp.id, mapped);
           if(row){
-            _or = {
-              id: row.id, empId: row.emp_id,
-              date: row.date, clockIn: row.clock_in,
-              clockOut: row.clock_out, location: row.location,
-              locationId: row.location_id, durationMinutes: row.duration_minutes,
-              notes: row.notes
-            };
+            _or = row;
             // Sync to local so clock-out can update it
             _la = _la.filter(r=>String(r.id)!==String(_or.id));
             _la.push(_or);
@@ -24627,24 +24699,26 @@ async function kioskSubmit(){
       updateKioskDots();
       const prompt=document.getElementById('kiosk-prompt');
       const localAtt=S.get('attendance',[]);
-      const onSite=localAtt.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut);
+      const onSite=findOpenShift(emp.id, localAtt);
       if(prompt) prompt.textContent=onSite?'Enter PIN to clock OUT':'Enter PIN to clock IN';
     },2000);
     return;
   }
   // PIN verified — check Supabase for open record then show confirmation
   let _la=S.get('attendance',[]);
-  let openRec=_la.find(r=>String(r.empId)===String(emp.id)&&r.date===todayStr()&&!r.clockOut)||null;
+  let openRec=findOpenShift(emp.id,_la);
   if(!openRec && sbReady()){
     try{
       const {data}=await _sb.from('attendance')
-        .select('*').eq('emp_id',String(emp.id)).eq('date',todayStr()).limit(10);
+        .select('*').eq('emp_id',String(emp.id))
+        .gte('date',yesterdayStr()).lte('date',todayStr()).limit(20);
       if(data&&data.length){
-        const row=data.find(r=>!r.clock_out);
-        if(row){
-          openRec={id:row.id,empId:row.emp_id,date:row.date,clockIn:row.clock_in,
+        const mapped=data.map(row=>({id:row.id,empId:row.emp_id,date:row.date,clockIn:row.clock_in,
             clockOut:row.clock_out,location:row.location,locationId:row.location_id,
-            durationMinutes:row.duration_minutes,notes:row.notes};
+            durationMinutes:row.duration_minutes,notes:row.notes}));
+        const row=findOpenShift(emp.id, mapped);
+        if(row){
+          openRec=row;
           _la=_la.filter(r=>String(r.id)!==String(openRec.id));
           _la.push(openRec);
           S.set('attendance',_la);
@@ -25397,6 +25471,12 @@ function getWorkingHoursSettings(){
   };
 }
 
+function toggleOTThresholdRow(){
+  const sel = document.getElementById('settings-ot-basis');
+  const row = document.getElementById('ot-threshold-row');
+  if(row) row.style.display = (sel && sel.value === 'daily') ? '' : 'none';
+}
+
 function saveWorkingHoursSettings(){
   const cs = getSettings();
   cs.workStart  = document.getElementById('settings-work-start')?.value || '08:00';
@@ -25406,12 +25486,21 @@ function saveWorkingHoursSettings(){
   cs.otWeekday  = parseFloat(document.getElementById('settings-ot-weekday')?.value) || 1.5;
   cs.otWeekend  = parseFloat(document.getElementById('settings-ot-weekend')?.value) || 2.0;
   cs.otHoliday  = parseFloat(document.getElementById('settings-ot-holiday')?.value) || 2.5;
+  const basisSel = document.getElementById('settings-ot-basis');
+  if(basisSel) cs.otBasis = (basisSel.value === 'daily') ? 'daily' : 'midnight';
+  // Explicit null check -- a blank field must not become a zero threshold,
+  // which would make every hour of the day overtime.
+  const thrIn = document.getElementById('settings-ot-daily-threshold');
+  if(thrIn){
+    const n = parseFloat(thrIn.value);
+    cs.otDailyThreshold = (thrIn.value === '' || isNaN(n) || n <= 0) ? 8 : n;
+  }
   const shiftEl = document.getElementById('settings-ot-shift-rules');
   if(shiftEl) cs.otShiftRules = shiftEl.checked;
   S.set('companySettings', cs);
   // Also persist to Supabase for each key
   if(sbReady()){
-    ['workStart','workEnd','workHours','workDays','otWeekday','otWeekend','otHoliday','otShiftRules'].forEach(k=>{
+    ['workStart','workEnd','workHours','workDays','otWeekday','otWeekend','otHoliday','otShiftRules','otBasis','otDailyThreshold'].forEach(k=>{
       dbSetSetting(k, JSON.stringify(cs[k])).catch(()=>{});
     });
   }
@@ -25783,6 +25872,108 @@ function calcOTMins(rec, settings){
   return { otMins, regularMins, type };
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+// OVERTIME BASIS — per company, not global
+//
+// MTI: 'midnight'. Every hour pays at the rate of the calendar day it falls in,
+// and a shift crossing midnight splits there -- hours before midnight normal,
+// hours after it overtime. Confirmed with MTI HR (Nihad), 18 September 2026.
+//
+// Valere: 'daily'. A 24/7 operation on rotating shifts, where midnight carries
+// no meaning: a shift can start any hour and staff split a day across several
+// clock-ins. Overtime is the hours worked beyond a threshold IN THE CALENDAR
+// DAY, counted cumulatively across every punch pair in that day -- so two
+// four-hour shifts and one eight-hour shift come out identical.
+//
+// The midnight split is still used under both bases, to attribute each hour to
+// the day it was actually worked. What differs is how normal and overtime are
+// decided: which side of midnight, or how far past the threshold.
+// ═════════════════════════════════════════════════════════════════════════
+
+function otBasis(settings){
+  const v = (settings && settings.otBasis !== undefined && settings.otBasis !== null && settings.otBasis !== '')
+    ? settings.otBasis : getSettings().otBasis;
+  return v === 'daily' ? 'daily' : 'midnight';
+}
+
+// Hours past which a day's cumulative work becomes overtime, under the 'daily'
+// basis. A threshold of zero would make every hour overtime, which is never
+// what anyone means, so it is treated as unset.
+function otDailyThresholdHours(settings){
+  const raw = (settings && settings.otDailyThreshold !== undefined)
+    ? settings.otDailyThreshold : getSettings().otDailyThreshold;
+  const n = parseFloat(raw);
+  return (raw === null || raw === undefined || raw === '' || isNaN(n) || n <= 0) ? 8 : n;
+}
+
+// Overtime for ONE employee across ALL their records in the period.
+//
+// Under the daily basis this cannot be done a record at a time: the threshold
+// applies to the hours accumulated across the whole day, so the day has to be
+// assembled first. Returns totals plus a per-date breakdown in the same shape
+// the OT report and payroll already consume.
+function calcOvertimeForEmployee(records, settings){
+  const out = { otMins:0, normalMins:0, workedMins:0, weightedMins:0, byDate:{} };
+  const recs = (records||[]).filter(r=>r && r.clockIn && r.clockOut);
+  if(!recs.length) return out;
+
+  if(otBasis(settings) === 'daily'){
+    const thrMins = Math.round(otDailyThresholdHours(settings) * 60);
+    const mins = {}, locs = {};
+    recs.forEach(rec=>{
+      splitShiftAtMidnight(rec.clockIn, rec.clockOut).forEach(sg=>{
+        mins[sg.date] = (mins[sg.date]||0) + sg.minutes;
+        if(!locs[sg.date] && rec.location) locs[sg.date] = rec.location;
+      });
+    });
+    Object.keys(mins).sort().forEach(date=>{
+      const worked = mins[date];
+      const type   = otDayType(date);
+      const normal = Math.min(worked, thrMins);
+      const over   = Math.max(0, worked - thrMins);
+      const nRate  = OT_RULES_MU.normal[type];
+      // Past the threshold on a Sunday the rate table's higher step applies, so
+      // the Sunday premium is not quietly lost by moving to this basis.
+      const oRate  = type === 'sunday'
+        ? Math.max(OT_RULES_MU.overtime.sunday, OT_RULES_MU.sundayBeyondThreshold)
+        : OT_RULES_MU.overtime[type];
+      const segs = [];
+      if(normal) segs.push({date, minutes:normal, kind:'normal',   type, rate:nRate});
+      if(over)   segs.push({date, minutes:over,   kind:'overtime', type, rate:oRate});
+      out.normalMins   += normal;
+      out.otMins       += over;
+      out.workedMins   += worked;
+      out.weightedMins += normal*nRate + over*oRate;
+      out.byDate[date] = { workedMins:worked, normalMins:normal, otMins:over,
+                           type, rate:oRate, location:locs[date]||'', segments:segs };
+    });
+    return out;
+  }
+
+  // Midnight basis (and the legacy kill-switch path) -- per record, as before.
+  recs.forEach(rec=>{
+    const r = calcOTMins(rec, settings);
+    out.normalMins += r.regularMins||0;
+    out.otMins     += r.otMins||0;
+    out.workedMins += (r.regularMins||0) + (r.otMins||0);
+    if(r.weightedMins) out.weightedMins += r.weightedMins;
+    const segs = (r.segments && r.segments.length) ? r.segments
+      : [{date:rec.date, minutes:r.otMins||0, kind:'overtime', type:r.type, rate:null}];
+    segs.forEach(sg=>{
+      if(!sg.date) return;
+      const d = out.byDate[sg.date] || (out.byDate[sg.date] =
+        {workedMins:0, normalMins:0, otMins:0, type:sg.type, rate:sg.rate,
+         location:rec.location||'', segments:[]});
+      d.workedMins += sg.minutes;
+      if(sg.kind === 'normal') d.normalMins += sg.minutes;
+      else { d.otMins += sg.minutes; if(sg.rate) d.rate = sg.rate; }
+      d.type = sg.type || d.type;
+      d.segments.push(sg);
+    });
+  });
+  return out;
+}
+
 async function runOvertimeReport(){
   const from   = document.getElementById('ot-date-from')?.value;
   const to     = document.getElementById('ot-date-to')?.value;
@@ -25828,47 +26019,35 @@ async function runOvertimeReport(){
     if(emp.userId) matchIds.add(String(emp.userId));
     const empRecs = recs.filter(r=>matchIds.has(String(r.empId)));
 
-    // Deduplicate: if multiple records exist for the same date, merge into one
-    // Use earliest clockIn and latest clockOut per day
-    const byDate = {};
-    empRecs.forEach(rec=>{
-      const d = rec.date || (rec.clockIn||'').slice(0,10);
-      if(!d) return;
-      if(!byDate[d]){
-        byDate[d] = {...rec};
-      } else {
-        // Take earliest clock-in
-        if(rec.clockIn && (!byDate[d].clockIn || rec.clockIn < byDate[d].clockIn))
-          byDate[d].clockIn = rec.clockIn;
-        // Take latest clock-out
-        if(rec.clockOut && (!byDate[d].clockOut || rec.clockOut > byDate[d].clockOut))
-          byDate[d].clockOut = rec.clockOut;
-        // Keep location from whichever has one
-        if(!byDate[d].location && rec.location) byDate[d].location = rec.location;
-      }
-    });
-    const dedupedRecs = Object.values(byDate);
+    // Each punch pair is its own shift. This used to merge a day's records into
+    // one by taking the earliest clock-in and the latest clock-out, which paid
+    // the GAP between split shifts: 06:00-10:00 plus 18:00-22:00 came out as a
+    // single 06:00-22:00 record, 16 hours instead of 8. Valere runs 24/7 and
+    // splits shifts routinely, so every record is now rated on its own.
+    //
+    // Exact duplicates (the same employee, clock-in and clock-out, written
+    // twice by a retry or a double sync) are still collapsed -- that is what
+    // the dedupe was protecting against, and it does not need the merge.
+    const _seen = new Set();
+    const dedupedRecs = empRecs.filter(rec=>{
+      if(!rec || !rec.clockIn) return false;
+      const k = String(rec.empId)+'|'+rec.clockIn+'|'+(rec.clockOut||'');
+      if(_seen.has(k)) return false;
+      _seen.add(k);
+      return true;
+    }).sort((a,b)=> new Date(a.clockIn) - new Date(b.clockIn));
 
-    let totalRegMins=0, totalOTMins=0;
+    // Employee-level: under the daily basis the threshold applies to the day's
+    // cumulative hours, so every record has to be in hand before overtime can
+    // be worked out. Under the midnight basis this is still record by record.
+    const _pay = calcOvertimeForEmployee(dedupedRecs, settings);
+    const totalRegMins = _pay.normalMins;
+    const totalOTMins  = _pay.otMins;
     const dayBreakdown = {};
-
-    dedupedRecs.forEach(rec=>{
-      const {otMins,regularMins,type,segments} = calcOTMins(rec, settings);
-      totalRegMins += regularMins;
-      totalOTMins  += otMins;
-      if(segments && segments.length){
-        // Under the shift rules a single record can span two days at two
-        // different rates, so attribute each segment to its own date.
-        segments.filter(s=>s.kind==='overtime').forEach(s=>{
-          if(!dayBreakdown[s.date]) dayBreakdown[s.date] = {otMins:0, type:s.type, rate:s.rate, location:rec.location||''};
-          dayBreakdown[s.date].otMins += s.minutes;
-          dayBreakdown[s.date].rate = s.rate;
-          dayBreakdown[s.date].type = s.type;
-        });
-      } else if(otMins>0){
-        if(!dayBreakdown[rec.date]) dayBreakdown[rec.date] = {otMins:0, type, location:rec.location||''};
-        dayBreakdown[rec.date].otMins += otMins;
-      }
+    Object.keys(_pay.byDate).forEach(d=>{
+      const v = _pay.byDate[d];
+      if(v.otMins > 0) dayBreakdown[d] =
+        {otMins:v.otMins, type:v.type, rate:v.rate, location:v.location||''};
     });
 
     // Rate calculation:
@@ -26592,11 +26771,15 @@ async function confirmAndRunPayroll(){
     const empAtt=attRecs.filter(r=>String(r.empId)===String(emp.id)&&r.clockOut);
     const daysWorked=[...new Set(empAtt.map(r=>r.date))].length;
     let otMins=0,otPay=0;
-    empAtt.forEach(rec=>{
-      const {otMins:om,type}=calcOTMins(rec,settings);
-      if(om>0){ const mult=type==='holiday'?settings.otHoliday:type==='weekend'?settings.otWeekend:settings.otWeekday;
-        otMins+=om; otPay+=(om/60)*hourlyRate*mult; }
-    });
+    {
+      const _p=calcOvertimeForEmployee(empAtt,settings);
+      otMins=_p.otMins;
+      Object.values(_p.byDate).forEach(v=>{
+        if(!v.otMins) return;
+        const mult=v.rate||(v.type==='holiday'?settings.otHoliday:v.type==='sunday'?settings.otWeekend:settings.otWeekday);
+        otPay+=(v.otMins/60)*hourlyRate*mult;
+      });
+    }
     // Approved leave days are paid — attendance records created automatically on approval
     // Only deduct for absent days (no attendance + no approved leave)
     let leaveDeduct=0,leaveNote='';
@@ -26812,13 +26995,14 @@ async function runPayroll(){
     // OT calculation
     let otMins=0, otPay=0;
     if(inclOT){
-      empAtt.forEach(rec=>{
-        const {otMins:om, type} = calcOTMins(rec, settings);
-        if(om>0){
-          const mult = type==='holiday' ? settings.otHoliday : type==='weekend' ? settings.otWeekend : settings.otWeekday;
-          otMins += om;
-          otPay  += (om/60) * hourlyRate * mult;
-        }
+      const _p = calcOvertimeForEmployee(empAtt, settings);
+      otMins = _p.otMins;
+      Object.values(_p.byDate).forEach(v=>{
+        if(!v.otMins) return;
+        const mult = v.rate || (v.type==='holiday' ? settings.otHoliday
+                              : v.type==='sunday'  ? settings.otWeekend
+                                                   : settings.otWeekday);
+        otPay += (v.otMins/60) * hourlyRate * mult;
       });
     }
 
@@ -27324,7 +27508,7 @@ async function mobileConfirmClockIn(empId, locationId, locationName){
   // Show confirmation before clocking
   const emp = getEmps().find(e=>String(e.id)===String(empId));
   const localAtt = S.get('attendance',[]);
-  const openRec  = localAtt.find(r=>String(r.empId)===String(empId)&&r.date===todayStr()&&!r.clockOut);
+  const openRec  = findOpenShift(empId, localAtt);
   const isOut    = !!openRec;
   const c        = emp ? aColor(emp.name) : '#888';
 
@@ -27356,7 +27540,7 @@ async function confirmMobileClockAction(empId, locationId, locationName, isOut){
   closeModal();
   if(isOut){
     const localAtt = S.get('attendance',[]);
-    const openRec  = localAtt.find(r=>String(r.empId)===String(empId)&&r.date===todayStr()&&!r.clockOut);
+    const openRec  = findOpenShift(empId, localAtt);
     if(openRec) await empClockOut(openRec.id);
   } else {
     await empClockIn(empId, locationId, locationName);
