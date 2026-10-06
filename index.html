@@ -1393,11 +1393,16 @@ async function renderMobilePortal(user, emp, isHOD, tab){
       const {data:allLeaves} = await _sb.from('leave_requests')
         .select('id,emp_id,type,from_date,to_date,days,status')
         .eq('status','approved').gte('to_date',today);
+      // See the note on manager flags below -- Tier 3 is a clocking tier, not
+      // a permission, so the manager set comes from is_hod / is_senior_hod.
       const {data:allEmps} = await _sb.from('employees')
-        .select('id,name,dept,company_id,clock_mode').eq('clock_mode','hod').neq('status','offboarded');
+        .select('id,name,dept,company_id,clock_mode,is_hod,is_senior_hod')
+        .neq('status','offboarded');
       if(allLeaves && allEmps){
+        const _isMgrRow = r => [true,'true','1',1].includes(r.is_hod)
+                            || [true,'true','1',1].includes(r.is_senior_hod);
         const hodMap = {};
-        allEmps.forEach(e=>{ hodMap[String(e.id)]=e; });
+        allEmps.filter(_isMgrRow).forEach(e=>{ hodMap[String(e.id)]=e; });
         const cos = _companiesCache||[];
         groupLeaves = allLeaves
           .filter(r=>hodMap[String(r.emp_id)] && String(r.emp_id)!==String(emp.id))
@@ -14572,12 +14577,24 @@ ensureFamilyMedicalLeaveType();
       showEmployeeClockInScreen(CU);
       return;
     }
-    // Find user from cache or Supabase
-    let _sessionUser = localUsers.find(u=>
-      String(u.id)===String(_savedSession.userId)||
-      u.username===_savedSession.username
-    );
-    if(!_sessionUser && sbReady()){
+    // Restore the account from the DATABASE first, and only fall back to the
+    // local cache if the database cannot be reached.
+    //
+    // This used to read the cache first. The session record holds only
+    // userId / username / companyId -- never the role -- so CU.role came from
+    // whatever localStorage had cached when the user list was last written.
+    // An account demoted in the database kept its old role on that device
+    // indefinitely, because signing out clears the session but not the cached
+    // user list. A viewer whose cache still said "manager" was handed the
+    // manager sections of the mobile portal.
+    //
+    // The cache fallback also matches on ID ONLY. It used to accept
+    // "id matches OR username matches", which could return a DIFFERENT
+    // account: 49 employees hold more than one hr_users row, and six of those
+    // sets disagree on role, senior_hod or cross_leave_visibility, so the
+    // username branch could resolve to the more privileged duplicate.
+    let _sessionUser = null;
+    if(sbReady()){
       try{
         const {data} = await _sb.from('hr_users').select('*')
           .eq('id',_savedSession.userId).eq('active',true).limit(1);
@@ -14589,9 +14606,16 @@ ensureFamilyMedicalLeaveType();
           passwordHash:_suRow.password_hash,
           empId:_suRow.emp_id||null,
           setupDone:_suRow.setup_done||false,
+          // These two were missing, so a DB-sourced restore silently dropped
+          // them and a Senior HOD lost the flag that makes them one.
+          seniorHOD:[true,'true','1',1].includes(_suRow.senior_hod),
+          crossLeaveVisibility:[true,'true','1',1].includes(_suRow.cross_leave_visibility),
           companyId:_suRow.company_id||_savedSession.companyId||1
         };
       }catch(e){}
+    }
+    if(!_sessionUser){
+      _sessionUser = localUsers.find(u=>String(u.id)===String(_savedSession.userId)) || null;
     }
     if(_sessionUser && _sessionUser.active!==false){
       CU = _sessionUser;
@@ -14606,8 +14630,18 @@ ensureFamilyMedicalLeaveType();
       initSupabase();
       if(sbReady()){
         try{
+          // dbGetUsers() is in here deliberately. Nothing on the login or
+          // session-restore path used to refresh the cached user list -- the
+          // only refreshes sat behind the admin user-management screens, and
+          // the clock-in path refreshes only when the cache is EMPTY. So once
+          // pdhr_users was written to a device it was never updated again, and
+          // an account demoted in the database kept its old role there for
+          // good. getLeaveApprovalContext() reads senior_hod and
+          // cross_leave_visibility out of that same cached list, so the stale
+          // copy decided permissions, not just the display.
           const [fe,fev,fa,fp] = await Promise.all([
-            dbGetEmployees(),dbGetEvents(),dbGetAssignments(),dbGetPrograms()
+            dbGetEmployees(),dbGetEvents(),dbGetAssignments(),dbGetPrograms(),
+            dbGetUsers().catch(()=>null)
           ]);
           _cache={emps:fe,evts:fev,asgn:fa,progs:fp};
         }catch(e){}
@@ -14957,6 +14991,11 @@ async function doLogin(){
   _COMPANY_ID = _loginCompanyId;
   CU.companyId = _loginCompanyId;
   CU.loginMethod = 'password'; // Password login — full HR platform access
+  // Refresh the cached user list at sign-in as well as on session restore, so
+  // a device holding a stale role is corrected without clearing site data.
+  // It must come AFTER _COMPANY_ID is set -- dbGetUsers() filters on it, and
+  // run any earlier it would cache the previous company's users.
+  dbGetUsers().catch(()=>{});
   // Load fresh modes from Supabase before saving session
   const _freshModes = await loadGlobalAccessModes().catch(()=>S.get('globalAccessModes',{}));
   const _sessionMode = _freshModes[String(_loginCompanyId)] || _freshModes[_loginCompanyId] || 'full_kiosk';
@@ -22929,10 +22968,17 @@ async function renderManagerLeaveCalendar(){
 
   const hodEmp = CU.empId ? gE(CU.empId) : null;
 
-  // Get all HODs/managers across all companies
+  // Get all HODs/managers across all companies.
+// A clocking tier is not a permission. clock_mode 'hod' (Tier 3) only means
+// "may clock in at the kiosk, by phone QR, and use the platform" -- 7 MTI
+// Sales staff were put on it for phone clocking and became "managers" here as
+// a side effect, which is how a Senior HOD came to see their leave and how
+// they appeared in the manager leave lists. is_hod / is_senior_hod are the
+// flags that actually mean manager, and every genuine manager has one.
+// employees.role is a JOB TITLE, so comparing it to 'manager' never matched
+// anything on purpose either.
   const otherHODs = allEmps.filter(e=>
-    (e.isHOD||e.isSeniorHOD||e.clockMode==='hod'||e.role==='hod'||e.role==='manager') &&
-    e.status!=='offboarded'
+    (e.isHOD||e.isSeniorHOD) && e.status!=='offboarded'
   );
 
   if(!otherHODs.length){
@@ -27702,8 +27748,10 @@ function canViewRequest(req){
     if(reqEmp2 && isEmpAdminOrHR(reqEmp2)) return false;
     // Always their own.
     if(CU.empId && String(req.empId)===String(CU.empId)) return true;
-    const isManager = e => !!(e && (e.isHOD || e.isSeniorHOD ||
-                                    e.clockMode==='hod' || e.role==='manager'));
+    // Manager means the manager flags, not the clocking tier -- see the note
+    // in renderManagerLeaveCalendar. Tier 3 alone used to make an employee's
+    // request visible to, and approvable by, every Senior HOD.
+    const isManager = e => !!(e && (e.isHOD || e.isSeniorHOD));
     if(!isManager(reqEmp2)) return false;
     // Where managers actually report to this person by name, that IS the list --
     // the same rule the team scope uses. Where none do, fall back to every
@@ -28651,7 +28699,7 @@ function getScopedLeaveEmps(){
     // Other managers — a senior HOD sees the managers who report to them; only
     // a senior HOD with no reporting line recorded falls back to all managers.
     if(hodEmp?.isSeniorHOD || CU.seniorHOD){
-      const _isMgr = e => !!(e && (e.isHOD || e.isSeniorHOD || e.clockMode==='hod' || e.role==='manager'));
+      const _isMgr = e => !!(e && (e.isHOD || e.isSeniorHOD));
       const _myMgrs = all.filter(e => _isMgr(e) && !isEmpAdminOrHR(e) && e.manager === myName);
       (_myMgrs.length ? _myMgrs : all.filter(e => _isMgr(e) && !isEmpAdminOrHR(e)))
         .forEach(e=>teamIds.add(String(e.id)));
