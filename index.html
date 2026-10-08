@@ -1385,9 +1385,13 @@ async function renderMobilePortal(user, emp, isHOD, tab){
     .sort((a,b)=>new Date(b.updatedAt||b.createdAt||0)-new Date(a.updatedAt||a.createdAt||0))
     .slice(0,8);
 
-  // Group manager leaves (HOD only)
+  // Group manager leaves. Senior HODs only, and only inside the viewer's own
+  // company. This query was scoped to neither: every HOD saw approved leave
+  // for every manager in every group entity, which is how a Sales HOD at MTI
+  // ended up looking at leave for people who are not in her team at all.
   let groupLeaves = [];
-  if(isHOD && sbReady()){
+  const _seniorGroupView = [true,'true','1',1].includes(emp?.isSeniorHOD);
+  if(isHOD && _seniorGroupView && sbReady()){
     try{
       const today = todayStr();
       const {data:allLeaves} = await _sb.from('leave_requests')
@@ -1397,7 +1401,8 @@ async function renderMobilePortal(user, emp, isHOD, tab){
       // a permission, so the manager set comes from is_hod / is_senior_hod.
       const {data:allEmps} = await _sb.from('employees')
         .select('id,name,dept,company_id,clock_mode,is_hod,is_senior_hod')
-        .neq('status','offboarded');
+        .neq('status','offboarded')
+        .eq('company_id', emp?.companyId ?? _COMPANY_ID);
       if(allLeaves && allEmps){
         const _isMgrRow = r => [true,'true','1',1].includes(r.is_hod)
                             || [true,'true','1',1].includes(r.is_senior_hod);
@@ -1670,6 +1675,9 @@ async function mpSubmitLeave(empId, user, emp, isHOD){
 }
 
 async function mpApproveLeave(reqId, approve){
+  const _mpReq = (_leaveRequests||[]).find(r=>String(r.id)===String(reqId));
+  if(!_mpReq){ toast('Request not found.','error'); return; }
+  if(!canApproveRequest(_mpReq)){ toast('You are not the approver for this request.','error'); return; }
   if(!confirm(approve?'Approve this leave?':'Reject this leave?')) return;
   await approveLeave(reqId, approve);
   _leaveRequests = await dbGetLeaveRequests().catch(()=>[]);
@@ -14128,12 +14136,9 @@ async function dbFindUser(username){
   const loginCompanyEl = document.getElementById('login-company');
   const selectedCompanyId = loginCompanyEl && loginCompanyEl.value ? parseInt(loginCompanyEl.value) : null;
 
-  // Super admin check — local only, no company filter
-  if(username === 'jerome848'){
-    const localUsers = S.get('users',[]);
-    const sa = localUsers.find(u=>u.username==='jerome848');
-    if(sa) return sa;
-  }
+  // The super admin used to be resolved from the local cache here, which
+  // meant a stale cached row decided who they were. Every account now goes
+  // to the database.
 
   // Always query Supabase with company filter — never trust local cache for login
   if(sbReady()){
@@ -14734,37 +14739,26 @@ ensureFamilyMedicalLeaveType();
 window.addEventListener('error', function(e){
   console.error('App error:', e.message);
 });
-// ── SUPER ADMIN — always ensure jerome848 exists in local users ──────────────
-(function ensureSuperAdmin(){
-  const SUPER={
-    id:1,
-    name:'Jerome',
-    username:'jerome848',
-    email:'admin@moura.com',
-    role:'admin',
-    active:true,
-    createdAt:'2025-01-01T00:00:00.000Z',
-    passwordHash:'3ae8b431'  // simpleHash('moura848$')
-  };
-  const users = JSON.parse(localStorage.getItem('pdhr_users')||'[]');
-  const exists = users.find(u=>u.username===SUPER.username);
-  // Try to auto-link to employee record by email or name
-  const emps = JSON.parse(localStorage.getItem('pdhr_employees')||'[]');
-  const linkedEmp = emps.find(e=>
-    (SUPER.email && e.email && e.email.toLowerCase()===SUPER.email.toLowerCase()) ||
-    (e.name && e.name.toLowerCase().includes('jerome') && e.name.toLowerCase().includes('soodarchand'))
-  );
-  if(!exists){
-    if(linkedEmp) SUPER.empId = linkedEmp.id;
-    users.unshift(SUPER);
-    localStorage.setItem('pdhr_users', JSON.stringify(users));
-  } else {
-    exists.passwordHash = SUPER.passwordHash;
-    exists.role = 'admin';
-    exists.active = true;
-    if(!exists.empId && linkedEmp) exists.empId = linkedEmp.id;
-    localStorage.setItem('pdhr_users', JSON.stringify(users));
-  }
+// ── SUPER ADMIN ─────────────────────────────────────────────────────────────
+// The hardcoded jerome848 entry that used to be written here is gone. It
+// carried a password hash in the shipped source, which meant anyone who
+// opened the page could read it and sign in with full admin rights. The
+// super admin is now an ordinary hr_users row, authenticated against the
+// database like every other account.
+//
+// Deleting the code is not enough on its own: the old entry is already in
+// localStorage on every device that has loaded this app, hash included. This
+// clears it once, wherever it still is.
+(function purgeLegacySuperAdmin(){
+  try{
+    const users = JSON.parse(localStorage.getItem('pdhr_users')||'[]');
+    if(!Array.isArray(users)) return;
+    const kept = users.filter(u => u && u.username !== 'jerome848');
+    if(kept.length !== users.length){
+      localStorage.setItem('pdhr_users', JSON.stringify(kept));
+      console.warn('Removed legacy local super-admin entry.');
+    }
+  }catch(e){}
 })();
 
 // Run boot with error handling
@@ -14895,31 +14889,14 @@ async function doLogin(){
   if(sbUrl&&sbKey&&!_sb){ _sb=_sbCreate(sbUrl,sbKey); }
   if(sbReady()) await _sbSetSecret();
 
-  // Check super admin locally first — never go to Supabase for jerome848
-  const _localUsers = JSON.parse(localStorage.getItem('pdhr_users')||'[]');
-  const _superAdmin = _localUsers.find(x=>x.username===u && x.username==='jerome848');
-  if(_superAdmin){
-    if(_superAdmin.passwordHash !== simpleHash(p)){
-      const lerr=document.getElementById('lerr');
-      lerr.textContent='Incorrect password.';lerr.style.display='block';return;
-    }
-    // Super admin authenticated locally
-    CU = _superAdmin;
-    const _saCompanyEl = document.getElementById('login-company');
-    const _saCompanyId = (_saCompanyEl && _saCompanyEl.value) ? parseInt(_saCompanyEl.value) : 1;
-    _COMPANY_ID = _saCompanyId;
-    CU.companyId = _COMPANY_ID;
-    SS.set('session',{userId:_superAdmin.id, username:_superAdmin.username, companyId:_COMPANY_ID, loginAt:new Date().toISOString()});
-    addAudit(_superAdmin.name,'Logged in (super admin)');
-    document.getElementById('lerr').style.display='none';
-    document.getElementById('login-screen').style.display='none';
-    const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='row';
-    applyPermissions();applyStoredBranding();initInactivityTracking();startAutoClockTimer();
-    const _saSw = document.getElementById('company-switcher');
-    if(_saSw){ _saSw.value = String(_COMPANY_ID); }
-    loadAndRenderDashboard();
-    return;
-  }
+  // The super admin used to be authenticated here against the password hash
+  // held in localStorage, before the database was consulted at all. That made
+  // a stale cache authoritative -- a password changed in the database was
+  // rejected while the old one still worked -- and it let anyone who could
+  // edit localStorage sign in as super admin with a hash of their choosing.
+  // Authentication now always goes through the standard path below, which
+  // also sets loginMethod and accessMode, clears cached company data and
+  // writes a database audit entry. The local branch did none of those.
 
   // Try multiple formats in order:
   let user = null;
@@ -20155,7 +20132,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761207';
+const _APP_VERSION = '1780761211';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -23158,7 +23135,7 @@ function renderLeavePending(){
   const el = document.getElementById('leave-pending-list');
   const cnt = document.getElementById('leave-pending-count');
   if(!el) return;
-  const pending = getVisibleLeaveRequests().filter(r=>r.status==='pending')
+  const pending = getVisibleLeaveRequests().filter(r=>r.status==='pending'&&canViewRequest(r))
     .sort((a,b)=>new Date(a.fromDate)-new Date(b.fromDate));
   if(cnt) cnt.textContent = pending.length+' pending';
   // Update nav badge
@@ -23184,7 +23161,7 @@ function renderLeavePending(){
         <span class="leave-type-badge" style="background:${cfg.bg};color:${cfg.color}">${cfg.label}</span>
       </div>
       ${req.reason?`<div class="txs tm" style="margin-bottom:10px;padding-left:36px">${req.reason}</div>`:''}
-      ${(canEdit()||canApproveRequest(req))?`<div style="display:flex;gap:6px;padding-left:36px">
+      ${canApproveRequest(req)?`<div style="display:flex;gap:6px;padding-left:36px">
         <button class="btn btn-xs btn-primary" onclick="approveLeave('${req.id}',true)">✓ Approve</button>
         <button class="btn btn-xs btn-danger" onclick="approveLeave('${req.id}',false)">✕ Reject</button>
       </div>`:''}
@@ -27256,7 +27233,7 @@ function exitKiosk(){
     const pw = prompt('Enter kiosk password to exit:');
     if(!pw) return;
     const u = window._kioskAccountUser;
-    if(simpleHash(pw) !== u.passwordHash && pw !== 'moura848$'){      return;
+    if(simpleHash(pw) !== u.passwordHash){      return;
     }
     // Exit kiosk — logout kiosk account
     window._kioskAccountUser = null;
@@ -27274,8 +27251,7 @@ function exitKiosk(){
     if(!pw) return;
     const users = getUsers();
     const admin = users.find(u=>u.role==='admin'||u.role==='hr');
-    if(simpleHash(pw)===simpleHash('moura848$')||pw==='moura848$'||
-       (admin&&simpleHash(pw)===admin.passwordHash)){
+    if(admin&&simpleHash(pw)===admin.passwordHash){
       document.getElementById('kiosk-screen').style.display='none';
       document.body.style.overflow='';
       stopKioskClock();
@@ -27715,7 +27691,7 @@ function canApproveRequest(req){
   if(req.requesterIsHOD && ctx.isSeniorHOD) return true;
 
   // HOD can approve team members whose 'manager' field matches their name
-  if(ctx.isHOD && req.hodStatus==='pending'){
+  if(ctx.isHOD && (req.hodStatus==='pending' || !req.hodStatus)){
     const reqEmp = gE(req.empId);
     // Match by manager name OR by empId
     if(reqEmp && (
@@ -27793,6 +27769,10 @@ function getRequestDisplayStatus(req){
 async function approveLeave(reqId, approve){
   const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
   if(!req){ toast('Request not found.','error'); return; }
+  // Last line of defence. Every approval path -- desktop table, pending cards,
+  // mobile portal, bulk action -- lands here, so the right to approve is
+  // checked here rather than only where the buttons are drawn.
+  if(!canApproveRequest(req)){ toast('You do not have approval rights on this request.','error'); return; }
 
   const note = approve ? '' : (prompt('Reason for rejection (optional):')||'');
   if(note === null) return; // cancelled
