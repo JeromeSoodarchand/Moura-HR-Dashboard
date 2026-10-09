@@ -1347,7 +1347,11 @@ async function showMobilePortal(user, emp){
   // Load data
   if(!_leaveBalances) _leaveBalances = await dbGetLeaveBalances().catch(()=>({}));
   if(!_leaveRequests || !_leaveRequests.length) _leaveRequests = await dbGetLeaveRequests().catch(()=>[]);
-  if(!_attendance || !_attendance.length) _attendance = await dbGetAttendance(todayStr(), todayStr()).catch(()=>[]);
+  // Clock state has to come from the database every time. This used to load
+  // only when the cache was EMPTY, so a shift opened by QR on this phone and
+  // closed on the kiosk left the cached record still open -- and the portal
+  // went on offering "scan to clock out" for a shift that had already ended.
+  _attendance = await dbGetAttendance(todayStr(), todayStr()).catch(()=>_attendance||[]);
 
   const isHOD = user.role==='hod'||user.role==='manager'||user.role==='admin'||user.role==='hr';
   const initials = emp.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
@@ -20132,7 +20136,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761211';
+const _APP_VERSION = '1780761213';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -24127,7 +24131,19 @@ function openFullHRPlatform(){
   SS.set('hrPlatform', true);
 }
 
+// Guards against a second clock-in submitted while the first is still in
+// flight. Sassee SONOO opened two shifts 2.4 seconds apart on 6 Oct -- a double
+// tap on Confirm, with neither request finished, so no cache or database read
+// could have seen the other. A lock is the only thing that catches that.
+let _clockInFlight = null;
+
 async function empClockIn(empId, locationId, locationName){
+  const _lockKey = String(empId);
+  if(_clockInFlight === _lockKey){
+    toast('Clock-in already in progress…','error');
+    return null;
+  }
+  _clockInFlight = _lockKey;
   try{
     if(!confirmQuickRestart(empId)) return null;
     const rec = {
@@ -24164,6 +24180,7 @@ async function empClockIn(empId, locationId, locationName){
     }).catch(()=>{});
     return rec;
   } catch(e){ console.error('empClockIn error:',e); throw e; }
+  finally{ _clockInFlight = null; }
 }
 
 // Clock-in and clock-out render in the same place on the screen, so a second
@@ -27529,8 +27546,16 @@ async function mobileManualClockIn(empId, locationId, locationName){
 async function mobileConfirmClockIn(empId, locationId, locationName){
   // Show confirmation before clocking
   const emp = getEmps().find(e=>String(e.id)===String(empId));
-  const localAtt = S.get('attendance',[]);
-  const openRec  = findOpenShift(empId, localAtt);
+  // Whether this scan is a clock-in or a clock-out is decided here, and it was
+  // decided from S.get('attendance') -- this device's localStorage. A shift
+  // opened in another browser, or on another phone, was invisible: the dialog
+  // offered "Clock In" again and a second open record was created. Which is
+  // also why scanning an OUT location while already clocked in appeared to be
+  // refused -- it was not refused, it was never recognised as a clock-out.
+  let _liveAtt = _attendance || [];
+  try{ _liveAtt = await dbGetAttendance(todayStr(), todayStr()); _attendance = _liveAtt; }
+  catch(e){ console.warn('[Clock] could not refresh attendance, using cache:', e); }
+  const openRec  = findOpenShift(empId, _liveAtt);
   const isOut    = !!openRec;
   const c        = emp ? aColor(emp.name) : '#888';
 
@@ -27552,7 +27577,7 @@ async function mobileConfirmClockIn(empId, locationId, locationName){
     </div>
     <div class="mf">
       <button class="btn" onclick="closeModal()">Cancel</button>
-      <button class="btn ${isOut?'btn-danger':'btn-primary'}" onclick="confirmMobileClockAction('${empId}','${locationId}','${locationName}',${isOut})">
+      <button class="btn ${isOut?'btn-danger':'btn-primary'}" onclick="this.disabled=true;this.style.opacity=.6;confirmMobileClockAction('${empId}','${locationId}','${locationName}',${isOut})">
         ${isOut?'⏹ Confirm Clock Out':'✓ Confirm Clock In'}
       </button>
     </div>`;
@@ -27561,9 +27586,15 @@ async function mobileConfirmClockIn(empId, locationId, locationName){
 async function confirmMobileClockAction(empId, locationId, locationName, isOut){
   closeModal();
   if(isOut){
-    const localAtt = S.get('attendance',[]);
-    const openRec  = findOpenShift(empId, localAtt);
+    // Re-resolve against the database rather than localStorage. empClockOut()
+    // looks the record up in _attendance, so a stale id from the local cache
+    // produced "Attendance record not found" even though the shift was open.
+    let liveAtt = _attendance || [];
+    try{ liveAtt = await dbGetAttendance(todayStr(), todayStr()); _attendance = liveAtt; }
+    catch(e){ console.warn('[Clock] could not refresh attendance:', e); }
+    const openRec = findOpenShift(empId, liveAtt);
     if(openRec) await empClockOut(openRec.id);
+    else toast('No open shift found — you may already have been clocked out elsewhere.','error');
   } else {
     await empClockIn(empId, locationId, locationName);
   }
