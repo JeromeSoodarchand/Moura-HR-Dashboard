@@ -744,22 +744,49 @@ html {
 // Worker URL — update this after deploying the worker to Cloudflare
 const _EMAIL_WORKER_URL = 'https://solentrahr-email.jerome-8c5.workers.dev';
 
-async function sendEmail({to, subject, html}){
-  if(!to) return;
+// Every send is recorded in audit_log. The outcome used to go to the browser
+// console and nowhere else, so a leave request that notified nobody looked
+// exactly like one that notified everybody -- and on the free Resend plan the
+// daily 100-email ceiling would stop approvals silently. The worker returns
+// Resend's own status and body, so this records the message id on success and
+// the reason on failure.
+function _logEmailOutcome(context, recipients, text){
+  const actor = (typeof CU !== 'undefined' && CU && CU.name) ? CU.name : 'SolentraHR';
+  const line  = (context ? context + ' → ' : 'Email → ') + recipients.join(', ') + ' — ' + text;
+  try{ dbAddAudit(actor, line).catch(()=>{}); }catch(e){}
+}
+
+async function sendEmail({to, subject, html, context}){
+  if(!to) return { ok:false, error:'no_recipient' };
   const emails = Array.isArray(to) ? to : [to];
   const validEmails = emails.filter(e=>e&&e.includes('@'));
-  if(!validEmails.length){ console.warn('[Email] No valid email addresses'); return; }
+  if(!validEmails.length){
+    console.warn('[Email] No valid email addresses');
+    _logEmailOutcome(context, emails.map(String), 'NOT SENT — no valid address');
+    return { ok:false, error:'no_valid_recipient' };
+  }
   try{
     const resp = await fetch(_EMAIL_WORKER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ to: validEmails, subject, html })
     });
-    const result = await resp.json();
-    if(!resp.ok) console.warn('[Email] Send failed:', result);
-    else console.log('[Email] Sent to', validEmails.join(', '));
-    return result;
-  } catch(e){ console.warn('[Email] Worker error:', e); }
+    let result = {};
+    try{ result = await resp.json(); }catch(e){}
+    if(resp.ok){
+      console.log('[Email] Sent to', validEmails.join(', '));
+      _logEmailOutcome(context, validEmails, 'sent (resend id ' + (result && result.id ? result.id : 'n/a') + ')');
+      return { ok:true, status:resp.status, id:(result && result.id) || null };
+    }
+    const reason = (result && (result.message || result.name)) || ('HTTP ' + resp.status);
+    console.warn('[Email] Send failed:', result);
+    _logEmailOutcome(context, validEmails, 'FAILED ' + resp.status + ' — ' + reason);
+    return { ok:false, status:resp.status, error:reason };
+  } catch(e){
+    console.warn('[Email] Worker error:', e);
+    _logEmailOutcome(context, validEmails, 'FAILED — email worker unreachable: ' + ((e && e.message) || e));
+    return { ok:false, error:'worker_unreachable' };
+  }
 }
 
 async function emailLeaveRequestToHOD(emp, hod, req){
@@ -832,7 +859,7 @@ async function emailLeaveRequestToHOD(emp, hod, req){
         </div>
       </div>
     </div>`;
-  return sendEmail({to: hod.email, subject, html});
+  return sendEmail({to: hod.email, subject, html, context:'Leave request — approver'});
 }
 
 function emailLeaveResultToEmployee(emp, req, approved, note){
@@ -871,7 +898,7 @@ function emailLeaveResultToEmployee(emp, req, approved, note){
         </div>
       </div>
     </div>`;
-  return sendEmail({to: emp.email, subject, html});
+  return sendEmail({to: emp.email, subject, html, context:'Leave decision — employee'});
 }
 
 // ── COMPANY MANAGEMENT ───────────────────────────────────────────────────────
@@ -20136,7 +20163,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761213';
+const _APP_VERSION = '1780761214';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
