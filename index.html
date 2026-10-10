@@ -20163,7 +20163,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761214';
+const _APP_VERSION = '1780761215';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -24302,15 +24302,28 @@ function empRequestLeave(){
 
 // ── PIN LOGIN ─────────────────────────────────────────────────────────────────
 
+// The fourth digit auto-submits after 300ms AND the tick button calls
+// loginPinSubmit() directly, so typing four digits and then tapping tick ran
+// the whole handler twice: two dbGetUsers() fetches and two audit rows per
+// login, 126ms apart in audit_log. _pinSubmitAt debounces that pair, and any
+// edit to the PIN clears it so a corrected PIN is never swallowed.
+let _pinSubmitAt = 0;
+
 function loginPin(d){
   if(_loginPin.length>=4) return;
   _loginPin += d;
+  _pinSubmitAt = 0;
   updateLoginDots();
-  if(_loginPin.length===4) setTimeout(loginPinSubmit, 300);
+  if(_loginPin.length===4){
+    clearTimeout(window._pinAutoTimer);
+    window._pinAutoTimer = setTimeout(loginPinSubmit, 300);
+  }
 }
 
 function loginPinDel(){
   _loginPin = _loginPin.slice(0,-1);
+  _pinSubmitAt = 0;
+  clearTimeout(window._pinAutoTimer);
   updateLoginDots();
 }
 
@@ -24322,7 +24335,12 @@ function updateLoginDots(){
 }
 
 async function loginPinSubmit(){
+  const _pinNow = Date.now();
+  if(_pinNow - _pinSubmitAt < 2000) return;
+  _pinSubmitAt = _pinNow;
+  clearTimeout(window._pinAutoTimer);
   if(_loginPin.length!==4){
+    _pinSubmitAt = 0;
     const e=document.getElementById('lerr-pin');
     if(e){e.textContent='Enter all 4 digits.';e.style.display='block';}
     return;
