@@ -20163,7 +20163,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761215';
+const _APP_VERSION = '1780761216';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -22724,6 +22724,7 @@ async function dbGetLeaveRequests(){
       hrApprovedAt:r.hr_approved_at||null,
       requesterIsHOD:r.requester_is_hod||false,
       reviewedBy:r.reviewed_by||'', reviewNote:r.review_note||'',
+      sideEffectsAt:r.side_effects_at||null,
       createdAt:r.created_at||r.updated_at||null, updatedAt:r.updated_at
     }));
     S.set('leaveRequests', reqs);
@@ -23094,6 +23095,56 @@ async function renderManagerLeaveCalendar(){
   html += '<div style="margin-top:8px;font-size:11px;color:var(--text3)">Showing approved leave for other managers this month. Dates only — no access to their records.</div>';
   if(body) body.innerHTML = html;
 }
+// ── RECONCILE EMAIL-APPROVED LEAVE ──────────────────────────────────────────
+// One-click approval from the notification email is handled by the Cloudflare
+// worker, which updates leave_requests and NOTHING else: no balance deduction,
+// no audit entry, no absence event. The approver often never opens this app --
+// the GCEO approves from his inbox and nowhere else -- so the rest of the work
+// has to be done by whoever does open it. 45 approvals had been left half-done
+// this way, 48.5 days of leave never deducted from anyone's balance.
+//
+// A worker approval is identifiable because the worker writes hr_approved_at
+// but never hod_approved_at; the app always writes both.
+//
+// side_effects_at marks a request as settled. Every request that existed before
+// this shipped is stamped by the migration, so the historic backlog is never
+// touched here: those balances have been hand-corrected by HR 60+ times, and
+// deciding what to do about them is theirs, not this function's.
+let _reconcilingLeave = false;
+
+async function reconcileWorkerApprovals(){
+  if(_reconcilingLeave || !sbReady()) return;
+  const pending = (_leaveRequests||[]).filter(r=>
+    r.status === 'approved' && !r.sideEffectsAt && !r.hodApprovedAt && r.hrApprovedAt
+  );
+  if(!pending.length) return;
+  _reconcilingLeave = true;
+  try{
+    for(const req of pending){
+      try{
+        const emp   = gE(req.empId);
+        const label = getLEAVE_TYPES()[req.type]?.label || req.type;
+        await deductLeaveBalance(req);
+        await createLeaveAttendanceRecords(req);
+        await dbSaveEvent({
+          id: Date.now(), empId: req.empId, type: 'absence', date: req.fromDate,
+          desc: `${label} approved: ${fDate(req.fromDate)} – ${fDate(req.toDate)} (${req.days} days)`,
+          loggedBy: req.hrApprovedBy || 'Email approval', notified: true
+        }).catch(()=>{});
+        const stamp = new Date().toISOString();
+        const {error} = await _sb.from('leave_requests')
+          .update({ side_effects_at: stamp }).eq('id', req.id);
+        if(error) throw error;
+        req.sideEffectsAt = stamp;
+        dbAddAudit(req.hrApprovedBy || 'Email approval',
+          `Email approval settled for ${emp?.name||req.empId} — ${label}, ${req.days}d: balance deducted and records created`
+        ).catch(()=>{});
+      }catch(e){ console.warn('[Leave] reconcile failed for request', req.id, e); }
+    }
+    _leaveBalances = await dbGetLeaveBalances().catch(()=>_leaveBalances);
+  } finally { _reconcilingLeave = false; }
+}
+
 async function renderLeave(){
   // Show kiosk leave section only for admin/HR
   const _kls = document.getElementById('kiosk-leave-section');
@@ -23112,6 +23163,9 @@ async function renderLeave(){
       await createLeaveAttendanceRecords(req).catch(()=>{});
     }
   }
+  // Settle anything approved from an email link since the last time someone
+  // opened this page.
+  await reconcileWorkerApprovals().catch(e=>console.warn('[Leave] reconcile:', e));
   renderLeavePending();
   renderLeaveCalendar();
   renderLeaveTable();
