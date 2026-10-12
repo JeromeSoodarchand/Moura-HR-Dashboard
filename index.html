@@ -20163,7 +20163,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761216';
+const _APP_VERSION = '1780761217';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -22938,22 +22938,36 @@ async function renderManagerLeaveCalendar(){
   const body = document.getElementById('mgr-leave-cal-body');
   if(!el) return;
 
-  // Visible to HODs, managers, HR and admin — not regular employees
-  const isManager = CU && (CU.role==='admin'||CU.role==='hr'||CU.role==='hod'||CU.role==='manager'||_findHodEmp()?.isHOD);
-  if(!isManager){ el.style.display='none'; return; }
+  // This section used to be visible to anyone with the HOD flag, and it queried
+  // employees and leave_requests across EVERY company. So a Sales head of
+  // department at MTI was shown the leave dates of every manager in the group,
+  // including the MD and the GCEO. The mobile portal had the same problem and
+  // was fixed; this is its desktop twin.
+  //
+  // HR and admin keep the group-wide view -- they already see every record.
+  // A Senior HOD sees managers in their OWN company. A plain HOD sees nothing.
+  const _mgrCalMe  = _findHodEmp();
+  const _mgrCalHR  = !!(CU && (CU.role==='admin' || CU.role==='hr'));
+  const _mgrCalSnr = [true,'true','1',1].includes(_mgrCalMe?.isSeniorHOD)
+                  || [true,'true','1',1].includes(CU?.seniorHOD);
+  if(!(_mgrCalHR || _mgrCalSnr)){ el.style.display='none'; return; }
   el.style.display='';
+  const _mgrCalAllCo = _mgrCalHR;
+  const _mgrCalCoId  = String(_mgrCalMe?.companyId || CU?.companyId || _COMPANY_ID || '');
 
   // Update title
   const title = el.querySelector('.ct');
-  if(title) title.textContent = '🌐 Group Manager Leave Calendar — All Companies';
+  if(title) title.textContent = _mgrCalAllCo
+    ? '🌐 Group Manager Leave Calendar — All Companies'
+    : '🌐 Manager Leave Calendar';
 
   const users = getUsers();
 
   // Load employees from ALL companies for cross-company visibility
   let allEmps = getEmps().filter(e=>e.status!=='offboarded');
 
-  // If Supabase is available, load managers from all companies
-  if(sbReady()){
+  // Only HR and admin reach across entities here.
+  if(sbReady() && _mgrCalAllCo){
     try{
       const {data} = await _sb.from('employees')
         .select('id, name, dept, role, status, company_id, clock_mode, is_hod, is_senior_hod, user_id')
@@ -22987,7 +23001,8 @@ async function renderManagerLeaveCalendar(){
 // employees.role is a JOB TITLE, so comparing it to 'manager' never matched
 // anything on purpose either.
   const otherHODs = allEmps.filter(e=>
-    (e.isHOD||e.isSeniorHOD) && e.status!=='offboarded'
+    (e.isHOD||e.isSeniorHOD) && e.status!=='offboarded' &&
+    (_mgrCalAllCo || String(e.companyId||'') === _mgrCalCoId)
   );
 
   if(!otherHODs.length){
@@ -23007,11 +23022,13 @@ async function renderManagerLeaveCalendar(){
   if(sbReady()){
     try{
       const _today2 = new Date().toISOString().slice(0,10);
-      const {data} = await _sb.from('leave_requests')
+      let _mgrCalQ = _sb.from('leave_requests')
         .select('*')
         .in('status',['approved'])
         .gte('to_date', _today2)
         .lte('from_date', toDate);
+      if(!_mgrCalAllCo) _mgrCalQ = _mgrCalQ.eq('company_id', _mgrCalCoId);
+      const {data} = await _mgrCalQ;
       if(data && data.length){
         data.forEach(r=>{
           const mapped = {
