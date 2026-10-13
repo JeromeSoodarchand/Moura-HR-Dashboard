@@ -12616,6 +12616,9 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
 
       <!-- TAB: Attendance (daily records) -->
       <div id="att-panel-daily">
+        <!-- Today's roster — every team member and where they stand right now -->
+        <div id="att-today-board" style="margin-bottom:14px"></div>
+
         <!-- Today summary metrics -->
         <div class="att-grid" id="att-metrics" style="margin-bottom:14px"></div>
 
@@ -20163,7 +20166,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761217';
+const _APP_VERSION = '1780761218';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -20563,10 +20566,123 @@ async function renderAttendance(){
   const localOnly = local.filter(r=>!sbIds.has(String(r.id)));
   _attendance = [...sbRecs, ...localOnly];
 
+  renderAttTodayBoard();
   renderAttLiveBoard();
   renderAttMetrics();
   renderAttReportFilters();
   renderAttendanceReport();
+}
+
+// ── TODAY'S ROSTER ──────────────────────────────────────────────────────────
+// The Records table below is driven by attendance ROWS, so anyone who did not
+// clock in simply is not in it -- absences and leave are invisible, which is
+// the one thing a manager opening this page wants to see. This walks the
+// EMPLOYEE list instead and says where each person stands today.
+const _ATT_LATE_GRACE_MIN = 30;   // matches the grace already used elsewhere
+
+function _attTodayStatus(emp, rec, leaveReq, wh, nowMins, today){
+  const dow = new Date(today + 'T00:00:00').getDay();
+  const wd  = emp.workDays || wh.workDays || [1,2,3,4,5];
+  const startStr = emp.workStart || getEmpShift(emp).startTime || wh.workStart || '08:30';
+  const [sh, sm]  = String(startStr).split(':').map(Number);
+  const startMins = (sh||0)*60 + (sm||0);
+
+  if(isDayHoliday(today))  return {key:'holiday', label:'Public holiday', color:'var(--text3)', bg:'var(--bg2)', detail:''};
+  if(!wd.includes(dow))    return {key:'restday', label:'Rest day',       color:'var(--text3)', bg:'var(--bg2)', detail:''};
+
+  if(leaveReq){
+    const lbl = getLEAVE_TYPES()[leaveReq.type]?.label || leaveReq.type;
+    const half = parseFloat(leaveReq.days) === 0.5 ? ' (half day)' : '';
+    return {key:'leave', label:'On leave', color:'var(--blue)', bg:'var(--blue-light)', detail:lbl + half};
+  }
+  if(rec && rec.location === 'Permission')
+    return {key:'permission', label:'Permission', color:'var(--blue)', bg:'var(--blue-light)', detail:rec.notes||''};
+  if(rec && rec.location === 'Leave')
+    return {key:'leave', label:'On leave', color:'var(--blue)', bg:'var(--blue-light)', detail:rec.notes||''};
+
+  if(rec && rec.clockIn){
+    const ci   = new Date(rec.clockIn);
+    const cim  = ci.getHours()*60 + ci.getMinutes();
+    // Late if past the grace window, but the figure shown is minutes past the
+    // shift start -- same convention as the Records table below, so the two do
+    // not report different numbers for the same clock-in.
+    const late = cim > startMins + _ATT_LATE_GRACE_MIN;
+    const over = cim - startMins;
+    if(!rec.clockOut){
+      return late
+        ? {key:'late',   label:'On site · late', color:'var(--amber)', bg:'var(--amber-light)', detail:'in '+fmtTime(rec.clockIn)+' · +'+over+' min'}
+        : {key:'onsite', label:'On site',        color:'var(--green)', bg:'var(--green-light)', detail:'since '+fmtTime(rec.clockIn)};
+    }
+    return late
+      ? {key:'late', label:'Left · was late', color:'var(--amber)', bg:'var(--amber-light)', detail:fmtTime(rec.clockIn)+' – '+fmtTime(rec.clockOut)+' · +'+over+' min'}
+      : {key:'done', label:'Left',            color:'var(--text2)', bg:'var(--bg2)',        detail:fmtTime(rec.clockIn)+' – '+fmtTime(rec.clockOut)};
+  }
+
+  if(nowMins < startMins + _ATT_LATE_GRACE_MIN)
+    return {key:'awaited', label:'Not in yet', color:'var(--text3)', bg:'var(--bg2)', detail:'due '+startStr};
+  return {key:'missing', label:'No clock-in', color:'var(--red)', bg:'var(--red-light)', detail:'due '+startStr};
+}
+
+function renderAttTodayBoard(){
+  const el = document.getElementById('att-today-board');
+  if(!el) return;
+  const today   = todayStr();
+  const now     = new Date();
+  const nowMins = now.getHours()*60 + now.getMinutes();
+  const wh      = getWorkingHoursSettings();
+  const emps    = getScopedEmps().filter(e=>e.status!=='offboarded');
+
+  const recsToday = (_attendance||[]).filter(r=>r.date===today);
+  const leaveToday = (_leaveRequests||[]).filter(r=>
+    r.status==='approved' && r.fromDate<=today && r.toDate>=today);
+
+  const rows = emps.map(emp=>{
+    const rec = recsToday.filter(r=>String(r.empId)===String(emp.id))
+                         .sort((a,b)=>new Date(b.clockIn||0)-new Date(a.clockIn||0))[0] || null;
+    const lv  = leaveToday.find(r=>String(r.empId)===String(emp.id)) || null;
+    return {emp, rec, st:_attTodayStatus(emp, rec, lv, wh, nowMins, today)};
+  }).sort((a,b)=>{
+    const order = {missing:0, late:1, onsite:2, awaited:3, leave:4, permission:5, done:6, restday:7, holiday:8};
+    const d = (order[a.st.key]??9) - (order[b.st.key]??9);
+    return d || String(a.emp.name).localeCompare(String(b.emp.name));
+  });
+
+  const count = k => rows.filter(r=>r.st.key===k).length;
+  const chips = [
+    {label:'No clock-in', n:count('missing'),    color:'var(--red)'},
+    {label:'Late',        n:count('late'),       color:'var(--amber)'},
+    {label:'On site',     n:count('onsite'),     color:'var(--green)'},
+    {label:'On leave',    n:count('leave')+count('permission'), color:'var(--blue)'},
+    {label:'Left',        n:count('done'),       color:'var(--text2)'},
+  ];
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="ch">
+        <span class="ct">Today — ${new Date(today+'T00:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          ${chips.map(c=>`<span style="font-size:11.5px;font-weight:600;color:${c.color}">${c.n} ${c.label}</span>`).join('<span style="color:var(--border)">·</span>')}
+          <button class="btn btn-xs" onclick="renderAttendance()">↻</button>
+        </div>
+      </div>
+      ${rows.length===0
+        ? '<div style="padding:16px;color:var(--text3);font-size:13px">No employees in your scope.</div>'
+        : `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:560px">
+        <thead><tr style="background:var(--bg2)">
+          <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Employee</th>
+          <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Department</th>
+          <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Status</th>
+          <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Detail</th>
+        </tr></thead>
+        <tbody>${rows.map(({emp,st})=>`
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:8px 12px;font-weight:500">${emp.name||''}</td>
+            <td style="padding:8px 12px;color:var(--text2)">${emp.dept||'—'}</td>
+            <td style="padding:8px 12px"><span style="background:${st.bg};color:${st.color};padding:2px 10px;border-radius:12px;font-size:11.5px;font-weight:600;white-space:nowrap">${st.label}</span></td>
+            <td style="padding:8px 12px;color:var(--text3)">${st.detail||''}</td>
+          </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>`;
 }
 
 function renderAttLiveBoard(){
