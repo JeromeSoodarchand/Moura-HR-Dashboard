@@ -20166,7 +20166,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761220';
+const _APP_VERSION = '1780761221';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -20592,55 +20592,98 @@ async function renderAttendance(){
 // EMPLOYEE list instead and says where each person stands today.
 const _ATT_LATE_GRACE_MIN = 30;   // matches the grace already used elsewhere
 
-function _attTodayStatus(emp, rec, leaveReq, wh, nowMins, today){
+function _attTodayStatus(emp, recs, leaveReq, wh, nowMins, today){
   const dow = new Date(today + 'T00:00:00').getDay();
   const wd  = emp.workDays || wh.workDays || [1,2,3,4,5];
   const startStr = emp.workStart || getEmpShift(emp).startTime || wh.workStart || '08:30';
   const [sh, sm]  = String(startStr).split(':').map(Number);
   const startMins = (sh||0)*60 + (sm||0);
 
-  if(isDayHoliday(today))  return {key:'holiday', label:'Public holiday', color:'var(--text3)', bg:'var(--bg2)', detail:''};
-  if(!wd.includes(dow))    return {key:'restday', label:'Rest day',       color:'var(--text3)', bg:'var(--bg2)', detail:''};
+  // recs separates what the person actually did from what the system wrote for
+  // them. createLeaveAttendanceRecords() inserts a synthetic row per approved
+  // leave day with location 'Leave', so somebody who came in AND has leave
+  // approved has two rows for today. Judging the day from whichever sorted
+  // first reported only one of the two facts.
+  const real  = recs.real  || null;   // an actual clock-in
+  const lvRec = recs.leave || null;   // the synthetic leave row
+  const pmRec = recs.perm  || null;   // a permission row
 
-  if(leaveReq){
-    const lbl = getLEAVE_TYPES()[leaveReq.type]?.label || leaveReq.type;
-    const half = parseFloat(leaveReq.days) === 0.5 ? ' (half day)' : '';
-    return {key:'leave', label:'On leave', color:'var(--blue)', bg:'var(--blue-light)', detail:lbl + half};
+  // Lateness, computed once so every branch reports it the same way: the
+  // grace window decides whether it counts, the figure is minutes past the
+  // shift start -- the convention the Records table uses.
+  const lateness = r => {
+    if(!r || !r.clockIn) return null;
+    const ci  = new Date(r.clockIn);
+    const cim = ci.getHours()*60 + ci.getMinutes();
+    return { late: cim > startMins + _ATT_LATE_GRACE_MIN, over: cim - startMins };
+  };
+  const span = r => r && r.clockIn
+    ? fmtTime(r.clockIn) + (r.clockOut ? ' – '+fmtTime(r.clockOut) : ' – still open')
+    : '';
+
+  if(isDayHoliday(today))  return {key:'holiday', label:'Public holiday', color:'var(--text3)', bg:'var(--bg2)', detail:'', rec:real||lvRec||pmRec};
+  if(!wd.includes(dow))    return {key:'restday', label:'Rest day',       color:'var(--text3)', bg:'var(--bg2)', detail:'', rec:real||lvRec||pmRec};
+
+  // ── On leave ───────────────────────────────────────────────────────────────
+  // The request is the better source; the synthetic row is the fallback for a
+  // leave approved by email before _leaveRequests was reloaded.
+  const onLeave = !!(leaveReq || lvRec);
+  if(onLeave){
+    let lbl = leaveReq
+      ? (getLEAVE_TYPES()[leaveReq.type]?.label || leaveReq.type)
+      : (lvRec.notes || 'Leave');
+    const halfReq = leaveReq && parseFloat(leaveReq.days) === 0.5;
+    if(halfReq) lbl += leaveReq.halfPeriod === 'pm' ? ' (half day, afternoon)' : ' (half day, morning)';
+
+    // Came in anyway. The commonest reason is the one being asked about here:
+    // they started the day, felt unwell, and went home. The manager needs both
+    // halves of that -- the leave AND the hours actually worked -- so this gets
+    // its own status rather than hiding the clock-in behind "On leave".
+    if(real && real.clockIn){
+      const L = lateness(real);
+      return {
+        key:'leavehere',
+        label:'On leave · was here',
+        color:'var(--amber)', bg:'var(--amber-light)',
+        detail: lbl + ' · ' + span(real) + (L && L.late ? ' · in +'+L.over+' min' : ''),
+        rec: real
+      };
+    }
+    return {key:'leave', label:'On leave', color:'var(--blue)', bg:'var(--blue-light)', detail:lbl, rec:lvRec};
   }
-  if(rec && rec.location === 'Permission')
-    return {key:'permission', label:'Permission', color:'var(--blue)', bg:'var(--blue-light)', detail:rec.notes||''};
-  if(rec && rec.location === 'Leave')
-    return {key:'leave', label:'On leave', color:'var(--blue)', bg:'var(--blue-light)', detail:rec.notes||''};
+
+  // ── Permission ─────────────────────────────────────────────────────────────
+  // Permission is a short absence inside a working day, so a clock-in beside it
+  // is the normal case, not an anomaly. Report the attendance and note the
+  // permission; only a permission with no clock-in at all stands on its own.
+  if(pmRec && !(real && real.clockIn))
+    return {key:'permission', label:'Permission', color:'var(--blue)', bg:'var(--blue-light)', detail:pmRec.notes||'', rec:pmRec};
+
+  const permNote = pmRec ? ' · permission' : '';
 
   // A shift carried over from an earlier date is running, not late: its
   // clock-in belongs to yesterday's start time, so measuring it against today's
   // would report a lateness of several hours.
-  if(rec && rec.clockIn && rec.date && rec.date !== today && !rec.clockOut){
+  if(real && real.clockIn && real.date && real.date !== today && !real.clockOut){
     return {key:'onsite', label:'On site · night shift', color:'var(--green)', bg:'var(--green-light)',
-            detail:'since '+fmtTime(rec.clockIn)+' ('+fDate(rec.date)+')'};
+            detail:'since '+fmtTime(real.clockIn)+' ('+fDate(real.date)+')'+permNote, rec:real};
   }
 
-  if(rec && rec.clockIn){
-    const ci   = new Date(rec.clockIn);
-    const cim  = ci.getHours()*60 + ci.getMinutes();
-    // Late if past the grace window, but the figure shown is minutes past the
-    // shift start -- same convention as the Records table below, so the two do
-    // not report different numbers for the same clock-in.
-    const late = cim > startMins + _ATT_LATE_GRACE_MIN;
-    const over = cim - startMins;
-    if(!rec.clockOut){
-      return late
-        ? {key:'late',   label:'On site · late', color:'var(--amber)', bg:'var(--amber-light)', detail:'in '+fmtTime(rec.clockIn)+' · +'+over+' min'}
-        : {key:'onsite', label:'On site',        color:'var(--green)', bg:'var(--green-light)', detail:'since '+fmtTime(rec.clockIn)};
+  if(real && real.clockIn){
+    const L = lateness(real);
+    if(!real.clockOut){
+      return L.late
+        ? {key:'late',   label:'On site · late', color:'var(--amber)', bg:'var(--amber-light)', detail:'in '+fmtTime(real.clockIn)+' · +'+L.over+' min'+permNote, rec:real}
+        : {key:'onsite', label:'On site',        color:'var(--green)', bg:'var(--green-light)', detail:'since '+fmtTime(real.clockIn)+permNote, rec:real};
     }
-    return late
-      ? {key:'late', label:'Left · was late', color:'var(--amber)', bg:'var(--amber-light)', detail:fmtTime(rec.clockIn)+' – '+fmtTime(rec.clockOut)+' · +'+over+' min'}
-      : {key:'done', label:'Left',            color:'var(--text2)', bg:'var(--bg2)',        detail:fmtTime(rec.clockIn)+' – '+fmtTime(rec.clockOut)};
+    return L.late
+      ? {key:'late', label:'Left · was late', color:'var(--amber)', bg:'var(--amber-light)', detail:span(real)+' · +'+L.over+' min'+permNote, rec:real}
+      : {key:'done', label:'Left',            color:'var(--text2)', bg:'var(--bg2)',        detail:span(real)+permNote, rec:real};
   }
 
   if(nowMins < startMins + _ATT_LATE_GRACE_MIN)
-    return {key:'awaited', label:'Not in yet', color:'var(--text3)', bg:'var(--bg2)', detail:'due '+startStr};
-  return {key:'missing', label:'No clock-in', color:'var(--red)', bg:'var(--red-light)', detail:'due '+startStr};
+    return {key:'awaited', label:'Not in yet', color:'var(--text3)', bg:'var(--bg2)', detail:'due '+startStr, rec:null};
+  return {key:'missing', label:'No clock-in', color:'var(--red)', bg:'var(--red-light)', detail:'due '+startStr, rec:null};
 }
 
 // Keep the Today board's cache in step after a correction, so the edited row
@@ -20700,28 +20743,45 @@ function renderAttTodayBoard(){
     r.status==='approved' && r.fromDate<=today && r.toDate>=today);
 
   const rows = emps.map(emp=>{
-    // Today's own record first; failing that, a shift still open from yesterday,
-    // which is what a night-shift worker has at 06:00. findOpenShift applies the
-    // MAX_OPEN_SHIFT_HOURS window, so a forgotten clock-out does not linger.
-    let rec = recsToday.filter(r=>String(r.empId)===String(emp.id))
-                       .sort((a,b)=>new Date(b.clockIn||0)-new Date(a.clockIn||0))[0] || null;
-    if(!rec) rec = findOpenShift(emp.id, src) || null;
-    const lv  = leaveToday.find(r=>String(r.empId)===String(emp.id)) || null;
-    return {emp, rec, st:_attTodayStatus(emp, rec, lv, wh, nowMins, today)};
+    const mine = recsToday.filter(r=>String(r.empId)===String(emp.id));
+    const byLatest = (a,b)=>new Date(b.clockIn||0)-new Date(a.clockIn||0);
+    // A real clock-in is one the person made. The rows createLeaveAttendanceRecords()
+    // writes for approved leave carry location 'Leave' (or 'Permission'), so they
+    // are kept apart rather than competing for the same slot.
+    let real = mine.filter(r=>r.location!=='Leave' && r.location!=='Permission')
+                   .sort(byLatest)[0] || null;
+    // Failing that, a shift still open from yesterday -- what a night-shift
+    // worker has at 06:00. findOpenShift applies the MAX_OPEN_SHIFT_HOURS
+    // window, so a forgotten clock-out does not linger.
+    if(!real) real = findOpenShift(emp.id, src) || null;
+    if(real && (real.location==='Leave'||real.location==='Permission')) real = null;
+
+    const recs = {
+      real,
+      leave: mine.filter(r=>r.location==='Leave').sort(byLatest)[0] || null,
+      perm:  mine.filter(r=>r.location==='Permission').sort(byLatest)[0] || null,
+    };
+    const lv = leaveToday.find(r=>String(r.empId)===String(emp.id)) || null;
+    const st = _attTodayStatus(emp, recs, lv, wh, nowMins, today);
+    return {emp, rec: st.rec || null, st};
   }).sort((a,b)=>{
-    const order = {missing:0, late:1, onsite:2, awaited:3, leave:4, permission:5, done:6, restday:7, holiday:8};
-    const d = (order[a.st.key]??9) - (order[b.st.key]??9);
+    // Exceptions first: nothing recorded, then late, then leave with a clock-in
+    // against it -- the three a manager may have to act on this morning.
+    const order = {missing:0, late:1, leavehere:2, onsite:3, awaited:4,
+                   leave:5, permission:6, done:7, restday:8, holiday:9};
+    const d = (order[a.st.key]??10) - (order[b.st.key]??10);
     return d || String(a.emp.name).localeCompare(String(b.emp.name));
   });
 
   const count = k => rows.filter(r=>r.st.key===k).length;
   const chips = [
-    {label:'No clock-in', n:count('missing'),    color:'var(--red)'},
-    {label:'Late',        n:count('late'),       color:'var(--amber)'},
-    {label:'On site',     n:count('onsite'),     color:'var(--green)'},
-    {label:'On leave',    n:count('leave')+count('permission'), color:'var(--blue)'},
-    {label:'Left',        n:count('done'),       color:'var(--text2)'},
-  ];
+    {label:'No clock-in',   n:count('missing'),   color:'var(--red)'},
+    {label:'Late',          n:count('late'),      color:'var(--amber)'},
+    {label:'Leave + clock-in', n:count('leavehere'), color:'var(--amber)'},
+    {label:'On site',       n:count('onsite'),    color:'var(--green)'},
+    {label:'On leave',      n:count('leave')+count('permission'), color:'var(--blue)'},
+    {label:'Left',          n:count('done'),      color:'var(--text2)'},
+  ].filter(c=>c.n>0 || ['No clock-in','Late','On site'].includes(c.label));
 
   el.innerHTML = `
     <div class="card">
