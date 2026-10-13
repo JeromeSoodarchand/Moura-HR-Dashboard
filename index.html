@@ -20166,7 +20166,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761218';
+const _APP_VERSION = '1780761220';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -20199,6 +20199,13 @@ document.addEventListener('keydown',e=>{
 // ════════════════════════════════════════════════════════════════════════════
 
 let _attendance = [];
+// Today's roster reads from its own cache, never from _attendance. _attendance
+// is reassigned by renderAttendanceReport() to whatever range the report filter
+// holds, so a manager who filtered to last month would otherwise see the whole
+// company reported as "No clock-in" -- a false alarm in the worst direction.
+// The window is yesterday+today, so a night shift that began yesterday evening
+// and is still open is seen as on site rather than absent.
+let _attToday = [];
 let _attLocations = [];
 let _qrScanner = null;
 
@@ -20558,13 +20565,18 @@ async function renderAttendance(){
   // Auto clock-in/out self-clocking employees before loading records
   await autoClockSelfClockingEmployees().catch(()=>{});
 
-  const [sbRecs, locs] = await Promise.all([dbGetAttendance(todayStr(),todayStr()),dbGetLocations()]);
+  // Yesterday as well as today: an open night shift started yesterday evening
+  // is still running now, and findOpenShift's MAX_OPEN_SHIFT_HOURS window could
+  // never see it while the query only fetched today.
+  const _ystStr = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); })();
+  const [sbRecs, locs] = await Promise.all([dbGetAttendance(_ystStr,todayStr()),dbGetLocations()]);
   _attLocations = locs;
   // Merge Supabase records with local-only records not yet synced
   const local = S.get('attendance',[]);
   const sbIds = new Set(sbRecs.map(r=>String(r.id)));
   const localOnly = local.filter(r=>!sbIds.has(String(r.id)));
   _attendance = [...sbRecs, ...localOnly];
+  _attToday    = _attendance.slice();   // snapshot before the report filter moves _attendance
 
   renderAttTodayBoard();
   renderAttLiveBoard();
@@ -20600,6 +20612,14 @@ function _attTodayStatus(emp, rec, leaveReq, wh, nowMins, today){
   if(rec && rec.location === 'Leave')
     return {key:'leave', label:'On leave', color:'var(--blue)', bg:'var(--blue-light)', detail:rec.notes||''};
 
+  // A shift carried over from an earlier date is running, not late: its
+  // clock-in belongs to yesterday's start time, so measuring it against today's
+  // would report a lateness of several hours.
+  if(rec && rec.clockIn && rec.date && rec.date !== today && !rec.clockOut){
+    return {key:'onsite', label:'On site · night shift', color:'var(--green)', bg:'var(--green-light)',
+            detail:'since '+fmtTime(rec.clockIn)+' ('+fDate(rec.date)+')'};
+  }
+
   if(rec && rec.clockIn){
     const ci   = new Date(rec.clockIn);
     const cim  = ci.getHours()*60 + ci.getMinutes();
@@ -20623,6 +20643,47 @@ function _attTodayStatus(emp, rec, leaveReq, wh, nowMins, today){
   return {key:'missing', label:'No clock-in', color:'var(--red)', bg:'var(--red-light)', detail:'due '+startStr};
 }
 
+// Keep the Today board's cache in step after a correction, so the edited row
+// redraws straight away instead of waiting for a full reload. Called by the
+// save handlers alongside their _attendance update.
+function _attTodayUpsert(rec){
+  if(!rec) return;
+  if(!Array.isArray(_attToday)) _attToday = [];
+  const i = _attToday.findIndex(r=>String(r.id)===String(rec.id));
+  if(i>=0) _attToday[i] = rec; else _attToday.push(rec);
+}
+
+function _attTodayRemove(recId){
+  if(!Array.isArray(_attToday)) return;
+  _attToday = _attToday.filter(r=>String(r.id)!==String(recId));
+}
+
+// Correction controls per row. Same gate the Records table uses, so a manager
+// sees these for their own team and nobody else's: hasPerm + isInScope, and the
+// handlers re-check scope server-side-of-the-UI before they write.
+function _attTodayActions(emp, rec, st, today){
+  if(!(hasPerm('edit_attendance') && isInScope(emp.id))) return '';
+  // Single quotes inside the double-quoted onclick attribute. JSON.stringify
+  // would emit double quotes and silently truncate the attribute at the first
+  // one, leaving a button that renders but does nothing.
+  const q = v => "'" + String(v).replace(/\\/g,'\\\\').replace(/'/g,"\\'") + "'";
+  if(rec){
+    const onSite = rec.clockIn && !rec.clockOut;
+    return `<div style="display:inline-flex;gap:3px">
+      <button class="btn btn-xs" onclick="openSingleAttEditDirect(${q(rec.id)})">&#9998; Edit</button>
+      ${onSite?`<button class="btn btn-xs btn-primary" onclick="manualClockOut(${q(rec.id)})">Clock out</button>`:''}
+    </div>`;
+  }
+  // Nothing recorded -- the common correction is "he was here, he just did not
+  // scan". Opens the Add modal already pointed at this person and today.
+  // On a leave, holiday or rest day the person was not expected, so adding
+  // attendance is the unusual case rather than the obvious one: offer it, but
+  // say what it means so it is not clicked by reflex.
+  const odd = ['leave','permission','holiday','restday'].includes(st.key);
+  const hint = odd ? ' title="Record attendance anyway — use this only if they actually worked"' : '';
+  return `<button class="btn btn-xs"${hint} style="${odd?'opacity:.55':''}" onclick="openAddAttRecordModal(${q(emp.id)},${q(today)})">&#43; Add</button>`;
+}
+
 function renderAttTodayBoard(){
   const el = document.getElementById('att-today-board');
   if(!el) return;
@@ -20632,13 +20693,19 @@ function renderAttTodayBoard(){
   const wh      = getWorkingHoursSettings();
   const emps    = getScopedEmps().filter(e=>e.status!=='offboarded');
 
-  const recsToday = (_attendance||[]).filter(r=>r.date===today);
+  // _attToday, not _attendance -- see the note on the declaration.
+  const src       = (_attToday && _attToday.length) ? _attToday : (_attendance||[]);
+  const recsToday = src.filter(r=>r.date===today);
   const leaveToday = (_leaveRequests||[]).filter(r=>
     r.status==='approved' && r.fromDate<=today && r.toDate>=today);
 
   const rows = emps.map(emp=>{
-    const rec = recsToday.filter(r=>String(r.empId)===String(emp.id))
-                         .sort((a,b)=>new Date(b.clockIn||0)-new Date(a.clockIn||0))[0] || null;
+    // Today's own record first; failing that, a shift still open from yesterday,
+    // which is what a night-shift worker has at 06:00. findOpenShift applies the
+    // MAX_OPEN_SHIFT_HOURS window, so a forgotten clock-out does not linger.
+    let rec = recsToday.filter(r=>String(r.empId)===String(emp.id))
+                       .sort((a,b)=>new Date(b.clockIn||0)-new Date(a.clockIn||0))[0] || null;
+    if(!rec) rec = findOpenShift(emp.id, src) || null;
     const lv  = leaveToday.find(r=>String(r.empId)===String(emp.id)) || null;
     return {emp, rec, st:_attTodayStatus(emp, rec, lv, wh, nowMins, today)};
   }).sort((a,b)=>{
@@ -20673,13 +20740,15 @@ function renderAttTodayBoard(){
           <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Department</th>
           <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Status</th>
           <th style="text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Detail</th>
+          <th style="text-align:right;padding:8px 12px;font-size:11.5px;font-weight:600;color:var(--text2)">Correct</th>
         </tr></thead>
-        <tbody>${rows.map(({emp,st})=>`
+        <tbody>${rows.map(({emp,rec,st})=>`
           <tr style="border-bottom:1px solid var(--border)">
             <td style="padding:8px 12px;font-weight:500">${emp.name||''}</td>
             <td style="padding:8px 12px;color:var(--text2)">${emp.dept||'—'}</td>
             <td style="padding:8px 12px"><span style="background:${st.bg};color:${st.color};padding:2px 10px;border-radius:12px;font-size:11.5px;font-weight:600;white-space:nowrap">${st.label}</span></td>
             <td style="padding:8px 12px;color:var(--text3)">${st.detail||''}</td>
+            <td style="padding:8px 12px;text-align:right;white-space:nowrap">${_attTodayActions(emp, rec, st, today)}</td>
           </tr>`).join('')}</tbody>
       </table></div>`}
     </div>`;
@@ -21945,6 +22014,7 @@ async function manualClockOut(recId){
 async function deleteAttRecord(recId){
   if(!confirm('Delete this attendance record?'))return;
   _attendance=_attendance.filter(r=>String(r.id)!==String(recId));
+  _attTodayRemove(recId);
   const local=S.get('attendance',[]).filter(r=>String(r.id)!==String(recId));
   S.set('attendance',local);
   if(sbReady())try{await _sb.from('attendance').delete().eq('id',recId);}catch(e){}
@@ -23551,11 +23621,18 @@ async function editBankSick(empId, empName, current){
   const newVal = parseFloat(val);
   if(isNaN(newVal)||newVal<0){ toast('Invalid value.','error'); return; }
   showLoader('Saving…');
-  const local = S.get('leaveBalances',{});
-  const bal = local[empId] || {};
+  // dbSaveLeaveBalance writes a WHOLE row -- every field absent from the object
+  // is written as null -- so this has to start from the freshest balance we
+  // have, not from localStorage. saveBalance() already spreads _leaveBalances;
+  // this read localStorage instead, which is only as current as the last load
+  // on THIS device, so editing bank sick could quietly revert another field
+  // changed elsewhere. Re-read from the database first, then merge.
+  try{ _leaveBalances = await dbGetLeaveBalances(); }catch(e){}
+  const bal = {...(_leaveBalances?.[String(empId)] || _leaveBalances?.[empId] || {})};
   bal.bankSick = newVal;
+  bal.bank_sick = newVal;   // dbSaveLeaveBalance accepts either spelling
   await dbSaveLeaveBalance(empId, bal);
-  _leaveBalances = S.get('leaveBalances',{});
+  _leaveBalances = await dbGetLeaveBalances().catch(()=>_leaveBalances);
   renderLeaveBalances();
   toast(`Bank sick updated for ${empName}: ${newVal} days`,'success');
   dbAddAudit(CU.name,`Updated bank sick leave for ${empName}: ${newVal} days`);
@@ -25025,6 +25102,7 @@ async function kioskClockIn(emp,loc){
     if(!_attendance) _attendance = [];
     const idx = _attendance.findIndex(r=>String(r.id)===String(rec.id));
     if(idx>=0) _attendance[idx]=savedRec; else _attendance.push(savedRec);
+    _attTodayUpsert(savedRec);
     // Update local storage with real ID
     const la=S.get('attendance',[]);
     const li=la.findIndex(r=>String(r.id)===String(rec.id));
@@ -25625,6 +25703,7 @@ async function saveAttRecordEdit(recId, date, empId, reviewIdx){
     // Update _attendance cache
     const idx = _attendance.findIndex(r=>String(r.id)===String(recId));
     if(idx>=0) _attendance[idx] = saved||rec;
+    _attTodayUpsert(saved||rec);
     hideLoader();
     toast('Record updated.','success');
     dbAddAudit(CU.name,'Edited attendance: '+(gE(empId)?.name||empId)+' on '+date);
@@ -25701,6 +25780,7 @@ async function quickClockOut(recId, reviewIdx){
     const saved = await dbSaveAttendance(rec);
     const idx = _attendance.findIndex(r=>String(r.id)===String(recId));
     if(idx>=0) _attendance[idx] = saved||rec;
+    _attTodayUpsert(saved||rec);
     hideLoader();
     toast('Clock-out set to '+settings.workEnd+'.','success');
     await refreshReviewRowDB(reviewIdx);
@@ -26341,10 +26421,15 @@ async function runOvertimeReport(){
   const unmatched = recs.filter(r=>r.clockOut && !allMatchIds.has(String(r.empId)));
 
   _otData = rows;
-  renderOTTable(rows, settings, from, to, unmatched);
+  renderOTReportTable(rows, settings, from, to, unmatched);
 }
 
-function renderOTTable(rows, settings, from, to, unmatched){
+// Renamed from renderOTTable. Two different functions shared that name: this
+// one (the OT report, 5 args) was declared second, so it silently shadowed the
+// OT requests table renderer above -- and every renderOTTable() call from the
+// filter controls and renderOvertime() landed here with rows=undefined and threw
+// on rows.filter, leaving the Overtime tab stuck on its loading spinner.
+function renderOTReportTable(rows, settings, from, to, unmatched){
   const body    = document.getElementById('ot-report-body');
   const summary = document.getElementById('ot-summary');
   if(!body) return;
@@ -27969,6 +28054,15 @@ function canApproveRequest(req){
 function canViewRequest(req){
   const ctx = getLeaveApprovalContext();
   if(ctx.isHR) return true;
+  // employees.manager holds an EMPLOYEE name, so the comparison has to use the
+  // employee record's name -- the same resolution getScopedEmps() and
+  // getScopedLeaveEmps() use. CU.name is the hr_users account name, and where
+  // the two differ (several accounts here are named differently from their
+  // employee record, some with an email as the username) this returned false
+  // for a manager's own team. renderLeaveTable() applies BOTH this filter and
+  // getVisibleLeaveRequests(), so the stricter one won and the manager saw an
+  // empty leave table while the Team tab showed the team correctly.
+  const _myEmpName = (ctx.empData && ctx.empData.name) || (_findHodEmp()?.name) || CU.name;
   // Whole-company visibility, granted per user account. It lets a general
   // manager see every request and step in when an approver is away, without
   // making him the default approver -- the employee's own manager is still who
@@ -27997,14 +28091,14 @@ function canViewRequest(req){
     // manager in the company, so a Senior HOD with no reporting line recorded
     // (an MD, typically) still sees his managers rather than an empty screen.
     const myManagerReports = getEmps().filter(e =>
-      e.status!=='offboarded' && isManager(e) && e.manager === CU.name);
+      e.status!=='offboarded' && isManager(e) && e.manager === _myEmpName);
     if(!myManagerReports.length) return true;
     return myManagerReports.some(e => String(e.id)===String(req.empId));
   }
   if(ctx.isHOD){
     const reqEmp = gE(req.empId);
     // See own team's requests
-    if(reqEmp&&(reqEmp.manager===CU.name||(CU.empId&&String(reqEmp.managerId)===String(CU.empId)))) return true;
+    if(reqEmp&&(reqEmp.manager===_myEmpName||(CU.empId&&String(reqEmp.managerId)===String(CU.empId)))) return true;
     // Also see own leave requests
     if(CU.empId&&String(req.empId)===String(CU.empId)) return true;
   }
@@ -29036,10 +29130,12 @@ async function saveAttDirectEdit(recId, date, empId){
     const saved = await dbSaveAttendance(rec);
     const idx = _attendance.findIndex(r=>String(r.id)===String(recId));
     if(idx>=0) _attendance[idx] = saved||rec;
+    _attTodayUpsert(saved||rec);
     hideLoader();
     closeModal();
     toast('Attendance record updated.','success');
     dbAddAudit(CU.name,'Edited attendance for '+(gE(empId)?.name||empId)+' on '+date);
+    if(typeof renderAttTodayBoard==='function') renderAttTodayBoard();
     renderAttendanceReport();
   } catch(e){
     hideLoader();
@@ -29048,9 +29144,15 @@ async function saveAttDirectEdit(recId, date, empId){
 }
 
 // ── ADD ATTENDANCE RECORD (from Attendance tab) ───────────────────────────────
-function openAddAttRecordModal(){
+// prefEmpId / prefDate let the Today board open this already pointed at the
+// person and day the manager clicked, instead of making them find the name
+// again in a 300-line dropdown. Both optional -- the Add Record button in the
+// toolbar still calls this with no arguments.
+function openAddAttRecordModal(prefEmpId, prefDate){
   if(!hasPerm('edit_attendance')){ toast('Permission denied.','error'); return; }
   const scopeEmps = getScopedEmps();
+  const _pEmp  = prefEmpId ? String(prefEmpId) : '';
+  const _pDate = prefDate || new Date().toISOString().slice(0,10);
   const mb = document.getElementById('mbox');
   if(!mb) return;
   mb.className = 'modal-box';
@@ -29061,12 +29163,12 @@ function openAddAttRecordModal(){
     <div class="fg"><label class="fl">Employee *</label>
       <select class="fs" id="add-att-emp">
         <option value="">— Select employee —</option>
-        ${scopeEmps.map(e=>`<option value="${e.id}">${e.name} — ${e.dept||''}</option>`).join('')}
+        ${scopeEmps.map(e=>`<option value="${e.id}"${String(e.id)===_pEmp?' selected':''}>${e.name} — ${e.dept||''}</option>`).join('')}
       </select>
     </div>
     <div class="fr">
       <div class="fg"><label class="fl">Date *</label>
-        <input class="fi" id="add-att-date" type="date" value="${new Date().toISOString().slice(0,10)}">
+        <input class="fi" id="add-att-date" type="date" value="${_pDate}">
       </div>
       <div class="fg"><label class="fl">Clock-in *</label>
         <input class="fi" id="add-att-ci" type="time" value="08:00">
@@ -29116,10 +29218,12 @@ async function submitAddAttRecord(){
   try{
     const saved = await dbSaveAttendance(newRec);
     _attendance = [...(_attendance||[]), saved||newRec];
+    _attTodayUpsert(saved||newRec);
     hideLoader();
     closeModal();
     toast('Record added successfully.','success');
     dbAddAudit(CU.name,'Added attendance record for '+(gE(empId)?.name||empId)+' on '+date);
+    if(typeof renderAttTodayBoard==='function') renderAttTodayBoard();
     renderAttendanceReport();
   } catch(e){
     hideLoader();
