@@ -1414,6 +1414,10 @@ async function renderMobilePortal(user, emp, isHOD, tab){
     catch(e){ console.warn('[Portal] Could not load employees:', e); }
   }
 
+  // Their own notifications, re-read each time the portal opens so an approval
+  // made while they were away shows up without a sign-out.
+  await dbGetMyNotifications().catch(()=>{});
+
   const b = getEmpBalance(emp.id) || {remAnnual:20,annual:20,remSick:15,sick:15,remCasual:10,casual:10,usedAnnual:0,usedSick:0,usedCasual:0};
   const initials = emp.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
 
@@ -1485,6 +1489,20 @@ async function renderMobilePortal(user, emp, isHOD, tab){
 
   if(tab === 'home'){
     tabContent = `
+      ${(()=>{
+        const _un = _myNotifs.filter(n=>!n.readAt);
+        if(!_un.length) return '';
+        return `<div class="mp-section-title">🔔 New for you</div>
+        <div style="margin-bottom:14px">
+          ${_un.slice(0,4).map(n=>`
+            <div style="background:#fff;border-radius:12px;padding:12px 14px;margin-bottom:8px;border-left:4px solid ${n.kind==='leave_rejected'?'#DC2626':'#059669'};box-shadow:0 1px 3px rgba(0,0,0,.08)">
+              <div style="font-size:13.5px;font-weight:700;color:#1E1445">${n.title}</div>
+              ${n.body?`<div style="font-size:12px;color:#6B7280;margin-top:3px">${n.body}</div>`:''}
+              <div style="font-size:10.5px;color:#9CA3AF;margin-top:4px">${_notifWhen(n.createdAt)}</div>
+            </div>`).join('')}
+          <button class="mp-type-btn" style="width:100%" onclick="mpMarkNotifsRead()">Mark as read</button>
+        </div>`;
+      })()}
       <div class="mp-section-title">Today's attendance</div>
       <div class="mp-clock-card">
         <div>
@@ -1662,6 +1680,12 @@ async function renderMobilePortal(user, emp, isHOD, tab){
       </div>
     </div>
   `;
+}
+
+async function mpMarkNotifsRead(){
+  await markAllNotifsRead();
+  const emp = gE(CU?.empId) || (typeof _findHodEmp==='function' ? _findHodEmp() : null);
+  if(emp) await renderMobilePortal(CU, emp, CU?.role==='hod'||CU?.role==='manager'||CU?.role==='admin'||CU?.role==='hr', _mpTab);
 }
 
 function mpShowLeaveForm(){
@@ -18889,10 +18913,132 @@ function showCSVWhatsAppSummary(users){
 
 
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
+// ── NOTIFICATIONS ───────────────────────────────────────────────────────────
+// Two separate things share the header bell, and conflating them is what left
+// employees uninformed:
+//
+//   notifs     -- transient messages for whoever is OPERATING the app ("New
+//                 hire added", "Salary updated"). In memory, this session only.
+//                 Eighteen call sites rely on this and it is left as it was.
+//   _myNotifs  -- notifications ADDRESSED to the signed-in person, stored in
+//                 the notifications table. These survive a refresh and follow
+//                 the person to whatever device they sign in on.
+//
+// addNotif() previously rendered an employee's leave result into the APPROVER's
+// bell, in memory, and called it an in-app notification. It was never
+// addressed to anyone and the employee never saw it.
+let _myNotifs = [];
+
 function addNotif(msg,type='info'){notifs.unshift({id:Date.now(),msg,type,time:new Date().toLocaleTimeString()});renderNotifs();}
+
+// The signed-in person's own employee id. CU.empId is set for most sessions;
+// _findHodEmp() resolves the rest (an account linked by name or user id).
+function _myEmpId(){
+  if(!CU) return null;
+  if(CU.empId) return String(CU.empId);
+  const e = (typeof _findHodEmp==='function') ? _findHodEmp() : null;
+  return e ? String(e.id) : null;
+}
+
+async function dbSaveNotification(n){
+  if(!n || !n.empId) return null;
+  if(!sbReady()) return null;
+  try{
+    const emp = (typeof gE==='function') ? gE(n.empId) : null;
+    const row = {
+      company_id: String(n.companyId || emp?.companyId || _COMPANY_ID || 1),
+      emp_id:     String(n.empId),
+      kind:       n.kind || 'info',
+      title:      n.title || '',
+      body:       n.body || '',
+      ref_type:   n.refType || null,
+      ref_id:     n.refId != null ? String(n.refId) : null,
+      created_at: new Date().toISOString(),
+    };
+    const {error} = await _sb.from('notifications').insert(row);
+    if(error){ console.warn('[Notif] insert failed:', error); return null; }
+    return row;
+  }catch(e){ console.warn('[Notif] insert threw:', e); return null; }
+}
+
+async function dbGetMyNotifications(){
+  const me = _myEmpId();
+  if(!me || !sbReady()){ _myNotifs = []; return _myNotifs; }
+  try{
+    const {data,error} = await _sb.from('notifications')
+      .select('*').eq('emp_id', String(me))
+      .order('created_at',{ascending:false});
+    if(error){ console.warn('[Notif] load failed:', error); return _myNotifs; }
+    _myNotifs = (Array.isArray(data)?data:[]).slice(0,50).map(r=>({
+      id:r.id, kind:r.kind||'info', title:r.title||'', body:r.body||'',
+      createdAt:r.created_at||null, readAt:r.read_at||null,
+      refType:r.ref_type||null, refId:r.ref_id||null,
+    }));
+  }catch(e){ console.warn('[Notif] load threw:', e); }
+  return _myNotifs;
+}
+
+async function markAllNotifsRead(){
+  const me = _myEmpId();
+  const unread = _myNotifs.filter(n=>!n.readAt);
+  if(!me || !unread.length) return;
+  const stamp = new Date().toISOString();
+  // Optimistic: the badge clears at once, and a failed write only means it
+  // comes back on the next load -- never a lost notification.
+  unread.forEach(n=>{ n.readAt = stamp; });
+  renderNotifs();
+  if(!sbReady()) return;
+  try{
+    await _sb.from('notifications').update({read_at:stamp})
+      .eq('emp_id', String(me)).is('read_at', null);
+  }catch(e){ console.warn('[Notif] mark read failed:', e); }
+}
+
+function _notifWhen(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  if(isNaN(d)) return '';
+  const mins = Math.floor((Date.now() - d.getTime())/60000);
+  if(mins < 1)    return 'just now';
+  if(mins < 60)   return mins + ' min ago';
+  if(mins < 1440) return Math.floor(mins/60) + 'h ago';
+  if(mins < 2880) return 'yesterday';
+  return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+}
+
 function renderNotifs(){
-  const n=notifs.length,el=document.getElementById('nc');el.textContent=n;el.className='notif-count'+(n===0?' hidden':'');
-  document.getElementById('nl').innerHTML=n===0?'<div class="notif-empty">No notifications</div>':notifs.slice(0,20).map(n=>`<div class="notif-item">${n.msg}<div class="ni-t">${n.time}</div></div>`).join('');
+  const el = document.getElementById('nc');
+  const list = document.getElementById('nl');
+  // The badge counts what is genuinely new TO THIS PERSON. Session messages are
+  // things they just did themselves, so they do not deserve a count.
+  const unread = _myNotifs.filter(n=>!n.readAt).length;
+  if(el){
+    el.textContent = unread;
+    el.className = 'notif-count' + (unread===0 ? ' hidden' : '');
+  }
+  if(!list) return;
+
+  const mine = _myNotifs.slice(0,20).map(n=>{
+    const accent = n.kind==='leave_rejected' ? 'var(--red)'
+                 : n.kind==='leave_approved' ? 'var(--green)' : 'var(--navy)';
+    return `<div class="notif-item" style="border-left:3px solid ${accent};padding-left:9px;${n.readAt?'':'background:var(--bg2)'}">
+      <div style="font-weight:${n.readAt?'500':'700'}">${n.title}</div>
+      ${n.body?`<div style="font-size:11.5px;color:var(--text2);margin-top:2px">${n.body}</div>`:''}
+      <div class="ni-t">${_notifWhen(n.createdAt)}</div>
+    </div>`;
+  }).join('');
+
+  const session = notifs.slice(0,10).map(n=>
+    `<div class="notif-item" style="opacity:.75"><div>${n.msg}</div><div class="ni-t">${n.time}</div></div>`
+  ).join('');
+
+  if(!mine && !session){ list.innerHTML = '<div class="notif-empty">No notifications</div>'; return; }
+
+  list.innerHTML =
+    (unread ? `<div style="padding:6px 10px"><button class="btn btn-xs" onclick="markAllNotifsRead()">Mark all as read</button></div>` : '') +
+    mine +
+    (mine && session ? '<div style="padding:5px 10px;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;border-top:1px solid var(--border);margin-top:4px">This session</div>' : '') +
+    session;
 }
 function toggleNotif(){document.getElementById('np').classList.toggle('open');}
 function clearNotifs(){notifs=[];renderNotifs();}
@@ -19427,6 +19573,9 @@ function renderSettingsSummary(cs){
 async function applyStoredBranding(){
   // Load global public holidays (shared across all companies, company_id=0)
   loadGlobalPublicHolidays().catch(()=>{});
+  // The signed-in person's own notifications, so the bell is right from the
+  // first paint rather than only after they open the Leave page.
+  dbGetMyNotifications().then(()=>renderNotifs()).catch(()=>{});
   // Populate company dropdowns from Supabase
   populateCompanyDropdowns().catch(()=>{});
   // Always try to load fresh from Supabase first — filtered by current company
@@ -20268,7 +20417,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761224';
+const _APP_VERSION = '1780761226';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -23575,6 +23724,23 @@ async function reconcileWorkerApprovals(){
           desc: `${label} approved: ${fDate(req.fromDate)} – ${fDate(req.toDate)} (${req.days} days)`,
           loggedBy: req.hrApprovedBy || 'Email approval', notified: true
         }).catch(()=>{});
+        // An approval made from email never reached notifyEmployeeLeaveResult,
+        // so the employee was told nothing by any channel -- no email, no
+        // in-app message. This is where that is put right. It runs before the
+        // side_effects_at stamp, so a failure here leaves the request
+        // unsettled and it is retried rather than silently skipped.
+        await dbSaveNotification({
+          empId:   req.empId,
+          kind:    'leave_approved',
+          title:   `✅ ${label} approved — ${fDate(req.fromDate)}${req.days>1?' – '+fDate(req.toDate):''}`,
+          body:    `${req.days} day${req.days>1?'s':''}. Approved by ${req.hrApprovedBy||'your approver'} by email.`,
+          refType: 'leave_request',
+          refId:   req.id,
+        }).catch(()=>{});
+        if(emp?.email){
+          await emailLeaveResultToEmployee(emp, req, true, '').catch(()=>{});
+        }
+
         const stamp = new Date().toISOString();
         const {error} = await _sb.from('leave_requests')
           .update({ side_effects_at: stamp }).eq('id', req.id);
@@ -26439,11 +26605,27 @@ function renderRestrictedPeriodsList(){
   const el = document.getElementById('restricted-periods-list');
   if(!el) return;
   const list = getRestrictedPeriods();
-  // Populate the department selector from the live department list.
+  // Departments for the selector. The scope test compares against each
+  // employee's own dept string, so the options have to be the values actually
+  // on employee records -- getDepts() alone falls back to a generic built-in
+  // list ('Engineering', 'Marketing', 'Design'...) when a company has no
+  // departments configured, and a period scoped to one of those would match
+  // nobody and warn no one, silently. Union the configured list with what is
+  // really in use, so neither source can leave a gap.
   const sel = document.getElementById('rp-dept');
   if(sel && !sel.dataset.filled){
+    const configured = (typeof getDepts==='function' ? getDepts() : []) || [];
+    const inUse = [...new Set((typeof getEmps==='function' ? getEmps() : [])
+      .filter(e=>e && e.status!=='offboarded' && e.dept)
+      .map(e=>String(e.dept)))];
+    const depts = [...new Set([...inUse, ...configured])].sort((a,b)=>a.localeCompare(b));
     sel.innerHTML = '<option value="">All departments</option>' +
-      (typeof getDepts==='function' ? getDepts() : []).map(d=>'<option value="'+d+'">'+d+'</option>').join('');
+      depts.map(d=>{
+        const live = inUse.includes(d);
+        // A department nobody is in is still selectable -- a new team may be
+        // about to exist -- but it is marked, so it is not chosen by mistake.
+        return '<option value="'+d+'">'+d+(live?'':' (no employees)')+'</option>';
+      }).join('');
     sel.dataset.filled = '1';
   }
   if(!list.length){
@@ -29067,10 +29249,26 @@ async function notifyEmployeeLeaveResult(req, approved, note){
     : fDate(req.fromDate);
   const statusLabel = approved ? 'Approved' : 'Rejected';
 
-  // In-app notification
+  // The employee's own notification, stored against their record so they see
+  // it whenever and wherever they next sign in. This is first, before the email
+  // attempt, so a mail failure cannot also lose the in-app message.
+  await dbSaveNotification({
+    empId:   req.empId,
+    kind:    approved ? 'leave_approved' : 'leave_rejected',
+    title:   `${approved?'✅':'❌'} ${leaveLabel} ${statusLabel.toLowerCase()} — ${dateRange}`,
+    body:    `${req.days} day${req.days>1?'s':''}. Decided by ${CU?.name||'your approver'}.`
+             + (note ? ' Note: ' + note : ''),
+    refType: 'leave_request',
+    refId:   req.id,
+  }).catch(()=>{});
+  // If the approver IS the employee's own account, refresh their bell now.
+  if(String(req.empId) === String(_myEmpId()||'')){
+    dbGetMyNotifications().then(()=>renderNotifs()).catch(()=>{});
+  }
+
+  // And a line in the approver's session list, so they can see it went out.
   addNotif(
-    `${approved?'✅':'❌'} Your ${leaveLabel} request (${dateRange}) has been ${statusLabel.toLowerCase()}.`
-    + (note ? ' Note: ' + note : ''),
+    `Leave ${statusLabel.toLowerCase()} for ${emp.name} — ${leaveLabel}, ${dateRange}.`,
     approved ? 'success' : 'error'
   );
 
