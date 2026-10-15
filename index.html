@@ -1371,9 +1371,15 @@ async function showMobilePortal(user, emp){
   portal.style.display = 'block';
   document.body.style.visibility = 'visible';
 
-  // Load data
-  if(!_leaveBalances) _leaveBalances = await dbGetLeaveBalances().catch(()=>({}));
-  if(!_leaveRequests || !_leaveRequests.length) _leaveRequests = await dbGetLeaveRequests().catch(()=>[]);
+  // Load data.
+  // This used to read `if(!_leaveBalances)`, but _leaveBalances is declared as
+  // `{}` -- which is truthy -- so the condition was never true and balances
+  // were NEVER loaded on the portal. getEmpBalance() then fell through to its
+  // hardcoded defaults, and every employee saw 22 annual / 15 sick / 10 casual
+  // on their phone whatever their real balance was. Balances also change when
+  // HR edits them, so they are re-read on every entry rather than cached.
+  _leaveBalances = await dbGetLeaveBalances().catch(()=>_leaveBalances||{});
+  _leaveRequests = await dbGetLeaveRequests().catch(()=>_leaveRequests||[]);
   // Clock state has to come from the database every time. This used to load
   // only when the cache was EMPTY, so a shift opened by QR on this phone and
   // closed on the kiosk left the cached record still open -- and the portal
@@ -1517,9 +1523,7 @@ async function renderMobilePortal(user, emp, isHOD, tab){
 
       <div class="mp-section-title">Leave balance</div>
       <div class="mp-bal-grid">
-        <div class="mp-bal-card"><div class="mp-bal-num">${b.remAnnual}</div><div class="mp-bal-used">${parseFloat(b.usedAnnual)||0} used</div><div class="mp-bal-label">Annual</div></div>
-        <div class="mp-bal-card"><div class="mp-bal-num">${b.remSick}</div><div class="mp-bal-used">${parseFloat(b.usedSick)||0} used</div><div class="mp-bal-label">Sick</div></div>
-        <div class="mp-bal-card"><div class="mp-bal-num">${b.remCasual}</div><div class="mp-bal-used">${parseFloat(b.usedCasual)||0} used</div><div class="mp-bal-label">Casual</div></div>
+        ${_mpBalanceCards(b, emp)}
       </div>
       <button class="mp-new-leave-btn" onclick="mpShowLeaveForm()">+ New Leave Request</button>
 
@@ -1575,9 +1579,7 @@ async function renderMobilePortal(user, emp, isHOD, tab){
     tabContent = `
       <div class="mp-section-title">Leave balance</div>
       <div class="mp-bal-grid">
-        <div class="mp-bal-card"><div class="mp-bal-num">${b.remAnnual}</div><div class="mp-bal-used">${parseFloat(b.usedAnnual)||0} used</div><div class="mp-bal-label">Annual</div></div>
-        <div class="mp-bal-card"><div class="mp-bal-num">${b.remSick}</div><div class="mp-bal-used">${parseFloat(b.usedSick)||0} used</div><div class="mp-bal-label">Sick</div></div>
-        <div class="mp-bal-card"><div class="mp-bal-num">${b.remCasual}</div><div class="mp-bal-used">${parseFloat(b.usedCasual)||0} used</div><div class="mp-bal-label">Casual</div></div>
+        ${_mpBalanceCards(b, emp)}
       </div>
       <button class="mp-new-leave-btn" onclick="mpShowLeaveForm()">+ New Leave Request</button>
 
@@ -1686,6 +1688,78 @@ async function mpMarkNotifsRead(){
   await markAllNotifsRead();
   const emp = gE(CU?.empId) || (typeof _findHodEmp==='function' ? _findHodEmp() : null);
   if(emp) await renderMobilePortal(CU, emp, CU?.role==='hod'||CU?.role==='manager'||CU?.role==='admin'||CU?.role==='hr', _mpTab);
+}
+
+// The portal used to show Annual / Sick / Casual, taken from the `annual` and
+// `casual` balance columns. Neither reflects how leave is actually recorded
+// here: the annual leave everyone takes is the `employer_local` type (labelled
+// "Annual Leave"), `annual` is a legacy type with a handful of requests, and
+// `casual` is one of the types getLEAVE_TYPES() filters out entirely -- so that
+// third card counted a leave type nobody can request, while the balance the
+// employee actually has was not on the screen at all.
+//
+// Driven off byType now, so it follows the real entitlements, and a type with
+// nothing in it is left out rather than shown as a zero.
+function _mpBalanceCards(b, emp){
+  // Only types the app will actually let someone request. family_medical and
+  // casual are filtered out by getLEAVE_TYPES(), so an entitlement for them is
+  // not real and showing one invites a request that cannot be made.
+  const wanted = [
+    {key:'employer_local', label:'Annual'},
+    {key:'sick',           label:'Sick'},
+    {key:'vacation',       label:'Vacation'},
+  ];
+  // The raw stored row, to tell a real figure from one getEmpBalance()
+  // substituted. A card that shows "22" because nothing is set is worse than
+  // one that admits it: the employee plans around days they may not have.
+  const raw = (_leaveBalances||{})[String(emp?.id)] || (_leaveBalances||{})[emp?.id] || null;
+  const isSet = k => {
+    if(!raw) return false;
+    const v = raw[k];
+    return v !== undefined && v !== null && v !== '' && !isNaN(parseFloat(v));
+  };
+
+  const cards = wanted
+    .map(w => ({...w, bt: b.byType?.[w.key], set: isSet(w.key)}))
+    // An unset balance still gets a card -- so the employee can see it is
+    // missing rather than find nothing there -- but a type with a genuine
+    // zero ceiling is left out.
+    .filter(w => w.bt && !w.bt.unlimited && (w.set ? true : (parseFloat(w.bt.max)||0) > 0))
+    .map(w => w.set
+      ? `<div class="mp-bal-card">
+          <div class="mp-bal-num">${w.bt.remaining}</div>
+          <div class="mp-bal-used">${parseFloat(w.bt.used)||0} used</div>
+          <div class="mp-bal-label">${w.label}</div>
+        </div>`
+      : `<div class="mp-bal-card" title="HR has not set this balance">
+          <div class="mp-bal-num" style="color:#9CA3AF">—</div>
+          <div class="mp-bal-used">not set</div>
+          <div class="mp-bal-label">${w.label}</div>
+        </div>`);
+
+  // Bank sick sits outside the annual entitlements but is real and spendable,
+  // so it earns a card when there is any.
+  const bank = parseFloat(b.bankSick)||0;
+  if(bank > 0){
+    cards.push(`<div class="mp-bal-card">
+        <div class="mp-bal-num">${b.remBankSick}</div>
+        <div class="mp-bal-used">of ${bank}</div>
+        <div class="mp-bal-label">Bank Sick</div>
+      </div>`);
+  }
+
+  // One day per calendar month, so it is counted differently from the rest.
+  if(typeof isMenstrualEligible==='function' && isMenstrualEligible(emp?.id)){
+    cards.push(`<div class="mp-bal-card">
+        <div class="mp-bal-num">${menstrualRemainingInMonth(emp.id, todayStr())}</div>
+        <div class="mp-bal-used">this month</div>
+        <div class="mp-bal-label">Menstrual</div>
+      </div>`);
+  }
+
+  const note = raw ? '' :
+    '<div class="mp-empty" style="grid-column:1/-1;margin-top:6px">Your leave balances have not been set yet — ask HR.</div>';
+  return cards.join('') + note;
 }
 
 function mpShowLeaveForm(){
@@ -20417,7 +20491,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761226';
+const _APP_VERSION = '1780761228';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -28725,6 +28799,17 @@ async function approveLeave(reqId, approve){
   const note = approve ? '' : (prompt('Reason for rejection (optional):')||'');
   if(note === null) return; // cancelled
 
+  // Was this request already approved? Reversing an approval has to undo what
+  // the approval did -- the balance deduction and the attendance rows -- or the
+  // employee silently loses the days. Nothing guarded this before, so an
+  // approved request could be flipped to rejected with the deduction left in
+  // place and no record that it had happened.
+  const _wasApproved = String(req.status||'').toLowerCase() === 'approved';
+  if(_wasApproved && !approve){
+    if(!confirm('This leave was already approved. Rejecting it now will give the '
+      + req.days + ' day(s) back and remove the leave from attendance. Continue?')) return;
+  }
+
   // Single stage — whoever approves (HOD or HR) is final
   req.status        = approve ? 'approved' : 'rejected';
   req.hodStatus     = approve ? 'approved' : 'rejected';
@@ -28744,9 +28829,15 @@ async function approveLeave(reqId, approve){
     if(idx>=0) _leaveRequests[idx] = req;
     S.set('leaveRequests', _leaveRequests);
     if(approve){
-      await deductLeaveBalance(req).catch(()=>{});
-      // Create attendance records for approved leave days
-      await createLeaveAttendanceRecords(req).catch(()=>{});
+      // Only deduct on a fresh approval. Re-approving something already
+      // approved would deduct the same days twice.
+      if(!_wasApproved){
+        await deductLeaveBalance(req).catch(()=>{});
+        await createLeaveAttendanceRecords(req).catch(()=>{});
+      }
+    } else if(_wasApproved){
+      await restoreLeaveBalance(req).catch(()=>{});
+      await removeLeaveAttendanceRecords(req).catch(()=>{});
     }
   } catch(e){ toast('Save error: '+e.message,'error'); hideLoader(); return; }
   hideLoader();
@@ -28885,25 +28976,123 @@ async function createLeaveAttendanceRecords(req){
   }
 }
 
+// Puts days back when an approved request is undone. deductLeaveBalance() had
+// no counterpart, so a leave approved and then rejected or cancelled left the
+// days spent for ever -- the status flipped, the balance did not move, and
+// nothing said so. Same field map, same skip rules, in reverse.
+async function restoreLeaveBalance(req){
+  try{
+    if(!sbReady()) return;
+    const days = parseFloat(req.days)||0;
+    if(!days) return;
+    const label = getLEAVE_TYPES()[req.type]?.label || req.type;
+    const who   = gE(req.empId)?.name || req.empId;
+
+    const fieldMap = {
+      annual:'annual', sick:'sick', employer_local:'employer_local',
+      vacation:'vacation', casual:'casual', family_medical:'family_medical',
+    };
+    const field = fieldMap[req.type];
+    if(!field) return;   // nothing was deducted, so nothing to give back
+
+    const balData = await dbGetLeaveBalances();
+    const bal = balData[String(req.empId)];
+    if(!bal) return;
+    const current = parseFloat(bal[field]);
+    if(isNaN(current)) return;
+
+    // No ceiling is applied. The stored figure is whatever HR loaded for this
+    // person -- the reconciliation showed those range from 0 to 24 and never
+    // equal a flat 22 -- so capping at an assumed entitlement would silently
+    // destroy days on anyone whose balance started higher.
+    bal[field] = current + days;
+    await dbSaveLeaveBalance(String(req.empId), bal);
+    dbAddAudit(CU?.name||'System',
+      `Restored ${days} day(s) of ${label} to ${who} — request ${req.id} was ${req.status||'undone'}`
+    ).catch(()=>{});
+  } catch(e){ console.warn('Balance restore error:', e); }
+}
+
+// Removes the synthetic attendance rows createLeaveAttendanceRecords() wrote,
+// so an undone leave does not leave the person showing as absent.
+async function removeLeaveAttendanceRecords(req){
+  try{
+    if(!sbReady()) return;
+    const {error} = await _sb.from('attendance').delete()
+      .eq('emp_id', String(req.empId))
+      .eq('location', 'Leave')
+      .gte('date', req.fromDate)
+      .lte('date', req.toDate);
+    if(error) console.warn('[Leave] could not remove leave attendance rows:', error);
+  } catch(e){ console.warn('removeLeaveAttendanceRecords:', e); }
+}
+
 async function deductLeaveBalance(req){
   try{
     if(!sbReady()) return;
     const days = parseFloat(req.days)||0;
     if(!days) return;
-    const balData = await dbGetLeaveBalances();
-    const bal = balData[String(req.empId)];
-    if(!bal) return;
-    // Map leave type to balance field
+    const label = getLEAVE_TYPES()[req.type]?.label || req.type;
+    const who   = gE(req.empId)?.name || req.empId;
+
+    // Leave type -> the column in leave_balances it draws down. Only columns
+    // that actually exist are listed; vacation, casual and family_medical were
+    // missing even though the table has them, so those three would have been
+    // approved without ever being deducted the moment anyone used them.
     const fieldMap = {
       annual:         'annual',
       sick:           'sick',
       employer_local: 'employer_local',
-
+      vacation:       'vacation',
+      casual:         'casual',
+      family_medical: 'family_medical',
     };
+
+    // Types that deliberately deduct nothing, so a skip is not worth reporting:
+    //   permission  -- a sub-three-hour absence, no entitlement to consume
+    //   unpaid      -- unpaid by definition
+    //   menstrual   -- derived per calendar month from the requests themselves
+    //                  (see MENSTRUAL_DAYS_PER_MONTH); a stored counter cannot
+    //                  express a monthly reset
+    const NO_DEDUCTION = ['permission','unpaid','menstrual'];
+
     const field = fieldMap[req.type];
-    if(!field) return; // permission, bank_sick etc — no deduction needed
+    if(!field){
+      // Everything else -- paternity, maternity, special, study, juror,
+      // compassionate, marriage, annual_bank -- carries a maxDays cap in the
+      // leave-type settings but has no column to record usage against, so the
+      // cap is not enforced and the days are tracked nowhere. That was silent.
+      // It is now in the audit log, so the gap is visible and countable
+      // instead of invisible.
+      if(!NO_DEDUCTION.includes(req.type)){
+        dbAddAudit('System',
+          `No balance column for ${label} — ${days} day(s) approved for ${who} were not deducted from any balance`
+        ).catch(()=>{});
+      }
+      return;
+    }
+
+    const balData = await dbGetLeaveBalances();
+    const bal = balData[String(req.empId)];
+    if(!bal){
+      // deductLeaveBalance used to return here without a word, so an employee
+      // with no balance row had every approval pass through untouched, for ever.
+      dbAddAudit('System',
+        `No leave balance row for ${who} — ${days} day(s) of ${label} were not deducted. Create a balance row for this employee.`
+      ).catch(()=>{});
+      return;
+    }
+
     const current = parseFloat(bal[field]);
-    if(isNaN(current)) return;
+    if(isNaN(current)){
+      // A null or blank column. getEmpBalance() substitutes a default for
+      // display, so the screen shows an entitlement that nothing is tracking.
+      dbAddAudit('System',
+        `${label} balance is not set for ${who} — ${days} day(s) were not deducted. Set a figure in Leave Balances.`
+      ).catch(()=>{});
+      return;
+    }
+
     bal[field] = Math.max(0, current - days);
     await dbSaveLeaveBalance(String(req.empId), bal);
   } catch(e){ console.warn('Balance deduct error:', e); }
@@ -29422,20 +29611,61 @@ This will restore the leave balance.`)) return;
 async function cancelLeaveRequest(reqId){
   const req = _leaveRequests.find(r=>String(r.id)===String(reqId));
   if(!req) return;
-  // Only allow cancel if still pending (not yet approved)
-  if(req.status !== 'pending'){
-    toast('Cannot cancel — leave has already been ' + req.status + '.', 'error');
+
+  const status = String(req.status||'').toLowerCase();
+  if(status === 'cancelled' || status === 'rejected'){
+    toast('This request is already ' + status + '.', 'info');
     return;
   }
-  if(!confirm('Cancel this leave request? This cannot be undone.')) return;
-  req.status      = 'cancelled';
-  req.hodStatus   = 'cancelled';
-  req.reviewNote  = (req.reviewNote ? req.reviewNote + ' | ' : '') + 'Cancelled by employee';
+
+  // A pending request is the employee's own to withdraw. An APPROVED one is
+  // not: cancelling it hands days back and changes attendance, so it needs
+  // approval rights. Previously this refused anything that was not pending,
+  // which meant an approved leave could not be cancelled by ANYONE -- if plans
+  // changed, HR had no way to undo it and the days stayed spent.
+  const approved = status === 'approved';
+  if(approved && !canApproveRequest(req) && !hasPerm('admin')){
+    toast('This leave is already approved. Ask HR or your manager to cancel it.','error');
+    return;
+  }
+
+  const who = gE(req.empId)?.name || 'this employee';
+  if(!confirm(approved
+      ? `Cancel this APPROVED leave for ${who}?\n\n${req.days} day(s) will be returned to their balance and the leave will be removed from attendance.`
+      : 'Cancel this leave request? This cannot be undone.')) return;
+
+  const prevStatus = req.status;
+  req.status     = 'cancelled';
+  req.hodStatus  = 'cancelled';
+  req.hrStatus   = 'cancelled';
+  req.reviewNote = (req.reviewNote ? req.reviewNote + ' | ' : '')
+                 + (approved ? 'Approved leave cancelled by ' + (CU?.name||'HR')
+                             : 'Cancelled by employee');
+  req.updatedAt  = new Date().toISOString();
+
   showLoader('Cancelling…');
   try{
     await dbSaveLeaveRequest(req);
+    if(approved){
+      // Give the days back and clear the attendance, in that order, so a
+      // failure leaves the balance correct rather than the calendar.
+      await restoreLeaveBalance({...req, status:'cancelled'}).catch(()=>{});
+      await removeLeaveAttendanceRecords(req).catch(()=>{});
+      _leaveBalances = await dbGetLeaveBalances().catch(()=>_leaveBalances);
+      // Tell the employee, since this undoes something they were told was approved.
+      await dbSaveNotification({
+        empId: req.empId,
+        kind:  'leave_rejected',
+        title: `Approved ${getLEAVE_TYPES()[req.type]?.label||req.type} cancelled — ${fDate(req.fromDate)}`,
+        body:  `${req.days} day(s) returned to your balance. Cancelled by ${CU?.name||'HR'}.`,
+        refType:'leave_request', refId:req.id,
+      }).catch(()=>{});
+    }
+    dbAddAudit(CU?.name||'System',
+      `Cancelled ${prevStatus} leave for ${who} — ${req.days} day(s), ${fDate(req.fromDate)} to ${fDate(req.toDate)}`
+    ).catch(()=>{});
     addNotif('Leave request cancelled.', 'info');
-    toast('Leave request cancelled.', 'success');
+    toast(approved ? 'Approved leave cancelled and days returned.' : 'Leave request cancelled.', 'success');
   } catch(e){
     toast('Failed to cancel: ' + (e.message||e), 'error');
   }
