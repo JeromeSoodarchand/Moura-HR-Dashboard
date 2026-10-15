@@ -20491,7 +20491,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761228';
+const _APP_VERSION = '1780761229';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -29566,39 +29566,44 @@ This will restore the leave balance.`)) return;
 
     // Restore leave balance if was approved
     if(wasApproved){
-      // Ensure balances are loaded
-      if(!_leaveBalances){
-        _leaveBalances = await dbGetLeaveBalances().catch(()=>({}));
-      }
-      const empBalKey = String(req.empId);
-      const bal = _leaveBalances[String(empBalKey)] || _leaveBalances[empBalKey];
-      const refundFieldMap = {annual:'annual', sick:'sick', employer_local:'employer_local', vacation:'vacation'};
-      const refundField = refundFieldMap[req.type];
-      if(bal && refundField && bal[refundField] !== undefined){
-        const maxMap = {annual:22, sick:15, employer_local:22, family_medical:5};
-        // Vacation is uncapped -- capping a refund at 22 would quietly eat days
-        // from someone who holds more than that.
-        const refunded = (parseFloat(bal[refundField])||0) + (parseFloat(req.days)||0);
-        bal[refundField] = req.type==='vacation' ? refunded : Math.min(maxMap[req.type]||22, refunded);
-        await dbSaveLeaveBalance(req.empId, bal).catch(()=>{});
-      }
+      // One restore implementation, shared with the reject-after-approve path
+      // in approveLeave(), so the two can never drift apart.
+      //
+      // The refund used to be capped: Math.min(22, refunded) for annual and
+      // employer_local, 15 for sick. The reconciliation showed stored balances
+      // range from 0 to 24 and never equal a flat 22 -- each is loaded per
+      // employee -- so that cap silently destroyed days on anyone holding more
+      // than the assumed maximum. There is no cap now: a refund returns exactly
+      // what was deducted, which is the only figure that can be right.
+      //
+      // It also covers casual and family_medical, which the old field map left
+      // out even though deductLeaveBalance can now draw from them.
+      await restoreLeaveBalance({...req, status:'cancelled'}).catch(()=>{});
+      _leaveBalances = await dbGetLeaveBalances().catch(()=>_leaveBalances);
     }
 
-    // Delete auto-created attendance records for leave days (match by date range)
-    if(sbReady()){
-      const {error:delErr} = await _sb.from('attendance')
-        .delete()
-        .eq('emp_id', String(req.empId))
-        .gte('date', req.fromDate)
-        .lte('date', req.toDate);
-      if(delErr) console.warn('[Cancel] Attendance delete error:', delErr.message || delErr);
-      else console.log('[Cancel] Attendance records deleted for leave period');
-    }
+    // Remove the rows createLeaveAttendanceRecords() wrote -- and ONLY those.
+    // This used to delete every attendance row in the date range regardless of
+    // location, so cancelling a leave someone had partly worked destroyed their
+    // real clock-in records for those days, with no way to get them back.
+    // removeLeaveAttendanceRecords() filters on location = 'Leave'.
+    await removeLeaveAttendanceRecords(req).catch(()=>{});
 
     const idx = _leaveRequests.findIndex(r=>String(r.id)===String(reqId));
     if(idx>=0) _leaveRequests[idx] = req;
     S.set('leaveRequests', _leaveRequests);
-    dbAddAudit(CU.name, `Cancelled leave for ${empName}: ${fDate(req.fromDate)} – ${fDate(req.toDate)}`);
+    dbAddAudit(CU.name, `Cancelled ${wasApproved?'approved':req.status} leave for ${empName}: ${fDate(req.fromDate)} – ${fDate(req.toDate)}, ${req.days} day(s)${wasApproved?' — balance restored':''}`);
+    if(wasApproved){
+      // They were told it was approved, so they need telling it is not.
+      await dbSaveNotification({
+        empId: req.empId,
+        kind:  'leave_rejected',
+        title: `Approved ${getLEAVE_TYPES()[req.type]?.label||req.type} cancelled — ${fDate(req.fromDate)}`,
+        body:  `${req.days} day(s) returned to your balance. Cancelled by ${CU?.name||'HR'}.`
+               + (note ? ' Reason: ' + note : ''),
+        refType:'leave_request', refId:req.id,
+      }).catch(()=>{});
+    }
     toast('Leave cancelled successfully.', 'success');
   } catch(e){
     toast('Failed to cancel: ' + (e.message||e), 'error');
@@ -29618,54 +29623,34 @@ async function cancelLeaveRequest(reqId){
     return;
   }
 
-  // A pending request is the employee's own to withdraw. An APPROVED one is
-  // not: cancelling it hands days back and changes attendance, so it needs
-  // approval rights. Previously this refused anything that was not pending,
-  // which meant an approved leave could not be cancelled by ANYONE -- if plans
-  // changed, HR had no way to undo it and the days stayed spent.
-  const approved = status === 'approved';
-  if(approved && !canApproveRequest(req) && !hasPerm('admin')){
-    toast('This leave is already approved. Ask HR or your manager to cancel it.','error');
+  // This is the EMPLOYEE's withdraw action, and it stays limited to a request
+  // nobody has decided yet. Cancelling an APPROVED leave returns days and
+  // rewrites attendance, which belongs to hrCancelLeave() -- the Cancel button
+  // on the leave table -- so there is one implementation of that, not two.
+  // The old message here was a dead end ("Cannot cancel"); it now says who can.
+  if(status !== 'pending'){
+    toast(status === 'approved'
+      ? 'This leave is already approved. HR or your manager can cancel it from the leave table, which returns the days to your balance.'
+      : 'Cannot cancel — leave has already been ' + status + '.', 'error');
     return;
   }
 
-  const who = gE(req.empId)?.name || 'this employee';
-  if(!confirm(approved
-      ? `Cancel this APPROVED leave for ${who}?\n\n${req.days} day(s) will be returned to their balance and the leave will be removed from attendance.`
-      : 'Cancel this leave request? This cannot be undone.')) return;
+  if(!confirm('Cancel this leave request? This cannot be undone.')) return;
 
-  const prevStatus = req.status;
   req.status     = 'cancelled';
   req.hodStatus  = 'cancelled';
-  req.hrStatus   = 'cancelled';
-  req.reviewNote = (req.reviewNote ? req.reviewNote + ' | ' : '')
-                 + (approved ? 'Approved leave cancelled by ' + (CU?.name||'HR')
-                             : 'Cancelled by employee');
+  req.reviewNote = (req.reviewNote ? req.reviewNote + ' | ' : '') + 'Cancelled by employee';
   req.updatedAt  = new Date().toISOString();
 
   showLoader('Cancelling…');
   try{
     await dbSaveLeaveRequest(req);
-    if(approved){
-      // Give the days back and clear the attendance, in that order, so a
-      // failure leaves the balance correct rather than the calendar.
-      await restoreLeaveBalance({...req, status:'cancelled'}).catch(()=>{});
-      await removeLeaveAttendanceRecords(req).catch(()=>{});
-      _leaveBalances = await dbGetLeaveBalances().catch(()=>_leaveBalances);
-      // Tell the employee, since this undoes something they were told was approved.
-      await dbSaveNotification({
-        empId: req.empId,
-        kind:  'leave_rejected',
-        title: `Approved ${getLEAVE_TYPES()[req.type]?.label||req.type} cancelled — ${fDate(req.fromDate)}`,
-        body:  `${req.days} day(s) returned to your balance. Cancelled by ${CU?.name||'HR'}.`,
-        refType:'leave_request', refId:req.id,
-      }).catch(()=>{});
-    }
-    dbAddAudit(CU?.name||'System',
-      `Cancelled ${prevStatus} leave for ${who} — ${req.days} day(s), ${fDate(req.fromDate)} to ${fDate(req.toDate)}`
+    // Nothing to restore: a pending request was never deducted.
+    dbAddAudit(CU?.name||'Employee',
+      `Withdrew pending leave request for ${gE(req.empId)?.name||req.empId} — ${req.days} day(s), ${fDate(req.fromDate)} to ${fDate(req.toDate)}`
     ).catch(()=>{});
     addNotif('Leave request cancelled.', 'info');
-    toast(approved ? 'Approved leave cancelled and days returned.' : 'Leave request cancelled.', 'success');
+    toast('Leave request cancelled.', 'success');
   } catch(e){
     toast('Failed to cancel: ' + (e.message||e), 'error');
   }
