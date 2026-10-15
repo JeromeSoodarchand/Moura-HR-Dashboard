@@ -1388,6 +1388,18 @@ async function showMobilePortal(user, emp){
 
 let _mpTab = 'home';
 let _mpLeaveFormType = 'annual';
+// Which leave types may be taken as a half day. Sick was added because the
+// common case is someone who starts the day, feels unwell and goes home: a
+// full day's deduction for a morning worked is wrong in both directions.
+// createLeaveAttendanceRecords() already halves the shift for ANY type whose
+// days = 0.5, so nothing downstream needed changing. Add a key here to open
+// half days to another type -- every gate reads this one list.
+const _HALF_DAY_TYPES = ['employer_local','sick'];
+function allowsHalfDay(type){ return _HALF_DAY_TYPES.includes(type); }
+// Mobile half-day state. The sheet re-renders when the type is switched, so
+// these persist the choice across that re-render.
+let _mpLeaveHalf = false;
+let _mpLeaveHalfPeriod = 'am';
 
 async function renderMobilePortal(user, emp, isHOD, tab){
   _mpTab = tab;
@@ -1612,8 +1624,8 @@ async function renderMobilePortal(user, emp, isHOD, tab){
         <div class="mp-form-group">
           <label class="mp-form-label">Leave Type</label>
           <div class="mp-type-row">
-            ${['annual','sick','casual'].map(t=>`
-              <button class="mp-type-btn ${_mpLeaveFormType===t?'active':''}" onclick="mpSetLeaveType('${t}',${JSON.stringify(user).replace(/"/g,'&quot;')},${JSON.stringify(emp).replace(/"/g,'&quot;')},${isHOD})">${t.charAt(0).toUpperCase()+t.slice(1)}</button>
+            ${(isMenstrualEligible(emp.id)?['annual','sick','casual','menstrual']:['annual','sick','casual']).map(t=>`
+              <button class="mp-type-btn ${_mpLeaveFormType===t?'active':''}" onclick="mpSetLeaveType('${t}',${JSON.stringify(user).replace(/"/g,'&quot;')},${JSON.stringify(emp).replace(/"/g,'&quot;')},${isHOD})">${t==='menstrual'?'Menstrual':t.charAt(0).toUpperCase()+t.slice(1)}</button>
             `).join('')}
           </div>
         </div>
@@ -1627,6 +1639,19 @@ async function renderMobilePortal(user, emp, isHOD, tab){
             <input type="date" id="mp-lv-to" class="mp-form-input" value="${todayStr()}">
           </div>
         </div>
+        ${allowsHalfDay(_mpLeaveFormType)?`
+        <div class="mp-form-group">
+          <label class="mp-form-label">Day Option</label>
+          <div class="mp-type-row">
+            <button class="mp-type-btn ${!_mpLeaveHalf?'active':''}" onclick="mpSetHalf(false,${JSON.stringify(user).replace(/"/g,'&quot;')},${JSON.stringify(emp).replace(/"/g,'&quot;')},${isHOD})">Full Day</button>
+            <button class="mp-type-btn ${_mpLeaveHalf?'active':''}" onclick="mpSetHalf(true,${JSON.stringify(user).replace(/"/g,'&quot;')},${JSON.stringify(emp).replace(/"/g,'&quot;')},${isHOD})">Half Day</button>
+          </div>
+          ${_mpLeaveHalf?`
+          <div class="mp-type-row" style="margin-top:8px">
+            <button class="mp-type-btn ${_mpLeaveHalfPeriod==='am'?'active':''}" onclick="mpSetHalfPeriod('am',${JSON.stringify(user).replace(/"/g,'&quot;')},${JSON.stringify(emp).replace(/"/g,'&quot;')},${isHOD})">Morning</button>
+            <button class="mp-type-btn ${_mpLeaveHalfPeriod==='pm'?'active':''}" onclick="mpSetHalfPeriod('pm',${JSON.stringify(user).replace(/"/g,'&quot;')},${JSON.stringify(emp).replace(/"/g,'&quot;')},${isHOD})">Afternoon</button>
+          </div>`:''}
+        </div>`:''}
         <div class="mp-form-group">
           <label class="mp-form-label">Reason (optional)</label>
           <textarea id="mp-lv-reason" class="mp-form-input" rows="3" placeholder="Enter reason..." style="resize:none"></textarea>
@@ -1646,6 +1671,21 @@ function mpShowLeaveForm(){
 
 function mpSetLeaveType(type, user, emp, isHOD){
   _mpLeaveFormType = type;
+  // A type that cannot be taken as a half day resets the choice, so a stale
+  // "Half Day" cannot be carried over to a type that does not allow it.
+  if(!allowsHalfDay(type)) _mpLeaveHalf = false;
+  renderMobilePortal(user, emp, isHOD, _mpTab);
+  setTimeout(()=>{ mpShowLeaveForm(); }, 50);
+}
+
+function mpSetHalf(isHalf, user, emp, isHOD){
+  _mpLeaveHalf = !!isHalf;
+  renderMobilePortal(user, emp, isHOD, _mpTab);
+  setTimeout(()=>{ mpShowLeaveForm(); }, 50);
+}
+
+function mpSetHalfPeriod(period, user, emp, isHOD){
+  _mpLeaveHalfPeriod = period === 'pm' ? 'pm' : 'am';
   renderMobilePortal(user, emp, isHOD, _mpTab);
   setTimeout(()=>{ mpShowLeaveForm(); }, 50);
 }
@@ -1680,16 +1720,34 @@ async function mpSubmitLeave(empId, user, emp, isHOD){
   const days = countWorkingDays(from, to);
   if(days===0){ alert('No working days in selected range.'); return; }
 
+  if(_mpLeaveFormType === 'menstrual'){
+    const problem = menstrualRequestProblem(empId, from, to, days);
+    if(problem){ alert(problem); return; }
+  }
+
+  const _rp = restrictedPeriodNotice(empId, from, to);
+  if(_rp){
+    if(_rp.block){ alert(_rp.message); return; }
+    if(!confirm(_rp.message)) return;
+  }
+
   const btn = document.getElementById('mp-submit-btn');
   if(btn){ btn.textContent = 'Submitting...'; btn.disabled = true; }
 
   try{
-    const finalReason = type==='permission' && _permFrom && _permTo
-    ? `Permission ${_permFrom}–${_permTo}${reason?' — '+reason:''}`
-    : reason;
-  const req = {
+    // The line that stood here referenced `type` and `_permFrom`/`_permTo`,
+    // none of which exist in this function -- the leave type lives in
+    // _mpLeaveFormType, and the permission fields belong to the desktop form.
+    // It threw ReferenceError on every submission, inside this try, so every
+    // employee requesting leave from their phone saw "Failed: type is not
+    // defined" and nothing was saved. The value it built was never used.
+    const isHalf = _mpLeaveHalf && allowsHalfDay(_mpLeaveFormType) && days > 0;
+    const req = {
       id: Date.now(), empId, type: _mpLeaveFormType,
-      fromDate: from, toDate: to, days, reason,
+      fromDate: from, toDate: to,
+      days: isHalf ? 0.5 : days,
+      halfPeriod: isHalf ? _mpLeaveHalfPeriod : null,
+      reason,
       status:'pending', hodStatus:'pending', hrStatus:'pending',
       companyId: _COMPANY_ID, updatedAt: new Date().toISOString()
     };
@@ -13509,6 +13567,26 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
                 <button class="btn btn-primary" onclick="addCustomHoliday()" style="white-space:nowrap">+ Add</button>
               </div>
               <div id="custom-holidays-list" style="max-height:220px;overflow-y:auto"></div>
+
+              <div class="fsec" style="margin-top:18px">Restricted Leave Periods</div>
+              <div style="font-size:12px;color:var(--text3);margin-bottom:10px">
+                Spans where being away is a problem &mdash; year-end close, stock-take, peak season.
+                <strong>Not recommended</strong> warns the employee and flags the request for the approver, but lets it through.
+                <strong>Blocked</strong> refuses the request outright. Leave the department as
+                &ldquo;All departments&rdquo; unless the period only affects one.
+              </div>
+              <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+                <input class="fi" id="rp-from" type="date" style="width:150px" title="First day">
+                <input class="fi" id="rp-to" type="date" style="width:150px" title="Last day">
+                <input class="fi" id="rp-name" type="text" placeholder="Reason (e.g. Year-end close)" style="flex:1;min-width:160px">
+                <select class="fs" id="rp-dept" style="width:170px"><option value="">All departments</option></select>
+                <select class="fs" id="rp-block" style="width:170px">
+                  <option value="warn">Not recommended (warn)</option>
+                  <option value="block">Blocked (refuse)</option>
+                </select>
+                <button class="btn btn-primary" onclick="addRestrictedPeriod()" style="white-space:nowrap">+ Add</button>
+              </div>
+              <div id="restricted-periods-list" style="max-height:220px;overflow-y:auto"></div>
             </div>
           </div>
         </div>
@@ -14264,7 +14342,7 @@ function rowToEmp(r){
   return{id:r.id,empNo:r.emp_no||null,nic:r.nic||null,name:r.name,email:r.email,phone:r.phone||'',role:r.role||'—',dept:r.dept||'',manager:r.manager||'—',start:r.start_date,status:r.status,
     salary:r.salary_amount?{amount:r.salary_amount,currency:r.salary_currency||'USD',frequency:r.salary_frequency||'Annual',lastReview:r.salary_last_review,nextReview:r.salary_next_review,history:typeof r.salary_history==='string'?JSON.parse(r.salary_history||'[]'):(r.salary_history||[])}:null,
     checklist:typeof r.checklist==='string'?JSON.parse(r.checklist||'{}'):(r.checklist||{}),offChecklist:typeof r.off_checklist==='string'?JSON.parse(r.off_checklist||'{}'):(r.off_checklist||{}),lastDay:r.last_day,reason:r.reason,completedOnboarding:r.completed_onboarding,
-    photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,pinAttempts:parseInt(r.pin_attempts)||0,pinLockedUntil:r.pin_locked_until||null,pinLockedOut:[true,'true',1].includes(r.pin_locked_out)||false,attendanceEditor:[true,'true','1',1].includes(r.att_editor),isHOD:[true,'true','1',1].includes(r.is_hod),isSeniorHOD:[true,'true','1',1].includes(r.is_senior_hod),otEligible:[true,'true','1',1].includes(r.ot_eligible),
+    photoUrl:r.photo_url||null,files:typeof r.files==='string'?JSON.parse(r.files||'[]'):(r.files||[]),clockMode:r.clock_mode||'qr',pinHash:r.pin_hash||null,userId:r.user_id||null,pinAttempts:parseInt(r.pin_attempts)||0,pinLockedUntil:r.pin_locked_until||null,pinLockedOut:[true,'true',1].includes(r.pin_locked_out)||false,attendanceEditor:[true,'true','1',1].includes(r.att_editor),isHOD:[true,'true','1',1].includes(r.is_hod),isSeniorHOD:[true,'true','1',1].includes(r.is_senior_hod),otEligible:[true,'true','1',1].includes(r.ot_eligible),menstrualEligible:[true,'true','1',1].includes(r.menstrual_eligible),
     companyId:r.company_id||1,
     workStart:r.work_start||null, workEnd:r.work_end||null,
     workDays:typeof r.work_days==='string'?JSON.parse(r.work_days||'null'):(r.work_days||null),
@@ -14310,6 +14388,8 @@ function empToRow(e){
     is_senior_hod:        String(e.isSeniorHOD || false),
     // Absent means NOT eligible: nobody gains overtime by being overlooked.
     ot_eligible:          String(e.otEligible || false),
+    // Absent means NOT eligible, same rule as overtime.
+    menstrual_eligible:   String(e.menstrualEligible || false),
     updated_at:           new Date().toISOString(),
     work_start:           e.workStart||null,
     work_end:             e.workEnd||null,
@@ -14613,6 +14693,7 @@ async function boot(){
       CU = _pinUser;
       await applyStoredBranding();
 ensureFamilyMedicalLeaveType();
+ensureMenstrualLeaveType();
       showEmployeeClockInScreen(CU);
       return;
     }
@@ -15673,7 +15754,7 @@ function showPage(id,el){
   if(mn) mn.classList.add('active');
   const heading=document.getElementById('page-heading');
   if(heading)heading.textContent=PAGE_TITLES[id]||id;
-  const loaders={dashboard:loadAndRenderDashboard,employees:loadAndRenderEmployees,onboarding:loadAndRenderOnboarding,events:loadAndRenderEvents,training:loadAndRenderTraining,hrreports:renderHRReports,overtime:renderOvertime,offboarding:loadAndRenderOffboarding,analytics:loadAndRenderAnalytics,usermgmt:loadAndRenderUserMgmt,settings:()=>{renderSettings();renderJobTitles();renderCustomEventTypes();populateKioskLeaveEmpSelect();renderLeaveTypes();renderChecklistDefaults(getSettings().checklistDefaults||[]);renderShifts();}};
+  const loaders={dashboard:loadAndRenderDashboard,employees:loadAndRenderEmployees,onboarding:loadAndRenderOnboarding,events:loadAndRenderEvents,training:loadAndRenderTraining,hrreports:renderHRReports,overtime:renderOvertime,offboarding:loadAndRenderOffboarding,analytics:loadAndRenderAnalytics,usermgmt:loadAndRenderUserMgmt,settings:()=>{renderSettings();renderRestrictedPeriodsList();renderJobTitles();renderCustomEventTypes();populateKioskLeaveEmpSelect();renderLeaveTypes();renderChecklistDefaults(getSettings().checklistDefaults||[]);renderShifts();}};
   const loader=loaders[id];
   if(loader) loader();
 }
@@ -17401,6 +17482,15 @@ function openModal(type,pid,pid2){
         </div>
         <span id="fis-ot-eligible-badge" style="display:${emp?.otEligible?'inline-flex':'none'};background:#05966920;color:#059669;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">OT</span>
       </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fdf2f8;border-radius:var(--radius);margin-bottom:12px;border:1px solid #f0a6c8">
+        <input type="checkbox" id="fis-menstrual" style="width:16px;height:16px;accent-color:#BE185D;cursor:pointer;flex-shrink:0"
+          ${emp?.menstrualEligible?'checked':''} onchange="document.getElementById('fis-menstrual-badge').style.display=this.checked?'inline-flex':'none'">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:500">Eligible for menstrual leave</div>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:1px">Off by default. One paid day per calendar month; unused days do not carry forward.</div>
+        </div>
+        <span id="fis-menstrual-badge" style="display:${emp?.menstrualEligible?'inline-flex':'none'};background:#BE185D20;color:#BE185D;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">ML</span>
+      </div>
       <div class="fsec">Compensation</div>
       <div class="fr3"><div class="fg"><label class="fl">Salary amount</label><input class="fi" id="fsal" type="number" value="${emp?.salary?.amount||''}" placeholder="50000"></div>
       <div class="fg"><label class="fl">Currency</label><select class="fs" id="fcur">${['USD','EUR','GBP','MUR','AUD','CAD'].map(c=>`<option ${emp?.salary?.currency===c?'selected':''}>${c}</option>`).join('')}</select></div>
@@ -17772,6 +17862,7 @@ async function submitAdd(){
     isHOD:document.getElementById('fis-hod')?.checked||false,
     isSeniorHOD:document.getElementById('fis-senior-hod')?.checked||false,
     otEligible:document.getElementById('fis-ot-eligible')?.checked||false,
+    menstrualEligible:document.getElementById('fis-menstrual')?.checked||false,
     pinHash:(()=>{const p=(document.getElementById('femp-pin')?.value||'').replace(/[^0-9]/g,'');return p.length===4?simpleHash(p):null;})(),
     ..._readClockModeSchedule(),
   };
@@ -17918,6 +18009,13 @@ function submitEdit(id){
   if(hodEl!==null) emp.isHOD=hodEl.checked;
   const shodEl=document.getElementById('fis-senior-hod');
   if(shodEl!==null) emp.isSeniorHOD=shodEl.checked;
+  // Overtime eligibility was rendered on this form and read only on the ADD
+  // path, so ticking or clearing it while editing an existing employee had no
+  // effect -- the checkbox showed the stored value and the save ignored it.
+  const otEl=document.getElementById('fis-ot-eligible');
+  if(otEl!==null) emp.otEligible=otEl.checked;
+  const mlEl=document.getElementById('fis-menstrual');
+  if(mlEl!==null) emp.menstrualEligible=mlEl.checked;
   const sa=parseFloat(document.getElementById('fsal').value);
   if(sa){if(!emp.salary)emp.salary={amount:sa,currency:'USD',frequency:'Annual',lastReview:null,nextReview:null,history:[]};
     emp.salary.amount=sa;emp.salary.currency=document.getElementById('fcur').value;emp.salary.frequency=document.getElementById('ffreq').value;emp.salary.nextReview=document.getElementById('fnr').value||emp.salary.nextReview;}
@@ -18845,6 +18943,10 @@ function getSettings(){
     {key:'compassionate', label:'Compassionate Leave',     color:'#D85A30',bg:'#FAECE7',maxDays:3,   paid:true,  protected:false},
     {key:'marriage',      label:'Marriage Leave',          color:'#EC4899',bg:'#FCE7F3',maxDays:6,   paid:true,  protected:false},
     {key:'permission',    label:'Permission (< 3hrs)',     color:'#6D28D9',bg:'#EDE9FE',maxDays:0,   paid:true,  protected:false},
+    // Menstrual leave is the only entitlement measured per MONTH rather than
+    // per year. maxDays is the yearly ceiling for display only; monthlyDays is
+    // the rule the checks enforce.
+    {key:'menstrual',     label:'Menstrual Leave',         color:'#BE185D',bg:'#FCE7F3',maxDays:12,  paid:true,  protected:true, monthlyDays:1, note:'One day per calendar month for eligible employees. Unused days do not carry forward.'},
   ];
   const _def={
     orgName:'',tagline:'Giving Comfort · Taking Care',
@@ -20166,7 +20268,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761221';
+const _APP_VERSION = '1780761224';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -21941,6 +22043,77 @@ function renderSickLeaveWarnings(req){
 
 // Override getEmpBalance to use Mauritius-compliant sick leave
 // Add family medical leave type if not already present
+// ── MENSTRUAL LEAVE ─────────────────────────────────────────────────────────
+// One day per calendar MONTH, which no other leave type does: every other
+// entitlement in this app is counted per year. So there is deliberately no
+// stored counter column for it -- a stored balance cannot express "resets on
+// the 1st" and would need a scheduled job to reset twelve times a year. The
+// entitlement is derived from the requests themselves instead, which is
+// self-correcting and needs no migration beyond the eligibility flag.
+const MENSTRUAL_DAYS_PER_MONTH = 1;
+
+function isMenstrualEligible(empId){
+  const e = (typeof gE==='function') ? gE(empId) : null;
+  return !!(e && e.menstrualEligible);
+}
+
+// Days already committed in the calendar month that dateStr falls in. Pending
+// requests count, so two requests cannot be stacked in one month while the
+// first is still awaiting approval.
+function menstrualDaysInMonth(empId, dateStr){
+  const ym = String(dateStr || todayStr()).slice(0,7);
+  return (_leaveRequests||[])
+    .filter(r => String(r.empId)===String(empId)
+              && r.type === 'menstrual'
+              && ['approved','pending'].includes(String(r.status||'').toLowerCase())
+              && String(r.fromDate||'').slice(0,7) === ym)
+    .reduce((t,r)=>t + (parseFloat(r.days)||0), 0);
+}
+
+function menstrualRemainingInMonth(empId, dateStr){
+  return Math.max(0, MENSTRUAL_DAYS_PER_MONTH - menstrualDaysInMonth(empId, dateStr));
+}
+
+// Shared by both submit paths. Returns null when the request is allowed, or
+// the reason to refuse it.
+function menstrualRequestProblem(empId, fromDate, toDate, days){
+  if(!isMenstrualEligible(empId))
+    return 'This employee is not marked as eligible for menstrual leave.';
+  if(String(fromDate||'').slice(0,7) !== String(toDate||'').slice(0,7))
+    return 'Menstrual leave cannot span two months. Submit one request per month.';
+  const asked = parseFloat(days)||0;
+  if(asked > MENSTRUAL_DAYS_PER_MONTH)
+    return 'Menstrual leave is one day per month. Select a single working day.';
+  const left = menstrualRemainingInMonth(empId, fromDate);
+  if(asked > left){
+    const mon = new Date(String(fromDate)+'T00:00:00')
+      .toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+    return left === 0
+      ? 'The menstrual leave day for ' + mon + ' has already been used or requested.'
+      : 'Only ' + left + ' day left for ' + mon + '.';
+  }
+  return null;
+}
+
+// Added to every company's settings and persisted to the database. The
+// Settings screen writes leave types to localStorage only, so a type added
+// there never reaches anyone else -- this is the route family medical leave
+// already uses, and the only one that works group-wide.
+function ensureMenstrualLeaveType(){
+  const settings = getSettings();
+  const types = settings.leaveTypes || [];
+  if(!types.find(t=>t.key==='menstrual')){
+    types.push({
+      key:'menstrual', label:'Menstrual Leave',
+      color:'#BE185D', bg:'#FCE7F3',
+      maxDays:12, paid:true, protected:true, monthlyDays:1,
+      note:'One day per calendar month for eligible employees. Unused days do not carry forward.'
+    });
+    settings.leaveTypes = types;
+    dbSetSetting('leaveTypes', types).catch(()=>{});
+  }
+}
+
 function ensureFamilyMedicalLeaveType(){
   const settings = getSettings();
   const types = settings.leaveTypes || [];
@@ -23159,6 +23332,14 @@ function getEmpBalance(empId){
       // 22-day annual max -- so the entitlement is whatever HR loaded, and it
       // defaults to nothing rather than to a maximum.
       vacation:      {label:'Vacation Leave',       max:(parseFloat(bal.vacation)||0)+parseFloat(used.vacation||0), used:parseFloat(used.vacation||0), remaining:Math.max(0,parseFloat(bal.vacation)||0), unlimited:false},
+      // Counted for THIS CALENDAR MONTH, not the year -- the `used` figures
+      // above are year-to-date and would be wrong here. monthly:true tells the
+      // balance panel to label it as such.
+      menstrual:     {label:'Menstrual Leave',      max:MENSTRUAL_DAYS_PER_MONTH,
+                      used:menstrualDaysInMonth(empId, todayStr()),
+                      remaining:menstrualRemainingInMonth(empId, todayStr()),
+                      unlimited:false, monthly:true,
+                      eligible:isMenstrualEligible(empId)},
     },
   };
 }
@@ -23774,7 +23955,7 @@ function openLeaveRequestModal(empId){
     <div class="modal-title">Request Leave <button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="fg"><label class="fl">Employee *</label>
       ${isHR
-        ? `<select class="fs" id="lv-emp">
+        ? `<select class="fs" id="lv-emp" onchange="onLeaveEmpChange()">
             ${emps.map(e=>`<option value="${e.id}" ${String(e.id)===String(empId)?'selected':''}>${e.name} — ${e.dept||''}</option>`).join('')}
            </select>`
         : `<div style="padding:8px 10px;background:var(--bg2);border-radius:var(--radius);font-size:13px;font-weight:500">${thisEmp?.name||CU?.name||'—'}</div>
@@ -23783,7 +23964,7 @@ function openLeaveRequestModal(empId){
     </div>
     <div class="fg"><label class="fl">Leave type *</label>
       <select class="fs" id="lv-type" onchange="updateLeaveBalance()">
-        ${Object.entries(getLEAVE_TYPES()).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}
+        ${leaveTypeOptionsFor(empId)}
       </select>
     </div>
     <div id="lv-balance-info" style="background:var(--bg2);border-radius:var(--radius);padding:8px 12px;font-size:12.5px;margin-bottom:10px;color:var(--text2)">Select leave type to see balance</div>
@@ -23860,7 +24041,15 @@ function updateLeaveBalance(){
     el.innerHTML = balHtml;
   } else {
     const bt = b.byType?.[type];
-    if(bt && !bt.unlimited && bt.max>0){
+    if(bt && bt.monthly){
+      // A monthly entitlement, so the period has to be named or the figure
+      // reads as an annual balance.
+      const mon = new Date().toLocaleDateString('en-GB',{month:'long'});
+      el.innerHTML = bt.eligible === false
+        ? `<span style="color:var(--red)">This employee is not marked as eligible for menstrual leave.</span>`
+        : `<span style="font-size:15px;font-weight:700;color:var(--navy)">${bt.remaining}</span><span style="color:var(--text3)"> / ${bt.max} day for ${mon}</span>
+           <div style="font-size:11px;color:var(--text3);margin-top:3px">One day per calendar month · unused days do not carry forward</div>`;
+    } else if(bt && !bt.unlimited && bt.max>0){
       const rem=bt.remaining!==null?bt.remaining:bt.max, total=bt.max;
       const pct=total>0?Math.min(100,Math.round(((total-rem)/total)*100)):0;
       el.innerHTML=`<span style="font-size:15px;font-weight:700;color:var(--navy)">${rem}</span><span style="color:var(--text3)"> / ${total} days remaining</span>
@@ -23873,8 +24062,8 @@ function updateLeaveBalance(){
   }
   // Show/hide half day toggle (local leave only)
   const hdRow = document.getElementById('lv-halfday-row');
-  if(hdRow) hdRow.style.display = type==='employer_local' ? 'block' : 'none';
-  if(type!=='employer_local'){ const fd=document.getElementById('lv-fullday'); if(fd) fd.checked=true; }
+  if(hdRow) hdRow.style.display = allowsHalfDay(type) ? 'block' : 'none';
+  if(!allowsHalfDay(type)){ const fd=document.getElementById('lv-fullday'); if(fd) fd.checked=true; }
   // Show/hide permission time fields
   const ptRow = document.getElementById('lv-permission-time-row');
   if(ptRow) ptRow.style.display = type==='permission' ? 'block' : 'none';
@@ -23891,6 +24080,30 @@ function updatePermDuration(){
   if(mins<=0){ el.innerHTML='<span style="color:var(--red)">End time must be after start time</span>'; return; }
   if(mins>180){ el.innerHTML='<span style="color:var(--red)">⚠ Permission cannot exceed 3 hours ('+Math.floor(mins/60)+'h '+mins%60+'m selected)</span>'; return; }
   el.innerHTML='<span style="color:var(--green)">Duration: '+Math.floor(mins/60)+'h '+String(mins%60).padStart(2,'0')+'m</span>';
+}
+
+// Menstrual leave is offered only to employees marked eligible, so it does not
+// appear on everyone's form. The guard in submitLeaveRequest() is what actually
+// enforces it -- this just keeps the list honest.
+function leaveTypeOptionsFor(empId, selected){
+  const showMenstrual = isMenstrualEligible(empId);
+  return Object.entries(getLEAVE_TYPES())
+    .filter(([k]) => k !== 'menstrual' || showMenstrual)
+    .map(([k,v]) => `<option value="${k}"${String(selected||'')===k?' selected':''}>${v.label}</option>`)
+    .join('');
+}
+
+// The employee can be switched on this form, so the type list has to be rebuilt
+// for whoever is now selected.
+function onLeaveEmpChange(){
+  const empId = document.getElementById('lv-emp')?.value;
+  const sel   = document.getElementById('lv-type');
+  if(sel){
+    const wanted = sel.value;
+    sel.innerHTML = leaveTypeOptionsFor(empId, wanted);
+    if(sel.value !== wanted) sel.selectedIndex = 0;
+  }
+  updateLeaveBalance();
 }
 
 function updateLeaveDays(){
@@ -23921,13 +24134,28 @@ async function submitLeaveRequest(){
   if(!empId||!from||!to){ toast('Please fill all required fields.','error'); _submittingLeave=false; return; }
   if(to<from){ toast('End date must be after start date.','error'); _submittingLeave=false; return; }
 
-  const isHalfDay = document.getElementById('lv-halfday')?.checked && type==='employer_local';
+  const isHalfDay = document.getElementById('lv-halfday')?.checked && allowsHalfDay(type);
   const halfPeriod = isHalfDay
     ? (document.getElementById('lv-half-pm')?.checked ? 'pm' : 'am')
     : null;
   const rawDays = countWorkingDays(from, to);
   const days = (isHalfDay && rawDays > 0) ? 0.5 : rawDays;
   if(rawDays===0 && type!=='permission'){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
+
+  if(type === 'menstrual'){
+    const problem = menstrualRequestProblem(empId, from, to, days);
+    if(problem){ toast(problem,'error'); _submittingLeave=false; return; }
+  }
+
+  // Restricted periods. A warning is advisory by design -- the person can go
+  // ahead, and the approver sees the flag on the request either way.
+  if(type !== 'permission'){
+    const rp = restrictedPeriodNotice(empId, from, to);
+    if(rp){
+      if(rp.block){ alert(rp.message); _submittingLeave=false; return; }
+      if(!confirm(rp.message)){ _submittingLeave=false; return; }
+    }
+  }
 
   // Permission: validate time from/to and max 3 hours
   let permMins = 0;
@@ -26119,6 +26347,127 @@ async function saveGlobalPublicHolidays(list){
 // ── EMPLOYER LOCAL LEAVES (per company) ───────────────────────────────────────
 function getEmployerLeaveDays(){
   return getSettings().employerLeaveDays || [];
+}
+
+// ── RESTRICTED LEAVE PERIODS ────────────────────────────────────────────────
+// Spans HR marks as a bad time to be away -- year-end close, stock-take, peak
+// season. Stored per company beside employerLeaveDays and persisted with
+// dbSetSetting, so they reach every device rather than the one that set them.
+//
+// Each period: {from, to, name, dept, block, addedBy, addedAt}
+//   dept  -- '' means the whole company; otherwise that one department only,
+//            so a Finance month-end does not warn Operations.
+//   block -- false (default) warns and lets the person continue, which is what
+//            "not recommended" means. true refuses outright, for the few spans
+//            where leave genuinely cannot be allowed.
+function getRestrictedPeriods(){
+  const list = getSettings().restrictedPeriods;
+  return Array.isArray(list) ? list : [];
+}
+
+function saveRestrictedPeriods(list){
+  const cs = getSettings();
+  cs.restrictedPeriods = list;
+  S.set('companySettings', cs);
+  if(sbReady()) dbSetSetting('restrictedPeriods', JSON.stringify(list)).catch(()=>{});
+}
+
+// Every restricted period a from..to request touches. Date strings are
+// YYYY-MM-DD so they compare correctly as strings; two spans overlap when each
+// starts on or before the other ends.
+function restrictedPeriodsFor(fromDate, toDate, dept){
+  const a1 = String(fromDate||''), a2 = String(toDate||fromDate||'');
+  if(!a1) return [];
+  return getRestrictedPeriods().filter(p=>{
+    const b1 = String(p.from||''), b2 = String(p.to||p.from||'');
+    if(!b1 || !b2) return false;
+    if(p.dept && dept && String(p.dept) !== String(dept)) return false;
+    return a1 <= b2 && b1 <= a2;
+  });
+}
+
+// Null when there is nothing to say. Otherwise {block, message} -- the caller
+// refuses on block, or warns and asks whether to continue.
+function restrictedPeriodNotice(empId, fromDate, toDate){
+  const emp  = (typeof gE==='function') ? gE(empId) : null;
+  const hits = restrictedPeriodsFor(fromDate, toDate, emp?.dept);
+  if(!hits.length) return null;
+  const blocked = hits.filter(p=>[true,'true','1',1].includes(p.block));
+  const list = (blocked.length?blocked:hits)
+    .map(p=>'• '+p.name+'  ('+fDate(p.from)+' – '+fDate(p.to)+(p.dept?', '+p.dept:'')+')')
+    .join('\n');
+  return blocked.length
+    ? {block:true,  message:'Leave cannot be taken during:\n\n'+list+'\n\nSpeak to HR if this is unavoidable.'}
+    : {block:false, message:'These dates fall in a period where leave is not recommended:\n\n'+list+'\n\nSubmit the request anyway?'};
+}
+
+function addRestrictedPeriod(){
+  const from = document.getElementById('rp-from')?.value;
+  const to   = document.getElementById('rp-to')?.value || from;
+  const name = (document.getElementById('rp-name')?.value||'').trim();
+  const dept = document.getElementById('rp-dept')?.value||'';
+  const block= document.getElementById('rp-block')?.value === 'block';
+  if(!from){ toast('Select a start date.','error'); return; }
+  if(!name){ toast('Enter a reason, e.g. Year-end close.','error'); return; }
+  if(to < from){ toast('End date must be on or after the start date.','error'); return; }
+  const list = getRestrictedPeriods().slice();
+  if(list.some(p=>p.from===from && p.to===to && (p.dept||'')===dept)){
+    toast('That period is already set.','error'); return;
+  }
+  list.push({from, to, name, dept, block, addedBy:CU?.name||'HR', addedAt:new Date().toISOString()});
+  list.sort((a,b)=>String(a.from).localeCompare(String(b.from)));
+  saveRestrictedPeriods(list);
+  dbAddAudit(CU?.name||'HR','Added restricted leave period: '+name+' '+from+' to '+to+(dept?' ('+dept+')':' (all departments)')).catch(()=>{});
+  renderRestrictedPeriodsList();
+  ['rp-from','rp-to','rp-name'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; });
+  toast('Restricted period added: '+name,'success');
+}
+
+function removeRestrictedPeriod(i){
+  const list = getRestrictedPeriods().slice();
+  const p = list[i];
+  if(!p) return;
+  if(!confirm('Remove "'+p.name+'" ('+fDate(p.from)+' – '+fDate(p.to)+')?')) return;
+  list.splice(i,1);
+  saveRestrictedPeriods(list);
+  dbAddAudit(CU?.name||'HR','Removed restricted leave period: '+p.name).catch(()=>{});
+  renderRestrictedPeriodsList();
+  toast('Period removed.','info');
+}
+
+function renderRestrictedPeriodsList(){
+  const el = document.getElementById('restricted-periods-list');
+  if(!el) return;
+  const list = getRestrictedPeriods();
+  // Populate the department selector from the live department list.
+  const sel = document.getElementById('rp-dept');
+  if(sel && !sel.dataset.filled){
+    sel.innerHTML = '<option value="">All departments</option>' +
+      (typeof getDepts==='function' ? getDepts() : []).map(d=>'<option value="'+d+'">'+d+'</option>').join('');
+    sel.dataset.filled = '1';
+  }
+  if(!list.length){
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px 0">No restricted periods set.</div>';
+    return;
+  }
+  const today = todayStr();
+  el.innerHTML = list.map((p,i)=>{
+    const isBlock = [true,'true','1',1].includes(p.block);
+    const past    = String(p.to||p.from||'') < today;
+    const live    = String(p.from||'') <= today && today <= String(p.to||p.from||'');
+    const edge    = isBlock ? 'var(--red)' : 'var(--amber)';
+    const chipBg  = isBlock ? 'var(--red-light)' : 'var(--amber-light)';
+    const chipFg  = isBlock ? 'var(--red-deep)'  : 'var(--amber-deep)';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--bg2);border-radius:7px;margin-bottom:4px;border-left:3px solid '+edge+';opacity:'+(past?'.5':'1')+'">'+
+      '<span style="font-size:12px;font-weight:600;min-width:150px">'+fDate(p.from)+' – '+fDate(p.to)+'</span>'+
+      '<span style="font-size:12px;flex:1">'+(p.name||'')+
+        (live?' <span style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--amber-light);color:var(--amber-deep);font-weight:600">in progress</span>':'')+
+      '</span>'+
+      '<span style="font-size:11px;color:var(--text3);min-width:110px">'+(p.dept||'All departments')+'</span>'+
+      '<span style="font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap;background:'+chipBg+';color:'+chipFg+'">'+(isBlock?'Blocked':'Not recommended')+'</span>'+
+      '<button onclick="removeRestrictedPeriod('+i+')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:15px;padding:2px 6px" title="Remove">×</button>'+
+    '</div>';
+  }).join('');
 }
 
 // ── UNIFIED ACCESSORS ─────────────────────────────────────────────────────────
@@ -28510,7 +28859,17 @@ function renderLeaveTable(){
         </div>
       </td>
       <td style="padding:10px 12px"><span class="badge b-${req.type}">${getLEAVE_TYPES()[req.type]?.label||req.type}</span></td>
-      <td style="padding:10px 12px;font-size:12.5px">${fDate(req.fromDate)}</td>
+      <td style="padding:10px 12px;font-size:12.5px">${fDate(req.fromDate)}
+        ${(()=>{
+          // Computed at render time rather than stored on the request, so a
+          // period added or removed later is reflected without a backfill.
+          const _hits = restrictedPeriodsFor(req.fromDate, req.toDate, emp?.dept);
+          if(!_hits.length) return '';
+          const _blk = _hits.some(p=>[true,'true','1',1].includes(p.block));
+          const _ttl = _hits.map(p=>p.name+' ('+fDate(p.from)+' – '+fDate(p.to)+')').join(' · ');
+          return `<div class="txs" style="margin-top:3px"><span title="${_ttl.replace(/"/g,'&quot;')}" style="font-size:10px;padding:1px 6px;border-radius:8px;white-space:nowrap;background:${_blk?'var(--red-light)':'var(--amber-light)'};color:${_blk?'var(--red-deep)':'var(--amber-deep)'};font-weight:600">${_blk?'⛔ Blocked period':'⚠ Not recommended'}</span></div>`;
+        })()}
+      </td>
       <td style="padding:10px 12px;font-size:12.5px">${fDate(req.toDate)}</td>
       <td style="padding:10px 12px;text-align:center;font-size:13px;font-weight:500">${req.type==='permission'?(()=>{const note=req.reason||'';const m=note.match(/(\d+):(\d+)\s*[–-]\s*(\d+):(\d+)/);if(m){const mins=(parseInt(m[3])*60+parseInt(m[4]))-(parseInt(m[1])*60+parseInt(m[2]));const h=Math.floor(mins/60),min=mins%60;return h>0?(h+'h'+(min>0?' '+min+'m':'')):(min+'m');}return req.days+'d';})():req.days+'d'}</td>
       <td style="padding:10px 12px;font-size:12px;color:var(--text3)">${req.createdAt ? fDate(req.createdAt.slice(0,10)) : '—'}</td>
