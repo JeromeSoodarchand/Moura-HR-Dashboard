@@ -20491,7 +20491,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761229';
+const _APP_VERSION = '1780761230';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -24134,7 +24134,7 @@ function renderLeaveBalances(){
   const tbody = document.getElementById('leave-balances-tbody');
   if(!tbody) return;
   const emps = getScopedLeaveEmps();
-  if(!emps.length){ tbody.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:16px">No employees</td></tr>'; return; }
+  if(!emps.length){ tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:16px">No employees</td></tr>'; return; }
   tbody.innerHTML = emps.map(emp=>{
     const b = getEmpBalance(emp.id);
     const c = aColor(emp.name);
@@ -24164,10 +24164,18 @@ function renderLeaveBalances(){
         <div style="font-size:13px;font-weight:600;color:var(--navy)">${(b.byType?.family_medical?.remaining??b.remFamilyMedical??5)}<span style="color:var(--text3);font-weight:400"> / 5</span></div>
         ${bar(b.byType?.family_medical?.used||b.usedFamilyMedical||0,5)}
       </td>
-      <td>
-        <div style="font-size:13px;font-weight:600;color:var(--navy)">${b.remCasual}<span style="color:var(--text3);font-weight:400"> / ${b.casual}</span></div>
-      </td>
-      <td class="tm">${(parseFloat(b.usedSick)||0)+(parseFloat(b.usedCasual)||0)+(parseFloat(b.byType?.employer_local?.used)||0)} days</td>
+      <!-- The Casual cell that stood here had no matching <th>, so every column
+           from this point on was displayed one place left of its own heading:
+           the figure under "Used This Year" was actually Casual, and the real
+           usage figure sat under "Actions". Casual is one of the types
+           getLEAVE_TYPES() filters out as retired -- zero requests group-wide --
+           so the cell is removed rather than given a heading. -->
+      <!-- Sums every type deductLeaveBalance() can draw from, so the figure
+           matches what has actually been taken off a balance. It previously
+           counted sick, casual and annual only -- casual is retired, and
+           vacation and family medical were left out. -->
+      <td class="tm">${(['sick','employer_local','annual','vacation','family_medical']
+            .reduce((t,k)=>t+(parseFloat(b.byType?.[k]?.used)||0),0))} days</td>
       <td>${canEdit()?`<button class="btn btn-xs" onclick="openEditBalance('${emp.id}')">Edit</button>`:'—'}</td>
     </tr>`;
   }).join('');
