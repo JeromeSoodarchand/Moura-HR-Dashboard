@@ -20569,7 +20569,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761233';
+const _APP_VERSION = '1780761235';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -23643,12 +23643,49 @@ async function dbSaveLeaveBalance(empId, balances){
     // Check if row exists first — custom REST client doesn't support onConflict
     const {data:existing2} = await _sb.from('leave_balances').select('id').eq('emp_id',String(eid)).limit(1);
     const existingId = Array.isArray(existing2) ? existing2[0]?.id : existing2?.id;
+
+    // This function writes money. It previously discarded the result of both
+    // branches -- no error was captured, let alone acted on -- so a failed or
+    // zero-row write looked identical to a successful one and HR was shown
+    // "Leave balance updated." either way. Now: capture the error, and then
+    // READ THE ROW BACK and confirm it holds what we wrote. A successful-looking
+    // UPDATE that matched no row is a real failure mode in this app (it is what
+    // let the reconciler loop run for four days), and only a read catches it.
     if(existingId){
-      await _sb.from('leave_balances').update(row).eq('id', String(existingId));
+      const {error} = await _sb.from('leave_balances').update(row).eq('id', String(existingId));
+      if(error) throw new Error(error.message || 'balance update rejected');
     } else {
-      await _sb.from('leave_balances').insert(row);
+      const {error} = await _sb.from('leave_balances').insert(row);
+      if(error) throw new Error(error.message || 'balance insert rejected');
     }
-  } catch(e){ console.error('Save leave balance error:',e); }
+
+    const {data:check, error:checkErr} = await _sb.from('leave_balances')
+      .select('emp_id,annual,sick,casual,employer_local,family_medical,vacation,bank_sick')
+      .eq('emp_id', String(eid)).limit(1);
+    if(checkErr) throw new Error(checkErr.message || 'could not verify the saved balance');
+    const saved = Array.isArray(check) ? check[0] : check;
+    if(!saved) throw new Error('balance did not save — no row found for this employee afterwards');
+
+    // Compare every field we set. Numeric compare, so '5' and '5.0' agree.
+    const same = (a,b) => {
+      if(a===null||a===undefined||a==='') return b===null||b===undefined||b==='';
+      const x=parseFloat(a), y=parseFloat(b);
+      return (isNaN(x)||isNaN(y)) ? String(a)===String(b) : x===y;
+    };
+    const mismatched = ['annual','sick','casual','employer_local','family_medical','vacation']
+      .filter(f => !same(row[f], saved[f]));
+    if(mismatched.length){
+      throw new Error('balance did not save — '+mismatched.join(', ')+
+        ' still read back as before. The write reported success but changed nothing.');
+    }
+    return true;
+  } catch(e){
+    // Re-thrown, not swallowed: every caller that shows the user a result needs
+    // to know this failed. renderLeaveBalances' editor already catches and
+    // toasts, so the message above reaches HR directly.
+    console.error('Save leave balance error:',e);
+    throw e;
+  }
 }
 
 // ── Business logic ────────────────────────────────────────────────────────────
@@ -23930,6 +23967,40 @@ async function reconcileWorkerApprovals(){
       try{
         const emp   = gE(req.empId);
         const label = getLEAVE_TYPES()[req.type]?.label || req.type;
+
+        // ── CLAIM THE REQUEST FIRST, AND PROVE THE CLAIM STUCK ──────────────
+        // This used to run last. The side effects went out, then the stamp was
+        // attempted, and "no error" was taken as "stamped". It was not: the
+        // stamp never once persisted, 17 requests were replayed on every single
+        // renderLeave() for up to four days, each replay re-emailed the employee
+        // AND re-ran the non-idempotent balance deduction, and ten people's
+        // balances were ground down to zero.
+        //
+        // So: stamp, then READ IT BACK. A successful-looking write that changed
+        // no row is the exact failure this has to catch, and only a read proves
+        // otherwise. Nothing irreversible happens until the claim is confirmed.
+        const stamp = new Date().toISOString();
+        const {error: claimErr} = await _sb.from('leave_requests')
+          .update({ side_effects_at: stamp }).eq('id', req.id);
+        if(claimErr) throw claimErr;
+
+        const {data: check, error: checkErr} = await _sb.from('leave_requests')
+          .select('id,side_effects_at').eq('id', req.id).limit(1);
+        if(checkErr) throw checkErr;
+        if(!check || !check[0] || !check[0].side_effects_at){
+          // The update reported success and changed nothing. Do NOT carry on:
+          // the side effects would be repeated on every render from here.
+          console.error('[Leave] could not claim request '+req.id+
+            ' — side_effects_at did not persist. Side effects skipped so they '+
+            'are not repeated. Nothing has been emailed or deducted.');
+          dbAddAudit('System',
+            `Email approval for request ${req.id} could not be settled — the `+
+            `side_effects_at stamp did not persist. Side effects were skipped, `+
+            `not repeated. Needs looking at.`
+          ).catch(()=>{});
+          continue;
+        }
+
         await deductLeaveBalance(req);
         await createLeaveAttendanceRecords(req);
         await dbSaveEvent({
@@ -23954,10 +24025,8 @@ async function reconcileWorkerApprovals(){
           await emailLeaveResultToEmployee(emp, req, true, '').catch(()=>{});
         }
 
-        const stamp = new Date().toISOString();
-        const {error} = await _sb.from('leave_requests')
-          .update({ side_effects_at: stamp }).eq('id', req.id);
-        if(error) throw error;
+        // Settled. The DB was stamped and verified before any of the above, so
+        // this only brings the in-memory copy into line.
         req.sideEffectsAt = stamp;
         dbAddAudit(req.hrApprovedBy || 'Email approval',
           `Email approval settled for ${emp?.name||req.empId} — ${label}, ${req.days}d: balance deducted and records created`
@@ -24251,7 +24320,15 @@ async function editBankSick(empId, empName, current){
   const bal = {...(_leaveBalances?.[String(empId)] || _leaveBalances?.[empId] || {})};
   bal.bankSick = newVal;
   bal.bank_sick = newVal;   // dbSaveLeaveBalance accepts either spelling
-  await dbSaveLeaveBalance(empId, bal);
+  // dbSaveLeaveBalance throws if the write did not persist, so the success
+  // toast below can only be reached when the figure is actually saved.
+  try{
+    await dbSaveLeaveBalance(empId, bal);
+  }catch(e){
+    hideLoader();
+    toast('Bank sick NOT saved for '+empName+': '+(e.message||e),'error');
+    return;
+  }
   _leaveBalances = await dbGetLeaveBalances().catch(()=>_leaveBalances);
   renderLeaveBalances();
   toast(`Bank sick updated for ${empName}: ${newVal} days`,'success');
@@ -29225,6 +29302,24 @@ async function deductLeaveBalance(req){
     const label = getLEAVE_TYPES()[req.type]?.label || req.type;
     const who   = gE(req.empId)?.name || req.empId;
 
+    // NOT IDEMPOTENT by nature -- it subtracts days from whatever is currently
+    // stored -- so a second call for the same request silently takes the days
+    // twice, and Math.max() floors the result at zero without complaint. That
+    // is how thirteen people's balances were damaged in October 2026: a replay
+    // loop called this on every page render.
+    //
+    // sideEffectsAt is set once a request has been settled, so its presence
+    // means this deduction has already happened. Refuse, and say so. Callers
+    // that settle a request must claim it first and only then deduct, which is
+    // what reconcileWorkerApprovals() does.
+    if(req.sideEffectsAt){
+      dbAddAudit('System',
+        `Refused a repeat balance deduction: ${label}, ${days} day(s) for ${who} `+
+        `(request ${req.id}) was already settled at ${req.sideEffectsAt}.`
+      ).catch(()=>{});
+      return;
+    }
+
     // Leave type -> the column in leave_balances it draws down. Only columns
     // that actually exist are listed; vacation, casual and family_medical were
     // missing even though the table has them, so those three would have been
@@ -29285,7 +29380,17 @@ async function deductLeaveBalance(req){
 
     bal[field] = Math.max(0, current - days);
     await dbSaveLeaveBalance(String(req.empId), bal);
-  } catch(e){ console.warn('Balance deduct error:', e); }
+  } catch(e){
+    // A deduction that fails leaves the request approved with the days never
+    // taken off. That used to be a console line nobody reads; it is now in the
+    // audit log, because the alternative is an entitlement quietly overstated.
+    console.warn('Balance deduct error:', e);
+    dbAddAudit('System',
+      `Balance NOT deducted for ${gE(req.empId)?.name || req.empId} — `+
+      `${getLEAVE_TYPES()[req.type]?.label || req.type}, ${req.days} day(s), `+
+      `request ${req.id}: ${e && e.message ? e.message : e}`
+    ).catch(()=>{});
+  }
 }
 
 // ── Rebuild renderLeaveTable with approval actions ─────────────────────────────
