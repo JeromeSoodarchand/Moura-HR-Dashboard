@@ -16165,7 +16165,7 @@ function _reportException(emps,att,from,to){
     if(!r.clockOut) rows.push({emp,date:r.date,type:'Missing Clock-out',detail:`Clocked in ${fmtTime(r.clockIn)} — no clock-out recorded`,severity:'high'});
     else if((r.durationMinutes||0)<240) rows.push({emp,date:r.date,type:'Short Shift',detail:`Only ${fmtDuration(r.durationMinutes)} worked`,severity:'medium'});
     else {
-      const shift=getEmpShift(emp);
+      const shift=getEmpShift(emp,r.clockIn);
       const [lh,lm]=shift.startTime.split(':').map(Number);
       const ci=new Date(r.clockIn);
       if(ci.getHours()*60+ci.getMinutes()>lh*60+lm+30)
@@ -16332,7 +16332,7 @@ function _reportLateness(emps,att,from,to){
   att.filter(r=>r.clockIn&&r.location!=='Leave'&&r.location!=='Permission').forEach(r=>{
     const emp=gE(r.empId);
     if(!emp) return;
-    const shift=getEmpShift(emp);
+    const shift=getEmpShift(emp,r.clockIn);
     const [lh,lm]=shift.startTime.split(':').map(Number);
     const ci=new Date(r.clockIn);
     const ciMins=ci.getHours()*60+ci.getMinutes();
@@ -16453,7 +16453,7 @@ function exportHRReportCSV(){
     headers=['Employee','Dept','Date','Clock In','Minutes Late'];
     att.filter(r=>r.clockIn&&r.location!=='Leave').forEach(r=>{
       const emp=gE(r.empId); if(!emp) return;
-      const shift=getEmpShift(emp);
+      const shift=getEmpShift(emp,r.clockIn);
       const [lh,lm]=shift.startTime.split(':').map(Number);
       const ci=new Date(r.clockIn);
       const lateMins=(ci.getHours()*60+ci.getMinutes())-(lh*60+lm)-30;
@@ -16874,12 +16874,55 @@ async function dbGetShifts(){
   } catch(e){ return []; }
 }
 
-// Use employee's shift for lateness/duration calculation
-function getEmpShift(emp){
+// Use employee's shift for lateness/duration calculation.
+//
+// Pass a clockIn to get the shift the employee was ACTUALLY on for that record.
+// Staff on a rotation cannot be described by one shift on their record -- MTI's
+// Meet & Greet and Call Centre officers work day shifts AND 17:00-08:30 nights
+// in the same week -- so pinning them to either one makes the other read as
+// wildly late or wildly early. With a clockIn, the company shift whose start
+// time is nearest that clock-in wins; nearness is measured on a 24-hour circle
+// so a 23:50 clock-in matches a 00:00 shift rather than an 08:30 one.
+//
+// Without a clockIn the behaviour is the employee's named shift, as before.
+function getEmpShift(emp, clockIn){
   if(!emp) return {startTime:'08:30', endTime:'17:00', crossesMidnight:false};
+  // The employee's own columns, not an arbitrary company shift: the previous
+  // `|| compShifts[0]` fallback silently put anyone whose shiftName no longer
+  // matched a defined shift onto whichever shift happened to be listed first.
+  const own = {startTime: emp.shiftStart||'08:30', endTime: emp.shiftEnd||'17:00', crossesMidnight:false};
   const compShifts = (_cache.shifts||[]).filter(s=>String(s.companyId)===String(emp.companyId));
-  const shift = compShifts.find(s=>s.name===emp.shiftName) || compShifts[0];
-  return shift || {startTime: emp.shiftStart||'08:30', endTime: emp.shiftEnd||'17:00', crossesMidnight:false};
+  if(!compShifts.length) return own;
+  const named = compShifts.find(s=>s.name===emp.shiftName);
+  if(!clockIn) return named || own;
+
+  const t = new Date(clockIn);
+  if(isNaN(t)) return named || own;
+  const mins = t.getHours()*60 + t.getMinutes();
+  // NEAREST START TIME, on a 24-hour circle so a 23:50 clock-in matches a 00:00
+  // shift rather than an 08:30 one.
+  //
+  // Deliberately NOT "the shift whose window contains the clock-in". MTI's night
+  // staff clock in around 16:45 -- fifteen minutes BEFORE their 17:00 night
+  // shift opens, and still inside the 08:30-17:00 day window. Containment would
+  // hand every one of those records to the day shift, which is the bug this is
+  // here to fix. People clock in near the start of the shift they are starting,
+  // so distance to the start is the signal that actually separates the two.
+  // On a tie the employee's OWN named shift wins. MTI defines both "Office"
+  // (08:30-16:30) and "Roster Day" (08:30-17:00): identical starts, different
+  // ends, so an 08:40 clock-in is equidistant and whichever happened to be
+  // listed first would otherwise decide the shift end the auto-fix stamps.
+  let best = null, bestGap = Infinity;
+  for(const s of compShifts){
+    const m = String(s.startTime||'').match(/^(\d{1,2}):(\d{2})/);
+    if(!m) continue;
+    let gap = Math.abs(mins - ((+m[1])*60 + (+m[2])));
+    if(gap > 720) gap = 1440 - gap;
+    if(gap < bestGap || (gap === bestGap && named && s.name === named.name)){
+      bestGap = gap; best = s;
+    }
+  }
+  return best || named || own;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -20526,7 +20569,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761232';
+const _APP_VERSION = '1780761233';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -20859,7 +20902,37 @@ async function getGPSLocation(opts){
 }
 
 function fmtTime(isoStr){ if(!isoStr)return '—'; return new Date(isoStr).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); }
-function calcDuration(ci,co){ if(!ci||!co)return null; return Math.round((new Date(co)-new Date(ci))/60000); }
+function calcDuration(ci,co){
+  if(!ci||!co) return null;
+  const mins = Math.round((new Date(co)-new Date(ci))/60000);
+  // A negative span means the clock-out was stamped on the wrong calendar day.
+  // Report it as OPEN rather than as negative time: a negative duration makes
+  // calcShiftPay return no segments at all, so the shift pays nothing, while
+  // the record still looks present on screen. Open is the honest state and the
+  // anomaly check already surfaces it.
+  return (isFinite(mins) && mins >= 0) ? mins : null;
+}
+
+// Build a clock-out timestamp from a time of day, rolling to the NEXT calendar
+// day when that time falls at or before the clock-in.
+//
+// Without this, a night shift's 08:30 end stamped on the clock-in's own date
+// lands twelve hours BEFORE a 17:00 clock-in. Every caller that turns a
+// time-of-day into a clock-out needs it: manual entry, the anomaly fix, and the
+// bulk auto-fix. Returns null on unparseable or out-of-range input so callers
+// can refuse rather than write a broken timestamp.
+function buildClockOut(clockInISO, timeStr){
+  if(!clockInISO || !timeStr) return null;
+  const m = String(timeStr).match(/^(\d{1,2}):(\d{2})/);
+  if(!m) return null;
+  const h = +m[1], mi = +m[2];
+  if(h<0 || h>23 || mi<0 || mi>59) return null;
+  const ci = new Date(clockInISO);
+  if(isNaN(ci)) return null;
+  const co = new Date(ci.getFullYear(), ci.getMonth(), ci.getDate(), h, mi, 0, 0);
+  if(co <= ci) co.setDate(co.getDate()+1);
+  return co.toISOString();
+}
 function fmtDuration(mins){ if(!mins)return '—'; const h=Math.floor(mins/60),m=mins%60; return h>0?h+'h '+m+'m':m+'m'; }
 function todayStr(){
   // Use local date, not UTC — important for Mauritius (UTC+4)
@@ -21266,7 +21339,7 @@ function renderAttMetrics(){
   const todays = _attendance.filter(r=>r.date===todayStr());
   const active = todays.filter(r=>!r.clockOut).length;
   const avgMins = todays.filter(r=>r.durationMinutes).reduce((s,r)=>s+(parseFloat(r.durationMinutes)||0),0)/(todays.filter(r=>r.durationMinutes).length||1);
-  const late = todays.filter(r=>{ if(!r.clockIn) return false; const _e=gE(r.empId);const _s=getEmpShift(_e);const [_h,_m]=_s.startTime.split(':').map(Number);return (new Date(r.clockIn).getHours()*60+new Date(r.clockIn).getMinutes())>(_h*60+_m+30); }).length;
+  const late = todays.filter(r=>{ if(!r.clockIn) return false; const _e=gE(r.empId);const _s=getEmpShift(_e,r.clockIn);const [_h,_m]=_s.startTime.split(':').map(Number);return (new Date(r.clockIn).getHours()*60+new Date(r.clockIn).getMinutes())>(_h*60+_m+30); }).length;
   el.innerHTML =
     '<div class="att-card"><div class="att-card-accent" style="background:var(--green)"></div><div class="att-card-label">On site now</div><div class="att-card-value">'+active+'</div><div class="att-card-sub">employees clocked in</div></div>'+
     '<div class="att-card"><div class="att-card-accent" style="background:var(--navy)"></div><div class="att-card-label">Clock-ins today</div><div class="att-card-value">'+todays.length+'</div><div class="att-card-sub">total records today</div></div>'+
@@ -21393,7 +21466,7 @@ async function renderAttendanceReport(){
     const pct = Math.min(100,Math.round(dur/480*100));
     const barColor = pct>=90?'var(--green)':pct>=50?'var(--amber)':'var(--red)';
     const anom = isAnomalous(r);
-    const _empForLate=gE(r.empId);const _shiftForLate=getEmpShift(_empForLate);const [_lh,_lm]=_shiftForLate.startTime.split(':').map(Number);const isLate=r.clockIn&&(new Date(r.clockIn).getHours()*60+new Date(r.clockIn).getMinutes())>(_lh*60+_lm+30);
+    const _empForLate=gE(r.empId);const _shiftForLate=getEmpShift(_empForLate,r.clockIn);const [_lh,_lm]=_shiftForLate.startTime.split(':').map(Number);const isLate=r.clockIn&&(new Date(r.clockIn).getHours()*60+new Date(r.clockIn).getMinutes())>(_lh*60+_lm+30);
     const rowBg  = anom.flag ? 'background:#FAEEDA33' : '';
     const onSite = !r.clockOut;
     return `<tr style="border-bottom:1px solid var(--border);${rowBg}">
@@ -26105,15 +26178,19 @@ async function anomalyClockOut(recId, rowIdx){
   // Prompt for clock-out time
   const timeInput = prompt('Enter clock-out time (HH:MM):', '17:00');
   if(!timeInput) return;
-  const [h,m] = timeInput.split(':').map(Number);
-  if(isNaN(h)||isNaN(m)||h<0||h>23||m<0||m>59){ toast('Invalid time.','error'); return; }
 
-  const coDate = new Date(rec.clockIn);
-  coDate.setHours(h,m,0,0);
-  if(coDate <= new Date(rec.clockIn)){ toast('Clock-out must be after clock-in.','error'); return; }
+  // Roll past midnight rather than refusing: a clock-out time at or before the
+  // clock-in is how every overnight shift looks, and the old check rejected all
+  // of them outright.
+  const co = buildClockOut(rec.clockIn, timeInput);
+  if(!co){ toast('Invalid time — use HH:MM, 00:00 to 23:59.','error'); return; }
+  const mins = calcDuration(rec.clockIn, co);
+  if(mins === null){ toast('Could not work out that span.','error'); return; }
+  if(mins > 16*60 && !confirm('That gives a shift of '+(mins/60).toFixed(1)+
+      ' hours, ending '+fmtTime(co)+' the next day. Save it?')) return;
 
-  rec.clockOut = coDate.toISOString();
-  rec.durationMinutes = calcDuration(rec.clockIn, rec.clockOut);
+  rec.clockOut = co;
+  rec.durationMinutes = mins;
   rec.notes = (rec.notes?rec.notes+' | ':'')+'Clock-out set by HR ('+CU.name+')';
   const idx = local.findIndex(r=>String(r.id)===String(recId));
   if(idx>=0) local[idx]=rec;
@@ -26132,22 +26209,27 @@ async function anomalyAddRecord(empId, date, rowIdx){
   if(!inTime) return;
   const outTime = prompt('Clock-out time (HH:MM, or leave blank if still open):', '17:00');
 
-  const [ih,im] = inTime.split(':').map(Number);
-  if(isNaN(ih)||isNaN(im)){ toast('Invalid time.','error'); return; }
+  const im0 = String(inTime).match(/^(\d{1,2}):(\d{2})/);
+  if(!im0){ toast('Invalid clock-in time — use HH:MM.','error'); return; }
+  const ih = +im0[1], im = +im0[2];
+  if(ih<0||ih>23||im<0||im>59){ toast('Clock-in time out of range.','error'); return; }
 
   const ci = new Date(date+'T'+String(ih).padStart(2,'0')+':'+String(im).padStart(2,'0')+':00');
-  let co = null, dur = null;
+  if(isNaN(ci)){ toast('Invalid date.','error'); return; }
+  let coISO = null, dur = null;
   if(outTime){
-    const [oh,om] = outTime.split(':').map(Number);
-    if(!isNaN(oh)&&!isNaN(om)){
-      co = new Date(date+'T'+String(oh).padStart(2,'0')+':'+String(om).padStart(2,'0')+':00');
-      dur = calcDuration(ci.toISOString(), co.toISOString());
-    }
+    // Built from the clock-in, so an earlier time of day rolls to the next day
+    // instead of producing a negative shift.
+    coISO = buildClockOut(ci.toISOString(), outTime);
+    if(!coISO){ toast('Invalid clock-out time — use HH:MM.','error'); return; }
+    dur = calcDuration(ci.toISOString(), coISO);
+    if(dur !== null && dur > 16*60 &&
+       !confirm('That gives a shift of '+(dur/60).toFixed(1)+' hours. Save it?')) return;
   }
 
   const rec = {
     id:Date.now(), empId, clockIn:ci.toISOString(),
-    clockOut:co?co.toISOString():null,
+    clockOut:coISO,
     date, durationMinutes:dur,
     location:'Manual entry', notes:'Added manually by HR ('+CU.name+')'
   };
@@ -27667,10 +27749,28 @@ async function addAttRecord(empId, periodFrom, reviewIdx){
   const ciStr = prompt('Clock-in time (HH:MM):','08:00');
   if(!ciStr) return;
   const coStr = prompt('Clock-out time (HH:MM, blank if open):','17:00');
-  const ci = new Date(date+'T'+ciStr+':00').toISOString();
-  const co = coStr ? new Date(date+'T'+coStr+':00').toISOString() : null;
+
+  // This path had no validation at all: whatever was typed went straight into a
+  // timestamp string. That is how one record ended up holding the literal text
+  // '<HH:MM>' in place of a clock-out.
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(date).trim())){
+    toast('Invalid date — use YYYY-MM-DD.','error'); return;
+  }
+  const cim = String(ciStr).match(/^(\d{1,2}):(\d{2})$/);
+  if(!cim || +cim[1]>23 || +cim[2]>59){ toast('Invalid clock-in time — use HH:MM.','error'); return; }
+  const ciDate = new Date(date+'T'+cim[1].padStart(2,'0')+':'+cim[2]+':00');
+  if(isNaN(ciDate)){ toast('Invalid date.','error'); return; }
+  const ci = ciDate.toISOString();
+  let co = null;
+  if(coStr){
+    co = buildClockOut(ci, coStr);
+    if(!co){ toast('Invalid clock-out time — use HH:MM.','error'); return; }
+  }
+  const dur = co ? calcDuration(ci,co) : null;
+  if(dur !== null && dur > 16*60 &&
+     !confirm('That gives a shift of '+(dur/60).toFixed(1)+' hours. Save it?')) return;
   const rec = {id:Date.now(),empId,clockIn:ci,clockOut:co,
-    durationMinutes:co?calcDuration(ci,co):null,
+    durationMinutes:dur,
     date,location:'Manual entry',notes:'Added by HR ('+CU.name+')'};
   const local=S.get('attendance',[]);
   local.push(rec);
@@ -27685,25 +27785,41 @@ async function quickFixAnomalies(idx){
   const row = _attReviewData[idx];
   if(!row) return;
   const settings = getOTSettings();
-  let fixed = 0;
+  let fixed = 0, skipped = 0;
   for(const anom of row.anomalies){
     if((anom.type==='no_clockout'||anom.type==='missing_clockout') && anom.rec){
       const rec = (_attendance||[]).find(r=>String(r.id)===String(anom.rec.id));
       if(rec && !rec.clockOut){
-        rec.clockOut = new Date(rec.date+'T'+settings.workEnd+':00').toISOString();
-        rec.durationMinutes = calcDuration(rec.clockIn, rec.clockOut);
-        rec.notes = (rec.notes?rec.notes+' | ':'')+'Auto clock-out set by HR ('+CU.name+')';
+        // End time comes from the shift this record was actually worked on, not
+        // from the company default. Stamping the company workEnd on the
+        // clock-in's own date collapsed every night shift: a 16:45 clock-in
+        // against a 16:30 workEnd produced a clock-out BEFORE the clock-in, so
+        // a 16-hour shift paid nothing. buildClockOut rolls past midnight.
+        const endStr = getEmpShift(gE(rec.empId), rec.clockIn).endTime || settings.workEnd;
+        const co = buildClockOut(rec.clockIn, endStr);
+        if(!co){ skipped++; continue; }
+        // Refuse anything implausible rather than writing it. A span this long
+        // means the clock-in itself is wrong, and auto-fixing it would bury the
+        // problem under a priced shift.
+        const mins = calcDuration(rec.clockIn, co);
+        if(mins === null || mins > 20*60){ skipped++; continue; }
+        rec.clockOut = co;
+        rec.durationMinutes = mins;
+        rec.notes = (rec.notes?rec.notes+' | ':'')+'Auto clock-out set by HR ('+CU.name+') to shift end '+endStr;
         try{
           const saved = await dbSaveAttendance(rec);
           const i = _attendance.findIndex(r=>String(r.id)===String(rec.id));
           if(i>=0) _attendance[i] = saved||rec;
           fixed++;
-        } catch(e){ console.error('quickFix error:',e); }
+        } catch(e){ console.error('quickFix error:',e); skipped++; }
       }
     }
   }
   if(fixed){
-    toast(`${fixed} clock-out(s) auto-set to ${settings.workEnd}.`,'success');
+    toast(`${fixed} clock-out(s) set to each record's own shift end.`+
+          (skipped?` ${skipped} left for manual review.`:''),'success');
+  } else if(skipped){
+    toast(`${skipped} record(s) need a clock-out set by hand — the clock-in looks wrong.`,'info');
   } else {
     toast('No auto-fixable anomalies found (only missing clock-outs can be auto-fixed).','info');
   }
