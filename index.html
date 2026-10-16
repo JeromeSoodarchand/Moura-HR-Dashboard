@@ -20491,7 +20491,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761230';
+const _APP_VERSION = '1780761231';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -22496,8 +22496,16 @@ async function exportAttendanceExcel(){
   // Apply same filters as current view
   const empSearch = (document.getElementById('att-emp-search')?.value||'').toLowerCase().trim();
   const deptF     = document.getElementById('att-dept-filter')?.value||'';
-  const fromF     = document.getElementById('att-from')?.value||'';
-  const toF       = document.getElementById('att-to')?.value||'';
+  // The date inputs are att-date-from / att-date-to. This read 'att-from' and
+  // 'att-to', which do not exist, so fromF and toF were always '' and NO date
+  // filter was applied -- the export silently returned whatever happened to be
+  // cached in _attendance. That cache is the report range only until something
+  // narrows it: opening the Live tab reloads it with TODAY only, and on entry
+  // renderAttendance() loads yesterday+today before the report range is
+  // applied. Typing a range without pressing Filter left the previous week in
+  // place, which is why a 20 Sep - 15 Oct export came back with October alone.
+  const fromF     = document.getElementById('att-date-from')?.value||'';
+  const toF       = document.getElementById('att-date-to')?.value||'';
   const scopedEmps = getScopedEmps();
   const filteredEmps = scopedEmps.filter(e=>
     e.status !== 'offboarded' &&
@@ -22505,7 +22513,15 @@ async function exportAttendanceExcel(){
     (!empSearch||e.name.toLowerCase().includes(empSearch))
   );
   const empIdSet = new Set(filteredEmps.flatMap(e=>[String(e.id),e.userId?String(e.userId):''].filter(Boolean)));
-  let list = (_attendance||[]).filter(r=>{
+
+  // Fetched for the requested range rather than read from _attendance, so the
+  // export is correct whichever sub-tab is open and whether or not Filter was
+  // pressed. The export is the figure people act on; it should not depend on
+  // what a shared cache last held.
+  const _src = (fromF || toF)
+    ? await dbGetAttendance(fromF||null, toF||null).catch(()=>_attendance||[])
+    : (_attendance||[]);
+  let list = _src.filter(r=>{
     if(!empIdSet.has(String(r.empId))) return false;
     if(fromF && r.date < fromF) return false;
     if(toF   && r.date > toF)   return false;
@@ -22644,13 +22660,21 @@ async function exportAttendanceExcel(){
 // END ATTENDANCE EXCEL EXPORT
 // ═══════════════════════════════════════════════════════════════════
 
-function exportAttendanceCSV(){
+async function exportAttendanceCSV(){
   const rows=[['Employee','Department','Date','Clock In','Clock Out','Duration','Location','Notes']];
   // Apply same filters as the current view
   const empSearch = (document.getElementById('att-emp-search')?.value||'').toLowerCase().trim();
   const deptF     = document.getElementById('att-dept-filter')?.value||'';
-  const fromF     = document.getElementById('att-from')?.value||'';
-  const toF       = document.getElementById('att-to')?.value||'';
+  // The date inputs are att-date-from / att-date-to. This read 'att-from' and
+  // 'att-to', which do not exist, so fromF and toF were always '' and NO date
+  // filter was applied -- the export silently returned whatever happened to be
+  // cached in _attendance. That cache is the report range only until something
+  // narrows it: opening the Live tab reloads it with TODAY only, and on entry
+  // renderAttendance() loads yesterday+today before the report range is
+  // applied. Typing a range without pressing Filter left the previous week in
+  // place, which is why a 20 Sep - 15 Oct export came back with October alone.
+  const fromF     = document.getElementById('att-date-from')?.value||'';
+  const toF       = document.getElementById('att-date-to')?.value||'';
   const tabEl     = document.querySelector('#page-attendance .tbb.active');
   const tab       = tabEl?.dataset?.tab||'all';
   const scopedEmps = getScopedEmps();
@@ -22659,7 +22683,14 @@ function exportAttendanceCSV(){
     (!empSearch||e.name.toLowerCase().includes(empSearch))
   );
   const empIdSet = new Set(allEmps.flatMap(e=>[String(e.id),e.userId?String(e.userId):''].filter(Boolean)));
-  let list = (_attendance||[]).filter(r=>{
+  // Fetched for the requested range rather than read from _attendance, so the
+  // export is correct whichever sub-tab is open and whether or not Filter was
+  // pressed. The export is the figure people act on; it should not depend on
+  // what a shared cache last held.
+  const _src = (fromF || toF)
+    ? await dbGetAttendance(fromF||null, toF||null).catch(()=>_attendance||[])
+    : (_attendance||[]);
+  let list = _src.filter(r=>{
     if(!empIdSet.has(String(r.empId))) return false;
     if(fromF && r.date < fromF) return false;
     if(toF   && r.date > toF)   return false;
@@ -22671,8 +22702,8 @@ function exportAttendanceCSV(){
     rows.push([emp?emp.name:'',emp?emp.dept:'',r.date,fmtTime(r.clockIn),fmtTime(r.clockOut),fmtDuration(r.durationMinutes),r.location||'',r.notes||'']);
   });
   const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='attendance_'+todayStr()+'.csv';a.click();
-  if(CU) dbAddAudit(CU.name,'Exported attendance CSV').catch(()=>{});
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='attendance_'+(fromF||'start')+'_to_'+(toF||todayStr())+'.csv';a.click();
+  if(CU) dbAddAudit(CU.name,'Exported attendance CSV for '+(fromF||'start')+' to '+(toF||todayStr())+' ('+list.length+' records)').catch(()=>{});
   toast('Attendance exported.','success');
 }
 
