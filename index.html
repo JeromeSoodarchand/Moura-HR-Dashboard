@@ -13813,10 +13813,45 @@ function _sbCreate(url, key){
             if(this._single) h['Accept'] = 'application/vnd.pgrst.object+json';
             if(url2.includes('?')) url2 += '&'+params.join('&');
             else if(params.length) url2 += '?'+params.join('&');
-            const resp = await fetch(url2, {method:'GET', headers:h});
-            const data = resp.ok ? await resp.json() : null;
-            const error = resp.ok ? null : {message: await resp.text(), code: resp.status};
-            return {data, error};
+
+            // PostgREST returns at most 1000 rows per request and says nothing
+            // about it -- the response is simply short, with no error. Every
+            // select here was a single request, so any query over that ceiling
+            // silently lost the rest. attendance (3,097 rows) and audit_log
+            // (3,490) are already past it: asking for 10 Sep - 16 Oct matched
+            // 1,769 rows, got the newest 1,000 ordered by clock_in, and
+            // September never arrived at all.
+            //
+            // So a select without an explicit .limit() or .single() pages until
+            // it has everything. One request still covers the common case: a
+            // short page ends the loop immediately.
+            const PAGE = 1000;
+            if(this._single || (this._lim && this._lim <= PAGE)){
+              const resp = await fetch(url2, {method:'GET', headers:h});
+              const data = resp.ok ? await resp.json() : null;
+              const error = resp.ok ? null : {message: await resp.text(), code: resp.status};
+              return {data, error};
+            }
+            let out = [], from = 0;
+            // A ceiling on the loop, so a mistaken filter cannot pull the whole
+            // table for ever. 100 pages is 100,000 rows -- far beyond anything
+            // this app asks for, and it warns rather than failing silently,
+            // which is the behaviour being fixed here.
+            for(let page = 0; page < 100; page++){
+              const hp = Object.assign({}, h, {'Range-Unit':'items', 'Range': from+'-'+(from+PAGE-1)});
+              const resp = await fetch(url2, {method:'GET', headers:hp});
+              if(!resp.ok){
+                return {data:null, error:{message: await resp.text(), code: resp.status}};
+              }
+              const chunk = await resp.json().catch(()=>null);
+              if(!Array.isArray(chunk)) return {data: chunk, error:null};
+              out = out.concat(chunk);
+              if(chunk.length < PAGE) return {data: out, error:null};
+              from += PAGE;
+              if(page === 99) console.warn('[sb] '+table+': stopped paging at '+out.length+
+                ' rows. Narrow the query -- results may be incomplete.');
+            }
+            return {data: out, error:null};
           } else if(this._op === 'insert'){
             const h2 = Object.assign({},h,{'Prefer':'return=representation'});
             delete h2['Accept'];
@@ -20491,7 +20526,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761231';
+const _APP_VERSION = '1780761232';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
