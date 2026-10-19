@@ -20569,7 +20569,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761235';
+const _APP_VERSION = '1780761236';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -23806,7 +23806,15 @@ async function renderManagerLeaveCalendar(){
             allEmps.push({
               id:r.id, name:r.name, dept:r.dept, role:r.role,
               status:r.status, companyId:r.company_id,
-              clockMode:r.clock_mode, isHOD:r.is_hod, isSeniorHOD:r.is_senior_hod,
+              clockMode:r.clock_mode,
+              // Coerced, exactly as rowToEmp does it. These were assigned raw,
+              // and every column in this schema is text -- so is_hod came
+              // through as the STRING "false", which is truthy. The filter
+              // below is (e.isHOD||e.isSeniorHOD), so every row merged here
+              // passed it and non-managers were listed as managers. 101 of
+              // MTI's 106 employees hold the string "false" in that column.
+              isHOD:[true,'true','1',1].includes(r.is_hod),
+              isSeniorHOD:[true,'true','1',1].includes(r.is_senior_hod),
               userId:r.user_id
             });
           }
