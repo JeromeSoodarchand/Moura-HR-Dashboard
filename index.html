@@ -20614,7 +20614,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION='1780761240';
+const _APP_VERSION='1780761241';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -21106,6 +21106,57 @@ const _ATT_LEAVE_LOCS = new Set([
   'half day','half-day','half day leave','half-day leave'
 ]);
 const _ATT_PERM_LOCS = new Set(['permission','perm','on permission']);
+
+// A leave type named in free text, or null. Used to catch the habit that put
+// five people down as working a full 9-hour day on 20 Oct 2026: managers typed
+// "Sick Leave" or "Annual Leave" into the NOTES field and left Location as
+// 'Main Entrance', so the day was recorded as worked and no balance moved.
+//
+// Matches whole type LABELS only, never the bare word "leave" -- a note like
+// "back from leave, forgot to clock" must not be read as a leave marking.
+// Longest label first, so "Annual Leave Bank" is not swallowed by "Annual
+// Leave". The parenthetical on a label ("Permission (<= 2 hours)") is stripped
+// before matching.
+function _leaveTypeInText(text){
+  // Whitespace collapsed on both sides of the comparison: people type
+  // "Sick  Leave" and "Sick\tLeave", and a label is single-spaced, so without
+  // this a double space defeats the whole check.
+  const t = String(text==null?'':text).toLowerCase().replace(/\s+/g,' ').trim();
+  if(!t) return null;
+  let types = {};
+  try{ types = getLEAVE_TYPES() || {}; }catch(e){ return null; }
+  const cands = Object.keys(types).map(k=>({
+    key:k,
+    needle:String(types[k].label||k).toLowerCase().replace(/\s*\(.*?\)\s*/g,' ').trim()
+  })).filter(c=>c.needle.length>=4 && c.needle!=='leave');
+  cands.sort((a,b)=>b.needle.length-a.needle.length);
+  const hit = cands.find(c=>t.includes(c.needle));
+  return hit ? hit.key : null;
+}
+
+// Offers to put the Location right when the notes say leave but the Location
+// does not. Returns the location, type and half to actually use. Never blocks
+// the save: the person can keep the day as worked if that is what they meant.
+function _attLeaveIntentCheck(loc, notes, type, half){
+  const out = {loc, type, half: half || 'full'};
+  const kind = _attRowKind(loc);
+  if(kind === 'leave' || kind === 'permission') return out;
+  const hit = _leaveTypeInText(notes);
+  if(!hit) return out;
+  let label = hit;
+  try{ label = getLEAVE_TYPES()[hit]?.label || hit; }catch(e){}
+  const asPerm = (hit === 'permission');
+  const snippet = String(notes||'').trim().replace(/\s+/g,' ').slice(0,70);
+  const msg =
+    `The notes say "${snippet}", which reads as ${label}.\n\n`
+  + `Location is "${loc||'(blank)'}", so this day will be recorded as WORKED`
+  + (asPerm ? '' : ' and no leave will be deducted.')
+  + `\n\nSet Location to ${asPerm?'Permission':'Leave'} and record it as ${label}?`;
+  if(!confirm(msg)) return out;        // they meant it as a worked day
+  out.loc  = asPerm ? 'Permission' : 'Leave';
+  if(!asPerm) out.type = hit;
+  return out;
+}
 
 // The leave-type and half pickers the attendance dialogs show once Location is
 // set to a leave value. One builder for every dialog, so they cannot drift.
@@ -26410,7 +26461,7 @@ async function anomalyClockOut(recId, rowIdx){
 
   const dateStr = document.getElementById('anom-date')?.value || todayStr();
   // Prompt for clock-out time
-  const timeInput = prompt('Enter clock-out time (HH:MM):', '17:00');
+  const timeInput = prompt('Enter clock-out time (HH:MM):', getWorkingHoursSettings().workEnd);
   if(!timeInput) return;
 
   // Roll past midnight rather than refusing: a clock-out time at or before the
@@ -26439,9 +26490,9 @@ async function anomalyClockOut(recId, rowIdx){
 
 async function anomalyAddRecord(empId, date, rowIdx){
   const emp = gE(empId);
-  const inTime  = prompt('Clock-in time (HH:MM):', '08:00');
+  const inTime  = prompt('Clock-in time (HH:MM):', getWorkingHoursSettings().workStart);
   if(!inTime) return;
-  const outTime = prompt('Clock-out time (HH:MM, or leave blank if still open):', '17:00');
+  const outTime = prompt('Clock-out time (HH:MM, or leave blank if still open):', '');
 
   const im0 = String(inTime).match(/^(\d{1,2}):(\d{2})/);
   if(!im0){ toast('Invalid clock-in time — use HH:MM.','error'); return; }
@@ -26547,8 +26598,8 @@ function openAttendanceEditModal(empId, dateFrom, dateTo, reviewIdx){
         <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text2)">&#43; Add / Fix Record</div>
         <div class="fr3">
           <div class="fg"><label class="fl">Date *</label><input class="fi" id="new-att-date" type="date" min="${dateFrom}" max="${dateTo}" value="${dateFrom}"></div>
-          <div class="fg"><label class="fl">Clock in *</label><input class="fi" id="new-att-ci" type="time" value="08:00"></div>
-          <div class="fg"><label class="fl">Clock out</label><input class="fi" id="new-att-co" type="time" value="17:00"></div>
+          <div class="fg"><label class="fl">Clock in *</label><input class="fi" id="new-att-ci" type="time" value="${getWorkingHoursSettings().workStart}"></div>
+          <div class="fg"><label class="fl">Clock out</label><input class="fi" id="new-att-co" type="time" value=""></div>
         </div>
         <div class="fr">
           <div class="fg"><label class="fl">Location</label><input class="fi" id="new-att-loc" value="Main Entrance" placeholder="Location"></div>
@@ -26615,13 +26666,16 @@ async function saveAttRecordEdit(recId, date, empId, reviewIdx){
 
   // Read before the overwrite — see the note in saveAttDirectEdit.
   const _wasKind = _attRowKind(rec.location);
-  const _lvType  = document.getElementById('att-edit-leave-type')?.value || '';
-  const _lvHalf  = document.getElementById('att-edit-leave-half')?.value || 'full';
+  let   _lvType  = document.getElementById('att-edit-leave-type')?.value || '';
+  let   _lvHalf  = document.getElementById('att-edit-leave-half')?.value || 'full';
+
+  const _intent = _attLeaveIntentCheck(loc, notes, _lvType, _lvHalf);
+  const _locFinal = _intent.loc; _lvType = _intent.type; _lvHalf = _intent.half;
 
   rec.clockIn  = new Date(date+'T'+ciTime+':00').toISOString();
   rec.clockOut = coTime ? new Date(date+'T'+coTime+':00').toISOString() : null;
   rec.durationMinutes = rec.clockOut ? calcDuration(rec.clockIn,rec.clockOut) : null;
-  rec.location = loc || rec.location;
+  rec.location = _locFinal || rec.location;
   rec.notes    = notes;
   const _nowKind = _attRowKind(rec.location);
 
@@ -27996,9 +28050,9 @@ async function updateAttNote(recId, note, reviewIdx){
 async function addAttRecord(empId, periodFrom, reviewIdx){
   const date  = prompt('Date (YYYY-MM-DD):');
   if(!date) return;
-  const ciStr = prompt('Clock-in time (HH:MM):','08:00');
+  const ciStr = prompt('Clock-in time (HH:MM):', getWorkingHoursSettings().workStart);
   if(!ciStr) return;
-  const coStr = prompt('Clock-out time (HH:MM, blank if open):','17:00');
+  const coStr = prompt('Clock-out time (HH:MM, blank if open):','');
 
   // This path had no validation at all: whatever was typed went straight into a
   // timestamp string. That is how one record ended up holding the literal text
@@ -30609,13 +30663,18 @@ async function saveAttDirectEdit(recId, date, empId){
   // Captured before the overwrite: the balance consequence depends on whether
   // this row represented leave BEFORE the edit as well as after it.
   const _wasKind  = _attRowKind(rec.location);
-  const _lvType   = document.getElementById('att-edit-leave-type')?.value || '';
-  const _lvHalf   = document.getElementById('att-edit-leave-half')?.value || 'full';
+  let   _lvType   = document.getElementById('att-edit-leave-type')?.value || '';
+  let   _lvHalf   = document.getElementById('att-edit-leave-half')?.value || 'full';
+
+  // Catches "leave in the notes, not in the Location". Offers to put it right
+  // and may rewrite the location and type before anything is saved.
+  const _intent = _attLeaveIntentCheck(loc, notes, _lvType, _lvHalf);
+  const _locFinal = _intent.loc; _lvType = _intent.type; _lvHalf = _intent.half;
 
   rec.clockIn  = new Date(date+'T'+ciTime+':00').toISOString();
   rec.clockOut = coTime ? new Date(date+'T'+coTime+':00').toISOString() : null;
   rec.durationMinutes = rec.clockOut ? calcDuration(rec.clockIn, rec.clockOut) : null;
-  if(loc)    rec.location = loc;
+  if(_locFinal) rec.location = _locFinal;
   if(notes !== undefined) rec.notes = notes;
   const _nowKind = _attRowKind(rec.location);
 
@@ -30675,12 +30734,12 @@ function openAddAttRecordModal(prefEmpId, prefDate){
         <input class="fi" id="add-att-date" type="date" value="${_pDate}">
       </div>
       <div class="fg"><label class="fl">Clock-in *</label>
-        <input class="fi" id="add-att-ci" type="time" value="08:00">
+        <input class="fi" id="add-att-ci" type="time" value="${getWorkingHoursSettings().workStart}">
       </div>
     </div>
     <div class="fr">
       <div class="fg"><label class="fl">Clock-out (blank = open)</label>
-        <input class="fi" id="add-att-co" type="time" value="17:00">
+        <input class="fi" id="add-att-co" type="time" value="">
       </div>
       <div class="fg"><label class="fl">Location</label>
         <input class="fi" id="add-att-loc" list="_addAttLocSuggest" value="Main Entrance" oninput="_attLeaveToggle('add-att')">
@@ -30716,6 +30775,14 @@ async function submitAddAttRecord(){
   if(!isInScope(empId) && !canEdit()){
     toast('You can only add records for your team.','error'); return;
   }
+  let _lvType = document.getElementById('add-att-leave-type')?.value || '';
+  let _lvHalf = document.getElementById('add-att-leave-half')?.value || 'full';
+  // Checked before the row is built, so a note naming a leave type can still
+  // set the location. This is the path that produced five rows on 20 Oct 2026
+  // reading "Main Entrance" with "Sick Leave" or "Annual Leave" in the notes.
+  const _intent = _attLeaveIntentCheck(loc, notes, _lvType, _lvHalf);
+  _lvType = _intent.type; _lvHalf = _intent.half;
+
   const newRec = {
     id:              Date.now(),
     empId,
@@ -30723,13 +30790,11 @@ async function submitAddAttRecord(){
     clockIn:         new Date(date+'T'+ci+':00').toISOString(),
     clockOut:        co ? new Date(date+'T'+co+':00').toISOString() : null,
     durationMinutes: co ? calcDuration(new Date(date+'T'+ci+':00').toISOString(), new Date(date+'T'+co+':00').toISOString()) : null,
-    location:        loc||'Manual entry',
+    location:        _intent.loc||'Manual entry',
     notes:           notes||('Manual record added by '+CU.name),
   };
   // A new row has no previous location, so 'real' is the right "before" value:
   // adding a row already set to Leave is a fresh marking and must deduct.
-  const _lvType = document.getElementById('add-att-leave-type')?.value || '';
-  const _lvHalf = document.getElementById('add-att-leave-half')?.value || 'full';
   const _nowKind = _attRowKind(newRec.location);
   showLoader('Saving…');
   try{
