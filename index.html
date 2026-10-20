@@ -20441,6 +20441,14 @@ function _hrAlertContent(type, d){
   const row = (label, val) => (val==null||val==='') ? '' :
     `<tr><td style="padding:6px 0;color:#6b7280;width:130px">${_esc(label)}</td><td style="padding:6px 0">${_esc(val)}</td></tr>`;
   switch(type){
+    case 'attendance_edited':
+      return {subject:`Attendance edited by a manager — ${d.employeeName} (${d.attDate})`,
+        strap:'Attendance Edited by a Manager',
+        lead:`<strong>${_esc(d.editedBy)}</strong> ${_esc(d.action)} the attendance record for `
+           + `<strong>${_esc(d.employeeName)}</strong> on ${_esc(d.attDate)}.`,
+        rows:row('Employee',d.employeeName)+row('Department',d.dept)+row('Date',d.attDate)
+            +row('Clock-in',d.clockIn)+row('Clock-out',d.clockOut)+row('Location',d.location)
+            +row('Leave effect',d.leaveEffect)+row('Edited by',d.editedBy)};
     case 'onboarding_complete':
       return {subject:`Onboarding complete — ${d.employeeName}`, strap:'Onboarding Complete',
         lead:`<strong>${_esc(d.employeeName)}</strong> has completed onboarding and is now Active.`,
@@ -20606,7 +20614,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION='1780761238';
+const _APP_VERSION='1780761240';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -21039,7 +21047,26 @@ async function renderAttendance(){
   // is still running now, and findOpenShift's MAX_OPEN_SHIFT_HOURS window could
   // never see it while the query only fetched today.
   const _ystStr = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); })();
-  const [sbRecs, locs] = await Promise.all([dbGetAttendance(_ystStr,todayStr()),dbGetLocations()]);
+  // _leaveRequests is loaded here too. The Today board reads
+  //   (_leaveRequests||[]).filter(r => r.status==='approved' && ...)
+  // and an unloaded cache reads as "nobody is on leave", so anyone on approved
+  // leave showed as late or absent. renderAttendance() reloaded employees,
+  // attendance and locations but never this, and the only other loader is an
+  // `if(!_leaveRequests)` at start-up -- an empty array is truthy, so once it
+  // was [] it never refilled until somebody opened the Leave page. Whether a
+  // person on leave appeared correctly depended on which tabs had been visited.
+  //
+  // It bit permission hardest: a permission deliberately writes no 'Leave'
+  // attendance row, it only annotates the clock-in, so a permission has
+  // nothing to fall back on and vanishes completely.
+  const [sbRecs, locs, _lvReqs] = await Promise.all([
+    dbGetAttendance(_ystStr,todayStr()),
+    dbGetLocations(),
+    dbGetLeaveRequests().catch(()=>null),
+  ]);
+  // Only replace the cache on a successful read: a failed fetch must not turn
+  // a good cache into an empty one and put everybody back to looking absent.
+  if(Array.isArray(_lvReqs)) _leaveRequests = _lvReqs;
   _attLocations = locs;
   // Merge Supabase records with local-only records not yet synced
   const local = S.get('attendance',[]);
@@ -21079,6 +21106,39 @@ const _ATT_LEAVE_LOCS = new Set([
   'half day','half-day','half day leave','half-day leave'
 ]);
 const _ATT_PERM_LOCS = new Set(['permission','perm','on permission']);
+
+// The leave-type and half pickers the attendance dialogs show once Location is
+// set to a leave value. One builder for every dialog, so they cannot drift.
+function _attLeaveFieldsHtml(prefix, curType, curHalf){
+  const opts = (typeof _manualLeaveTypeOptions==='function') ? _manualLeaveTypeOptions() : [];
+  return `
+    <div id="${prefix}-leave-wrap" style="display:none;border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:8px;background:var(--bg2)">
+      <div style="font-size:11.5px;color:var(--text3);margin-bottom:8px">
+        Marking this day as leave <strong>deducts it from the employee's balance</strong> and records an approved leave request. Changing Location back to a work location returns the days.
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Leave type *</label>
+          <select class="fs" id="${prefix}-leave-type">
+            ${opts.map(o=>`<option value="${o.key}"${o.key===curType?' selected':''}>${o.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="fg"><label class="fl">How much of the day</label>
+          <select class="fs" id="${prefix}-leave-half">
+            <option value="full"${curHalf==='full'?' selected':''}>Full day</option>
+            <option value="am"${curHalf==='am'?' selected':''}>Half day — morning</option>
+            <option value="pm"${curHalf==='pm'?' selected':''}>Half day — afternoon</option>
+          </select>
+        </div>
+      </div>
+      ${opts.length?'':'<div style="font-size:11.5px;color:var(--red)">No leave type has a balance column configured, so nothing can be deducted.</div>'}
+    </div>`;
+}
+function _attLeaveToggle(prefix){
+  const loc  = document.getElementById(prefix+'-loc');
+  const wrap = document.getElementById(prefix+'-leave-wrap');
+  if(!loc||!wrap) return;
+  wrap.style.display = (_attRowKind(loc.value)==='leave') ? 'block' : 'none';
+}
 function _attRowKind(loc){
   const k = String(loc==null?'':loc).trim().toLowerCase();
   if(_ATT_LEAVE_LOCS.has(k)) return 'leave';
@@ -26526,13 +26586,20 @@ async function openSingleAttEdit(recId, reviewIdx){
       <div class="fg"><label class="fl">Clock-out (blank = open)</label><input class="fi" id="att-edit-co" type="time" value="${co}"></div>
     </div>
     <div class="fr">
-      <div class="fg"><label class="fl">Location</label><input class="fi" id="att-edit-loc" value="${rec.location||''}"></div>
+      <div class="fg"><label class="fl">Location</label><input class="fi" id="att-edit-loc" list="_attLocSuggest" value="${rec.location||''}" oninput="_attLeaveToggle('att-edit')">
+        <datalist id="_attLocSuggest">
+          <option value="Leave">Leave — marks the day as leave and deducts the balance</option>
+          <option value="Permission">Permission — a short absence inside the day</option>
+          <option value="Manual entry">Manual entry</option>
+        </datalist></div>
       <div class="fg"><label class="fl">Notes</label><textarea class="ft" id="att-edit-notes" rows="2">${rec.notes||''}</textarea></div>
     </div>
+    ${_attLeaveFieldsHtml('att-edit', rec.type||'', 'full')}
     <div class="mf">
       <button class="btn" onclick="openAttendanceEditModal('${rec.empId}','${window._attEditFrom}','${window._attEditTo}','${reviewIdx}')">&#8592; Back</button>
       <button class="btn btn-primary" onclick="saveAttRecordEdit('${recId}','${rec.date}','${rec.empId}','${reviewIdx}')">Save</button>
     </div>`;
+  _attLeaveToggle('att-edit');
 }
 
 async function saveAttRecordEdit(recId, date, empId, reviewIdx){
@@ -26546,11 +26613,17 @@ async function saveAttRecordEdit(recId, date, empId, reviewIdx){
   let rec = (_attendance||[]).find(r=>String(r.id)===String(recId));
   if(!rec){ toast('Record not found.','error'); return; }
 
+  // Read before the overwrite — see the note in saveAttDirectEdit.
+  const _wasKind = _attRowKind(rec.location);
+  const _lvType  = document.getElementById('att-edit-leave-type')?.value || '';
+  const _lvHalf  = document.getElementById('att-edit-leave-half')?.value || 'full';
+
   rec.clockIn  = new Date(date+'T'+ciTime+':00').toISOString();
   rec.clockOut = coTime ? new Date(date+'T'+coTime+':00').toISOString() : null;
   rec.durationMinutes = rec.clockOut ? calcDuration(rec.clockIn,rec.clockOut) : null;
   rec.location = loc || rec.location;
   rec.notes    = notes;
+  const _nowKind = _attRowKind(rec.location);
 
   if(rec.clockOut && new Date(rec.clockOut)<=new Date(rec.clockIn)){
     toast('Clock-out must be after clock-in.','error'); return;
@@ -26562,9 +26635,12 @@ async function saveAttRecordEdit(recId, date, empId, reviewIdx){
     const idx = _attendance.findIndex(r=>String(r.id)===String(recId));
     if(idx>=0) _attendance[idx] = saved||rec;
     _attTodayUpsert(saved||rec);
+    const lv = await applyManualLeaveChange(saved||rec, _wasKind, _nowKind, _lvType, _lvHalf);
     hideLoader();
-    toast('Record updated.','success');
+    toast(lv.msg ? 'Record updated. '+lv.msg : 'Record updated.','success');
     dbAddAudit(CU.name,'Edited attendance: '+(gE(empId)?.name||empId)+' on '+date);
+    notifyHROfAttendanceEdit(saved||rec,'edited',lv.msg).catch(()=>{});
+    if(lv.changed){ _leaveRequests = await dbGetLeaveRequests(); }
     // Refresh the review row
     await refreshReviewRowDB(reviewIdx);
     openAttendanceEditModal(empId, window._attEditFrom, window._attEditTo, reviewIdx);
@@ -29377,6 +29453,174 @@ async function restoreLeaveBalance(req){
   } catch(e){ console.warn('Balance restore error:', e); }
 }
 
+// ── MANUAL LEAVE MARKING FROM THE ATTENDANCE EDITOR ─────────────────────────
+// Marking a day as leave now moves the balance. It does NOT write to
+// leave_balances directly: that column is a stored counter and
+// deductLeaveBalance() subtracts from whatever is there, so a second caller is
+// a second way to double-deduct -- which is what damaged thirteen balances in
+// October. Instead this creates an approved leave request and runs the same two
+// side effects the Approve button runs, so there is one deduction path, one
+// guard (sideEffectsAt), one undo, and the day shows up in the leave reports
+// rather than only on the attendance board.
+
+// Types a manual marking may use: those getLEAVE_TYPES() still offers AND that
+// deductLeaveBalance() has a column for, plus the two that deduct nothing by
+// design. Derived rather than hardcoded, so a type HR adds a column for later
+// appears here without a code change. In practice this is Sick and Annual:
+// 'annual', 'casual' and 'family_medical' have columns but are filtered out of
+// getLEAVE_TYPES() as retired.
+const _ATT_LEAVE_BALANCE_FIELDS = {
+  annual:'annual', sick:'sick', employer_local:'employer_local',
+  vacation:'vacation', casual:'casual', family_medical:'family_medical',
+};
+const _ATT_LEAVE_NO_DEDUCT = ['unpaid','menstrual'];
+function _manualLeaveTypeOptions(){
+  const types = getLEAVE_TYPES();
+  const out = [];
+  Object.keys(types).forEach(k=>{
+    if(_ATT_LEAVE_BALANCE_FIELDS[k]) out.push({key:k, label:types[k].label, deducts:true});
+  });
+  _ATT_LEAVE_NO_DEDUCT.forEach(k=>{
+    if(types[k]) out.push({key:k, label:types[k].label+' (no balance deduction)', deducts:false});
+  });
+  return out;
+}
+
+// The approved request covering this employee on this date, if any.
+function _approvedLeaveOn(empId, date){
+  return (_leaveRequests||[]).find(r=>
+    String(r.empId)===String(empId) &&
+    String(r.status||'').toLowerCase()==='approved' &&
+    r.fromDate<=date && r.toDate>=date) || null;
+}
+
+// Remaining days of a type, for the shortfall warning. Mirrors the check
+// submitLeaveRequest() already makes, so the two agree.
+function _remainingForType(empId, type){
+  try{
+    const b = getEmpBalance(empId);
+    if(!b) return null;
+    const m = {annual:b.remAnnual, sick:b.remSick, casual:b.remCasual,
+      employer_local:b.byType?.employer_local?.remaining,
+      family_medical:b.byType?.family_medical?.remaining,
+      vacation:b.byType?.vacation?.remaining};
+    const v = m[type];
+    return (v===undefined||v===null||isNaN(parseFloat(v))) ? null : parseFloat(v);
+  }catch(e){ return null; }
+}
+
+// Applies the balance consequence of an attendance row's location changing to
+// or away from a leave value. Call it AFTER the attendance row itself is saved:
+// removeLeaveAttendanceRecords() deletes rows whose location is 'Leave', and
+// the row being un-marked must already carry its new location or it is deleted
+// along with the leave it no longer represents.
+//
+// Returns {msg, changed} -- msg is shown to the person who made the edit.
+async function applyManualLeaveChange(rec, wasKind, nowKind, type, half){
+  const empId = rec.empId, date = rec.date;
+  const who   = gE(empId)?.name || empId;
+
+  // ── Marking a day as leave ───────────────────────────────────────────────
+  if(nowKind==='leave' && wasKind!=='leave'){
+    const existing = _approvedLeaveOn(empId, date);
+    if(existing){
+      // Something already accounts for this day. Deducting again would take
+      // the days twice for one absence.
+      return {changed:false, msg:`${who} already has approved leave covering ${fDate(date)} — the day is marked, no balance was deducted.`};
+    }
+    const opts = _manualLeaveTypeOptions();
+    const chosen = opts.find(o=>o.key===type) || opts[0];
+    if(!chosen) return {changed:false, msg:'No leave type is available to deduct against.'};
+    const days = (half==='full') ? 1 : 0.5;
+
+    if(chosen.deducts){
+      const rem = _remainingForType(empId, chosen.key);
+      if(rem !== null && days > rem){
+        if(!confirm(`${who} has ${rem} day(s) of ${chosen.label} remaining but this marking takes ${days}.\n\n`
+          + `The balance will be recorded as 0 rather than negative.\n\nMark it anyway?`)) {
+          return {changed:false, msg:'Leave marking cancelled — the attendance times were still saved.'};
+        }
+      }
+    }
+
+    const req = {
+      id: Date.now(),
+      empId, type: chosen.key,
+      fromDate: date, toDate: date,
+      days,
+      halfPeriod: days===0.5 ? (half==='pm' ? 'pm' : 'am') : null,
+      reason: `Marked as leave from the attendance record by ${CU?.name||'a manager'}`,
+      companyId: _COMPANY_ID || CU?.companyId || gE(empId)?.companyId || 1,
+      status:'approved',
+      hodStatus:'approved', hodApprovedBy: CU?.name||'', hodApprovedAt: new Date().toISOString(),
+      hrStatus:'approved',  hrApprovedBy: CU?.name||'',  hrApprovedAt: new Date().toISOString(),
+      requesterIsHOD:false,
+      reviewedBy: CU?.name||'',
+      reviewNote:'Created from an attendance correction',
+      createdAt: new Date().toISOString(),
+    };
+    const saved = await dbSaveLeaveRequest(req);
+    const live  = saved || req;
+    if(Array.isArray(_leaveRequests)) _leaveRequests.unshift(live);
+    // Same order the Approve button uses: deduct, then write the leave day.
+    // createLeaveAttendanceRecords() skips a date that already has attendance,
+    // so the row just edited stays as the record of the day.
+    await deductLeaveBalance(live).catch(()=>{});
+    await createLeaveAttendanceRecords(live).catch(()=>{});
+    const note = chosen.deducts ? `${days} day(s) deducted from ${chosen.label}`
+                                : `${chosen.label} — no balance deducted`;
+    dbAddAudit(CU?.name||'System',
+      `Marked ${fDate(date)} as ${chosen.label} for ${who} from the attendance record (${note})`).catch(()=>{});
+    return {changed:true, msg:`Marked as ${chosen.label}. ${note}.`};
+  }
+
+  // ── Taking the leave marking off again ───────────────────────────────────
+  if(wasKind==='leave' && nowKind!=='leave'){
+    const existing = _approvedLeaveOn(empId, date);
+    if(!existing){
+      return {changed:false, msg:'No approved leave was recorded for that day, so no days were given back.'};
+    }
+    // Flipping the status first is what stops a second refund: _approvedLeaveOn
+    // only matches an approved request, and restoreLeaveBalance has no guard of
+    // its own.
+    existing.status     = 'rejected';
+    existing.hodStatus  = 'rejected';
+    existing.hrStatus   = 'rejected';
+    existing.reviewedBy = CU?.name||'';
+    existing.reviewNote = `Un-marked from the attendance record by ${CU?.name||'a manager'}`;
+    existing.updatedAt  = new Date().toISOString();
+    await dbSaveLeaveRequest(existing);
+    await restoreLeaveBalance(existing).catch(()=>{});
+    await removeLeaveAttendanceRecords(existing).catch(()=>{});
+    dbAddAudit(CU?.name||'System',
+      `Removed the leave marking on ${fDate(date)} for ${who} from the attendance record — ${existing.days} day(s) returned`).catch(()=>{});
+    return {changed:true, msg:`Leave marking removed — ${existing.days} day(s) returned to ${who}.`};
+  }
+
+  return {changed:false, msg:''};
+}
+
+// HR sees every attendance edit a manager makes. Silent when the editor is HR
+// or admin themselves, so HR is not emailed about its own corrections.
+async function notifyHROfAttendanceEdit(rec, action, leaveNote){
+  try{
+    if(CU?.role==='admin' || CU?.role==='hr') return;
+    const to = getHREmails();
+    if(!to) return;
+    await sendHRAlert('attendance_edited', to, {
+      employeeName: gE(rec.empId)?.name || rec.empId,
+      dept:         gE(rec.empId)?.dept || '',
+      attDate:      rec.date,
+      action:       action,
+      clockIn:      rec.clockIn  ? fmtTime(rec.clockIn)  : '—',
+      clockOut:     rec.clockOut ? fmtTime(rec.clockOut) : '(open)',
+      location:     rec.location || '',
+      leaveEffect:  leaveNote || '',
+      editedBy:     CU?.name || '',
+    });
+  } catch(e){ console.warn('HR attendance notice failed:', e); }
+}
+
 // Removes the synthetic attendance rows createLeaveAttendanceRecords() wrote,
 // so an undone leave does not leave the person showing as absent.
 async function removeLeaveAttendanceRecords(req){
@@ -30328,9 +30572,9 @@ function openSingleAttEditDirect(recId){
     </div>
     <div class="fr">
       <div class="fg"><label class="fl">Location</label>
-        <input class="fi" id="att-edit-loc" list="_attLocSuggest" value="${rec.location||''}">
+        <input class="fi" id="att-edit-loc" list="_attLocSuggest" value="${rec.location||''}" oninput="_attLeaveToggle('att-edit')">
         <datalist id="_attLocSuggest">
-          <option value="Leave">Leave — marks the day as leave, not a worked day</option>
+          <option value="Leave">Leave — marks the day as leave and deducts the balance</option>
           <option value="Permission">Permission — a short absence inside the day</option>
           <option value="Manual entry">Manual entry</option>
         </datalist>
@@ -30340,6 +30584,7 @@ function openSingleAttEditDirect(recId){
         <input class="fi" id="att-edit-notes" value="${rec.notes||''}" placeholder="e.g. Manual correction">
       </div>
     </div>
+    ${_attLeaveFieldsHtml('att-edit', '', 'full')}
     <div style="background:var(--bg2);border-radius:var(--radius);padding:8px 12px;font-size:12px;color:var(--text2);margin-bottom:4px">
       Date: <strong>${fDate(rec.date)}</strong> &nbsp;·&nbsp; Employee: <strong>${emp?.name||'—'}</strong>
     </div>
@@ -30348,6 +30593,7 @@ function openSingleAttEditDirect(recId){
       <button class="btn btn-primary" onclick="saveAttDirectEdit('${recId}','${rec.date}','${rec.empId}')">Save changes</button>
     </div>`;
   document.getElementById('mb').classList.add('open');
+  _attLeaveToggle('att-edit');
 }
 
 async function saveAttDirectEdit(recId, date, empId){
@@ -30360,11 +30606,18 @@ async function saveAttDirectEdit(recId, date, empId){
   let rec = (_attendance||[]).find(r=>String(r.id)===String(recId));
   if(!rec){ toast('Record not found.','error'); return; }
 
+  // Captured before the overwrite: the balance consequence depends on whether
+  // this row represented leave BEFORE the edit as well as after it.
+  const _wasKind  = _attRowKind(rec.location);
+  const _lvType   = document.getElementById('att-edit-leave-type')?.value || '';
+  const _lvHalf   = document.getElementById('att-edit-leave-half')?.value || 'full';
+
   rec.clockIn  = new Date(date+'T'+ciTime+':00').toISOString();
   rec.clockOut = coTime ? new Date(date+'T'+coTime+':00').toISOString() : null;
   rec.durationMinutes = rec.clockOut ? calcDuration(rec.clockIn, rec.clockOut) : null;
   if(loc)    rec.location = loc;
   if(notes !== undefined) rec.notes = notes;
+  const _nowKind = _attRowKind(rec.location);
 
   if(rec.clockOut && new Date(rec.clockOut) <= new Date(rec.clockIn)){
     toast('Clock-out must be after clock-in.','error'); return;
@@ -30376,10 +30629,16 @@ async function saveAttDirectEdit(recId, date, empId){
     const idx = _attendance.findIndex(r=>String(r.id)===String(recId));
     if(idx>=0) _attendance[idx] = saved||rec;
     _attTodayUpsert(saved||rec);
+    // After the row is saved, never before: removeLeaveAttendanceRecords()
+    // deletes rows whose location is 'Leave', so an un-marked row must already
+    // carry its new location.
+    const lv = await applyManualLeaveChange(saved||rec, _wasKind, _nowKind, _lvType, _lvHalf);
     hideLoader();
     closeModal();
-    toast('Attendance record updated.','success');
+    toast(lv.msg ? 'Attendance updated. '+lv.msg : 'Attendance record updated.','success');
     dbAddAudit(CU.name,'Edited attendance for '+(gE(empId)?.name||empId)+' on '+date);
+    notifyHROfAttendanceEdit(saved||rec,'edited',lv.msg).catch(()=>{});
+    if(lv.changed){ _leaveRequests = await dbGetLeaveRequests(); }
     if(typeof renderAttTodayBoard==='function') renderAttTodayBoard();
     renderAttendanceReport();
   } catch(e){
@@ -30424,9 +30683,9 @@ function openAddAttRecordModal(prefEmpId, prefDate){
         <input class="fi" id="add-att-co" type="time" value="17:00">
       </div>
       <div class="fg"><label class="fl">Location</label>
-        <input class="fi" id="add-att-loc" list="_addAttLocSuggest" value="Main Entrance">
+        <input class="fi" id="add-att-loc" list="_addAttLocSuggest" value="Main Entrance" oninput="_attLeaveToggle('add-att')">
         <datalist id="_addAttLocSuggest">
-          <option value="Leave">Leave — marks the day as leave, not a worked day</option>
+          <option value="Leave">Leave — marks the day as leave and deducts the balance</option>
           <option value="Permission">Permission — a short absence inside the day</option>
           <option value="Manual entry">Manual entry</option>
         </datalist>
@@ -30436,11 +30695,13 @@ function openAddAttRecordModal(prefEmpId, prefDate){
     <div class="fg"><label class="fl">Notes</label>
       <input class="fi" id="add-att-notes" placeholder="e.g. Manual entry by HR">
     </div>
+    ${_attLeaveFieldsHtml('add-att', '', 'full')}
     <div class="mf">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="submitAddAttRecord()">Add Record</button>
     </div>`;
   document.getElementById('mb').classList.add('open');
+  _attLeaveToggle('add-att');
 }
 
 async function submitAddAttRecord(){
@@ -30465,15 +30726,23 @@ async function submitAddAttRecord(){
     location:        loc||'Manual entry',
     notes:           notes||('Manual record added by '+CU.name),
   };
+  // A new row has no previous location, so 'real' is the right "before" value:
+  // adding a row already set to Leave is a fresh marking and must deduct.
+  const _lvType = document.getElementById('add-att-leave-type')?.value || '';
+  const _lvHalf = document.getElementById('add-att-leave-half')?.value || 'full';
+  const _nowKind = _attRowKind(newRec.location);
   showLoader('Saving…');
   try{
     const saved = await dbSaveAttendance(newRec);
     _attendance = [...(_attendance||[]), saved||newRec];
     _attTodayUpsert(saved||newRec);
+    const lv = await applyManualLeaveChange(saved||newRec, 'real', _nowKind, _lvType, _lvHalf);
     hideLoader();
     closeModal();
-    toast('Record added successfully.','success');
+    toast(lv.msg ? 'Record added. '+lv.msg : 'Record added successfully.','success');
     dbAddAudit(CU.name,'Added attendance record for '+(gE(empId)?.name||empId)+' on '+date);
+    notifyHROfAttendanceEdit(saved||newRec,'added a record to',lv.msg).catch(()=>{});
+    if(lv.changed){ _leaveRequests = await dbGetLeaveRequests(); }
     if(typeof renderAttTodayBoard==='function') renderAttTodayBoard();
     renderAttendanceReport();
   } catch(e){
