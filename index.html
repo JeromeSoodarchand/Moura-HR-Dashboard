@@ -20606,7 +20606,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION='1780761237';
+const _APP_VERSION='1780761238';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -21062,6 +21062,30 @@ async function renderAttendance(){
 // EMPLOYEE list instead and says where each person stands today.
 const _ATT_LATE_GRACE_MIN = 30;   // matches the grace already used elsewhere
 
+// What an attendance row represents, from its location. createLeaveAttendance-
+// Records() writes exactly 'Leave' or 'Permission', but the Location field in
+// both correction dialogs is free text -- so a manager marking a day as leave
+// typed 'leave', 'On Leave', 'Annual Leave' or similar, none of which matched
+// the exact string the Today board tested for. The row fell through to "a real
+// clock-in", and because the dialog fills in 08:00 and 17:00, the day showed as
+// "Left · 08:00 – 17:00" instead of "On leave".
+//
+// Matched on an explicit list rather than "contains the word leave", so a
+// branch or site whose name happens to include it is not swallowed.
+const _ATT_LEAVE_LOCS = new Set([
+  'leave','on leave','annual leave','local leave','sick leave','unpaid leave',
+  'maternity leave','paternity leave','special leave','study leave','juror leave',
+  'compassionate leave','marriage leave','menstrual leave','annual leave bank',
+  'half day','half-day','half day leave','half-day leave'
+]);
+const _ATT_PERM_LOCS = new Set(['permission','perm','on permission']);
+function _attRowKind(loc){
+  const k = String(loc==null?'':loc).trim().toLowerCase();
+  if(_ATT_LEAVE_LOCS.has(k)) return 'leave';
+  if(_ATT_PERM_LOCS.has(k))  return 'permission';
+  return 'real';
+}
+
 function _attTodayStatus(emp, recs, leaveReq, wh, nowMins, today){
   const dow = new Date(today + 'T00:00:00').getDay();
   const wd  = emp.workDays || wh.workDays || [1,2,3,4,5];
@@ -21218,18 +21242,18 @@ function renderAttTodayBoard(){
     // A real clock-in is one the person made. The rows createLeaveAttendanceRecords()
     // writes for approved leave carry location 'Leave' (or 'Permission'), so they
     // are kept apart rather than competing for the same slot.
-    let real = mine.filter(r=>r.location!=='Leave' && r.location!=='Permission')
+    let real = mine.filter(r=>_attRowKind(r.location)==='real')
                    .sort(byLatest)[0] || null;
     // Failing that, a shift still open from yesterday -- what a night-shift
     // worker has at 06:00. findOpenShift applies the MAX_OPEN_SHIFT_HOURS
     // window, so a forgotten clock-out does not linger.
     if(!real) real = findOpenShift(emp.id, src) || null;
-    if(real && (real.location==='Leave'||real.location==='Permission')) real = null;
+    if(real && _attRowKind(real.location)!=='real') real = null;
 
     const recs = {
       real,
-      leave: mine.filter(r=>r.location==='Leave').sort(byLatest)[0] || null,
-      perm:  mine.filter(r=>r.location==='Permission').sort(byLatest)[0] || null,
+      leave: mine.filter(r=>_attRowKind(r.location)==='leave').sort(byLatest)[0] || null,
+      perm:  mine.filter(r=>_attRowKind(r.location)==='permission').sort(byLatest)[0] || null,
     };
     const lv = leaveToday.find(r=>String(r.empId)===String(emp.id)) || null;
     const st = _attTodayStatus(emp, recs, lv, wh, nowMins, today);
@@ -30304,7 +30328,13 @@ function openSingleAttEditDirect(recId){
     </div>
     <div class="fr">
       <div class="fg"><label class="fl">Location</label>
-        <input class="fi" id="att-edit-loc" value="${rec.location||''}">
+        <input class="fi" id="att-edit-loc" list="_attLocSuggest" value="${rec.location||''}">
+        <datalist id="_attLocSuggest">
+          <option value="Leave">Leave — marks the day as leave, not a worked day</option>
+          <option value="Permission">Permission — a short absence inside the day</option>
+          <option value="Manual entry">Manual entry</option>
+        </datalist>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Set this to <strong>Leave</strong> or <strong>Permission</strong> to mark the day as such. Any other value is treated as a worked day. This does not adjust the leave balance.</div>
       </div>
       <div class="fg"><label class="fl">Notes</label>
         <input class="fi" id="att-edit-notes" value="${rec.notes||''}" placeholder="e.g. Manual correction">
@@ -30394,7 +30424,13 @@ function openAddAttRecordModal(prefEmpId, prefDate){
         <input class="fi" id="add-att-co" type="time" value="17:00">
       </div>
       <div class="fg"><label class="fl">Location</label>
-        <input class="fi" id="add-att-loc" value="Main Entrance">
+        <input class="fi" id="add-att-loc" list="_addAttLocSuggest" value="Main Entrance">
+        <datalist id="_addAttLocSuggest">
+          <option value="Leave">Leave — marks the day as leave, not a worked day</option>
+          <option value="Permission">Permission — a short absence inside the day</option>
+          <option value="Manual entry">Manual entry</option>
+        </datalist>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Set this to <strong>Leave</strong> or <strong>Permission</strong> to mark the day as such. Any other value is treated as a worked day. This does not adjust the leave balance.</div>
       </div>
     </div>
     <div class="fg"><label class="fl">Notes</label>
