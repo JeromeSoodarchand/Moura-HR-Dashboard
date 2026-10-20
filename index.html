@@ -13554,6 +13554,20 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
                 <input class="fi" id="settings-hr-alert-emails" placeholder="hr@moura.com, manager@moura.com">
                 <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Comma-separated. These addresses receive automatic HR alerts (overdue training, new hires, offboarding, events).</div>
               </div>
+              <div class="fg"><label class="fl">Leave request notification email(s)</label>
+                <input class="fi" id="settings-leave-notify-emails" placeholder="arielle@valerefuneral.com, ervin@valerefuneral.com">
+                <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Comma-separated. Copied on every leave request when it is submitted, in addition to the employee's manager. Leave blank to notify the manager only.</div>
+              </div>
+              <div class="fg"><label class="fl">Maximum permission duration</label>
+                <select class="fi" id="settings-permission-max">
+                  <option value="60">1 hour</option>
+                  <option value="90">1 hour 30 minutes</option>
+                  <option value="120">2 hours</option>
+                  <option value="180">3 hours</option>
+                  <option value="240">4 hours</option>
+                </select>
+                <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Longest single permission an employee may request. Applies to this company only, on the web app and the mobile app.</div>
+              </div>
             </div>
           </div>
 
@@ -15895,7 +15909,10 @@ function showPage(id,el){
 // ─── AUDIT LOG ────────────────────────────────────────────────────────────────
 function addAudit(user,action){
   const log=S.get('audit',[]);
-  log.unshift({user,action,time:new Date().toLocaleString()});
+  // Pinned to en-GB like every other date in the app. With no locale this
+  // followed the PC's Windows regional format, so the same audit line read
+  // 10/16/2026 on one machine and 16/10/2026 on the next.
+  log.unshift({user,action,time:new Date().toLocaleString('en-GB')});
   S.set('audit',log.slice(0,100));
 }
 function renderAuditLog(){
@@ -19081,7 +19098,7 @@ function showCSVWhatsAppSummary(users){
 // addressed to anyone and the employee never saw it.
 let _myNotifs = [];
 
-function addNotif(msg,type='info'){notifs.unshift({id:Date.now(),msg,type,time:new Date().toLocaleTimeString()});renderNotifs();}
+function addNotif(msg,type='info'){notifs.unshift({id:Date.now(),msg,type,time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})});renderNotifs();}
 
 // The signed-in person's own employee id. CU.empId is set for most sessions;
 // _findHodEmp() resolves the rest (an account linked by name or user id).
@@ -19250,6 +19267,13 @@ function getSettings(){
     orgName:'',tagline:'Giving Comfort · Taking Care',
     primaryColor:'#D69328',secondaryColor:'#1E1445',logoB64:null,
     siteTitle:'SolentraHR — HR Management Platform',dateFormat:'en-GB',
+    // Per-company, because the group does not share one rule. Valere caps
+    // permission at 2 hours; the others keep 3. Stored in company_settings
+    // like every other scalar here, so it is read per _COMPANY_ID.
+    permissionMaxMinutes:180,
+    // Copied on leave requests at submission, alongside the manager. Empty
+    // means manager only, which is how every company behaved before this.
+    leaveNotifyEmails:'',
     currency:'MUR',industry:'Hospitality',regNumber:'',address:'',
     hrEmail:'',hrPhone:'',website:'',
     checklistDefaults:['Paperwork submitted','System access granted','IT equipment issued','Benefits enrolled','Manager intro done'],
@@ -19300,6 +19324,10 @@ function renderSettings(){
   document.getElementById('settings-website').value=cs.website||'';
   const alertEl2=document.getElementById('settings-hr-alert-emails');
   if(alertEl2) alertEl2.value=cs.alertEmails||cs.hrEmail||'';
+  const lnEl2=document.getElementById('settings-leave-notify-emails');
+  if(lnEl2) lnEl2.value=cs.leaveNotifyEmails||'';
+  const pmEl2=document.getElementById('settings-permission-max');
+  if(pmEl2) pmEl2.value=String(permissionMaxMinutes());
   // Colour preview
   updateColorPreview(cs.primaryColor,cs.secondaryColor);
   // Checklist defaults
@@ -19612,6 +19640,15 @@ function saveCompanySettings(){
   cs.website=document.getElementById('settings-website').value.trim();
   const alertEl=document.getElementById('settings-hr-alert-emails');
   if(alertEl) cs.alertEmails=alertEl.value.trim();
+  const lnEl=document.getElementById('settings-leave-notify-emails');
+  if(lnEl) cs.leaveNotifyEmails=lnEl.value.trim();
+  const pmEl=document.getElementById('settings-permission-max');
+  if(pmEl){
+    // Guard the parse: a blank or tampered select must not silently become 0,
+    // which would reject every permission request outright.
+    const _pm=parseInt(pmEl.value,10);
+    if(Number.isFinite(_pm)&&_pm>0) cs.permissionMaxMinutes=_pm;
+  }
   // Preserve departments (managed separately, not via the save form)
   const existingDepts=getSettings().departments;
   if(existingDepts)cs.departments=existingDepts;
@@ -20569,7 +20606,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION = '1780761236';
+const _APP_VERSION='1780761237';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -23467,13 +23504,41 @@ function normalisePhone(val){
 
 // Default balances (days per year) — Mauritius Labour Act
 // LEAVE_TYPES is now dynamic — reads from settings so HR can add/remove types
+// The longest permission this company allows, in minutes. Read through
+// getSettings() so it follows the signed-in company like every other setting.
+// Defended against a bad stored value: a company with a corrupt or missing
+// row gets the group default rather than an unlimited permission.
+function permissionMaxMinutes(){
+  const raw = getSettings().permissionMaxMinutes;
+  const n = parseInt(raw, 10);
+  return (Number.isFinite(n) && n > 0) ? n : 180;
+}
+
+// "2 hours" / "1hr 30min" — used in labels and validation messages so the
+// limit is never stated in two places that can disagree.
+function permissionMaxLabel(){
+  const m = permissionMaxMinutes(), h = Math.floor(m/60), r = m%60;
+  if(h && r) return h+'hr '+r+'min';
+  if(h)      return h+(h===1?' hour':' hours');
+  return r+'min';
+}
+
 function getLEAVE_TYPES(){
   let types = getSettings().leaveTypes;
   if(typeof types==='string'){try{types=JSON.parse(types);}catch(e){types=[];}}
   if(!Array.isArray(types)) types=[];
   types = types.filter(t => !['annual','casual','family_medical'].includes(t.key)); // removed leave types
   const obj = {};
-  types.forEach(t=>{ obj[t.key] = {label:t.label, color:t.color, bg:t.bg, maxDays:t.maxDays||0}; });
+  types.forEach(t=>{
+    // The stored permission label carried a hard-coded "< 3hrs". The limit is
+    // a per-company setting now, so the duration in the label is rebuilt from
+    // it -- otherwise Valere's saved label keeps advertising 3 hours while the
+    // form refuses anything over 2.
+    const label = (t.key === 'permission')
+      ? 'Permission (≤ ' + permissionMaxLabel() + ')'
+      : t.label;
+    obj[t.key] = {label, color:t.color, bg:t.bg, maxDays:t.maxDays||0};
+  });
   return obj;
 }
 // LEAVE_TYPES is a function call — always fresh from settings
@@ -24550,7 +24615,7 @@ function updatePermDuration(){
   const [fh,fm]=f.split(':').map(Number), [th,tm]=t.split(':').map(Number);
   const mins=(th*60+tm)-(fh*60+fm);
   if(mins<=0){ el.innerHTML='<span style="color:var(--red)">End time must be after start time</span>'; return; }
-  if(mins>180){ el.innerHTML='<span style="color:var(--red)">⚠ Permission cannot exceed 3 hours ('+Math.floor(mins/60)+'h '+mins%60+'m selected)</span>'; return; }
+  if(mins>permissionMaxMinutes()){ el.innerHTML='<span style="color:var(--red)">⚠ Permission cannot exceed '+permissionMaxLabel()+' ('+Math.floor(mins/60)+'h '+mins%60+'m selected)</span>'; return; }
   el.innerHTML='<span style="color:var(--green)">Duration: '+Math.floor(mins/60)+'h '+String(mins%60).padStart(2,'0')+'m</span>';
 }
 
@@ -24638,7 +24703,7 @@ async function submitLeaveRequest(){
     const [fh,fm]=pf.split(':').map(Number), [th,tm]=pt.split(':').map(Number);
     const mins=(th*60+tm)-(fh*60+fm);
     if(mins<=0){ toast('Permission end time must be after start time.','error'); _submittingLeave=false; return; }
-    if(mins>180){ toast('Permission cannot exceed 3 hours.','error'); _submittingLeave=false; return; }
+    if(mins>permissionMaxMinutes()){ toast('Permission cannot exceed '+permissionMaxLabel()+'.','error'); _submittingLeave=false; return; }
     // Store actual hours as days (e.g. 1.5h = 0.0625 of a day is confusing — store as hours string in reason prefix)
     permMins = mins;
   }
@@ -29633,13 +29698,28 @@ async function notifyHODofLeaveRequest(req){
   // In-app notification
   addNotif(`${emp.name} requested ${req.days}d leave — requires approval.`,'info');
 
+  // Whether an APPROVER was reachable. Computed before the copy list below is
+  // added, because the WhatsApp fallback exists to reach someone who can
+  // actually decide the request -- copying an administrator does not do that.
+  const hasEmail = hodList.some(h=>h.email);
+
+  // Per-company copy list (Company Settings -> Leave request notification
+  // email(s)). Added last and deduplicated, so it never displaces the
+  // manager/HR routing above and never double-sends to someone already on it.
+  const _copyList = [];
+  const _seen = new Set(hodList.map(h=>(h.email||'').toLowerCase()).filter(Boolean));
+  (getSettings().leaveNotifyEmails||'').split(',').map(e=>e.trim()).filter(Boolean).forEach(addr=>{
+    const key = addr.toLowerCase();
+    if(_seen.has(key)) return;
+    _seen.add(key);
+    const local = addr.split('@')[0].replace(/[._-]+/g,' ').trim();
+    _copyList.push({ name: local ? local.charAt(0).toUpperCase()+local.slice(1) : addr, email: addr });
+  });
+
   // Send email to each notifiable person
-  for(const hod of hodList){
+  for(const hod of hodList.concat(_copyList)){
     if(hod.email) await emailLeaveRequestToHOD(emp, hod, req).catch(()=>{});
   }
-
-  // If no email found, show WhatsApp fallback modal
-  const hasEmail = hodList.some(h=>h.email);
   if(!hasEmail) showHODLeaveNotifModal(req);
 }
 
