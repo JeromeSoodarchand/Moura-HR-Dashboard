@@ -1815,7 +1815,7 @@ async function mpSubmitLeave(empId, user, emp, isHOD){
   const reason = document.getElementById('mp-lv-reason')?.value||'';
   if(!from||!to){ alert('Please select dates.'); return; }
   if(to < from){ alert('End date must be after start date.'); return; }
-  const days = countWorkingDays(from, to);
+  const days = countWorkingDays(from, to, empId);
   if(days===0){ alert('No working days in selected range.'); return; }
 
   if(_mpLeaveFormType === 'menstrual'){
@@ -20614,7 +20614,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION='1780761242';
+const _APP_VERSION='1780761244';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -23933,13 +23933,43 @@ async function dbSaveLeaveBalance(empId, balances){
 }
 
 // ── Business logic ────────────────────────────────────────────────────────────
-function countWorkingDays(from, to){
+// Which weekdays this person actually works. 0=Sun..6=Sat.
+//
+// Saturday and Sunday were hardcoded as non-working everywhere leave is
+// counted, so at Valere -- a 24/7 operation -- a weekend leave request counted
+// zero days and was refused outright with "No working days in selected range".
+// A workDays setting already exists at employee AND company level and is
+// honoured by the attendance side; only the leave path ignored it.
+//
+// Employee first, then company, then Mon-Fri. An employee rostered on a
+// different pattern to the rest of the company gets their own, which is the
+// only way a 24/7 roster can be counted correctly: setting the whole company
+// to seven days would charge a week off as seven days to somebody who would
+// only have worked five of them.
+function workingDowSet(empId){
+  let wd = null;
+  try{
+    const e = empId ? gE(empId) : null;
+    if(e && Array.isArray(e.workDays) && e.workDays.length) wd = e.workDays;
+  }catch(err){}
+  if(!wd){
+    try{
+      const c = getWorkingHoursSettings().workDays;
+      if(Array.isArray(c) && c.length) wd = c;
+    }catch(err){}
+  }
+  if(!wd) wd = [1,2,3,4,5];
+  return new Set(wd.map(Number).filter(n=>n>=0&&n<=6));
+}
+
+function countWorkingDays(from, to, empId){
+  const dows = workingDowSet(empId);
   let count=0, cur=new Date(from+'T00:00:00');
   const end=new Date(to+'T00:00:00');
   while(cur<=end){
     const dow=cur.getDay();
     const ds=`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
-    if(dow!==0&&dow!==6&&!isDayHoliday(ds)&&!isDayEmployerLeave(ds)) count++;
+    if(dows.has(dow)&&!isDayHoliday(ds)&&!isDayEmployerLeave(ds)) count++;
     cur.setDate(cur.getDate()+1);
   }
   return count;
@@ -24828,7 +24858,7 @@ function updateLeaveDays(){
   const el   = document.getElementById('lv-days-info');
   if(!el||!from||!to) return;
   if(to<from){ el.innerHTML='<span style="color:var(--red)">End date must be after start date</span>'; return; }
-  const rawDays = countWorkingDays(from, to);
+  const rawDays = countWorkingDays(from, to, document.getElementById('lv-emp')?.value);
   const isHalf = document.getElementById('lv-halfday')?.checked;
   const hpRow = document.getElementById('lv-halfperiod-row');
   if(hpRow) hpRow.style.display = isHalf ? 'block' : 'none';
@@ -24854,7 +24884,7 @@ async function submitLeaveRequest(){
   const halfPeriod = isHalfDay
     ? (document.getElementById('lv-half-pm')?.checked ? 'pm' : 'am')
     : null;
-  const rawDays = countWorkingDays(from, to);
+  const rawDays = countWorkingDays(from, to, empId);
   const days = (isHalfDay && rawDays > 0) ? 0.5 : rawDays;
   if(rawDays===0 && type!=='permission'){ toast('No working days in selected range.','error'); _submittingLeave=false; return; }
 
@@ -26716,7 +26746,12 @@ async function saveAttRecordEdit(recId, date, empId, reviewIdx){
   const _locFinal = _intent.loc; _lvType = _intent.type; _lvHalf = _intent.half;
 
   rec.clockIn  = new Date(date+'T'+ciTime+':00').toISOString();
-  rec.clockOut = coTime ? new Date(date+'T'+coTime+':00').toISOString() : null;
+  // buildClockOut rolls the clock-out to the next day when the time is at or
+  // before the clock-in, which is what a night shift always looks like. Built
+  // on the clock-in's own date instead, 02:00 against a 21:00 start lands
+  // BEFORE it, and the guard below then refuses to save at all -- so a 24/7
+  // operation could not record a night shift.
+  rec.clockOut = coTime ? buildClockOut(rec.clockIn, coTime) : null;
   rec.durationMinutes = rec.clockOut ? calcDuration(rec.clockIn,rec.clockOut) : null;
   rec.location = _locFinal || rec.location;
   rec.notes    = notes;
@@ -26755,13 +26790,18 @@ async function addAttRecordFromReview(empId, reviewIdx){
   const notes = document.getElementById('new-att-notes')?.value;
   if(!date||!ci){ toast('Date and clock-in time required.','error'); return; }
 
+  const _ciISO = new Date(date+'T'+ci+':00').toISOString();
+  const _coISO = co ? buildClockOut(_ciISO, co) : null;
   const newRec = {
     id:              Date.now(),
     empId:           empId,
     date:            date,
-    clockIn:         new Date(date+'T'+ci+':00').toISOString(),
-    clockOut:        co ? new Date(date+'T'+co+':00').toISOString() : null,
-    durationMinutes: co ? calcDuration(new Date(date+'T'+ci+':00').toISOString(), new Date(date+'T'+co+':00').toISOString()) : null,
+    clockIn:         _ciISO,
+    clockOut:        _coISO,
+    // From the ROLLED clock-out, not a fresh one built on the clock-in's date:
+    // computing it again from date+co would give a negative duration for every
+    // shift that runs past midnight.
+    durationMinutes: _coISO ? calcDuration(_ciISO, _coISO) : null,
     location:        loc||'Manual entry',
     notes:           notes||'Manual record added by '+CU.name,
   };
@@ -29442,10 +29482,14 @@ async function createLeaveAttendanceRecords(req){
     const cur  = new Date(from);
     const rows = [];
 
+    // Same working-day set countWorkingDays() used to decide how many days the
+    // request was worth, so the days deducted and the days marked absent can
+    // never disagree. Hardcoding Mon-Fri here meant an approved weekend leave
+    // at a 24/7 site wrote no attendance at all.
+    const _dows = workingDowSet(req.empId);
     while(cur <= to){
       const dayOfWeek = cur.getDay();
-      // Skip weekends (0=Sun, 6=Sat)
-      if(dayOfWeek !== 0 && dayOfWeek !== 6){
+      if(_dows.has(dayOfWeek)){
         // Skip public holidays
         const dateStr = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
         if(!isDayHoliday(dateStr)){
@@ -30022,22 +30066,35 @@ async function notifyHODofLeaveRequest(req){
     )
   );
   if(directMgrEmp){
-    // Push employee record email
-    if(directMgrEmp.email && !hodList.find(h=>h.email===directMgrEmp.email))
-      hodList.push({name:directMgrEmp.name, email:directMgrEmp.email});
-    // Also check their HR user account
+    // ONE address per manager, and the login account's address wins.
+    //
+    // This pushed BOTH the employee record's email and the login account's.
+    // Deduplication is an exact string match, so two different addresses were
+    // two recipients: once Valere put personal addresses on the employee
+    // records, every manager holding a work login received two copies of every
+    // request -- and the reason line, which carries things like "Doctor
+    // appointment" and "Sick Leave - deduction on salary", went to a private
+    // mailbox outside the company.
+    //
+    // The employee record stays as the fallback for a manager with no login at
+    // all. It is still the right address for emailLeaveResultToEmployee(),
+    // which writes to the EMPLOYEE about their own request -- that is not
+    // changed here.
     const mgrUser = getUsers().find(u=>u.active&&u.empId&&String(u.empId)===String(directMgrEmp.id)&&u.email);
-    if(mgrUser && !hodList.find(h=>h.email===mgrUser.email))
-      hodList.push({name:mgrUser.name, email:mgrUser.email});
+    const _addr = (mgrUser && mgrUser.email) || directMgrEmp.email;
+    if(_addr && !hodList.find(h=>h.email===_addr))
+      hodList.push({name:(mgrUser && mgrUser.name) || directMgrEmp.name, email:_addr});
   }
 
-  // Also find the manager's HR user account by name match
-  const directMgrUser = getUsers().find(u=>
-    u.active && emp.manager &&
-    (u.name===emp.manager || (u.empId && String(u.empId)===String(directMgrEmp?.id)))
-  );
-  if(directMgrUser?.email && !hodList.find(h=>h.email===directMgrUser.email)){
-    hodList.push({name:directMgrUser.name, email:directMgrUser.email});
+  // A login matched by NAME rather than by empId -- a manager whose account was
+  // never linked to their employee record. Only consulted when nothing has been
+  // found yet, so it cannot add a second address for a manager already reached.
+  if(!hodList.length){
+    const directMgrUser = getUsers().find(u=>
+      u.active && emp.manager &&
+      (u.name===emp.manager || (u.empId && String(u.empId)===String(directMgrEmp?.id)))
+    );
+    if(directMgrUser?.email) hodList.push({name:directMgrUser.name, email:directMgrUser.email});
   }
 
   if(req.requesterIsHOD && !hodList.length){
@@ -30450,7 +30507,7 @@ async function submitEditLeave(reqId){
   if(!from||!to){ toast('Please fill all required fields.','error'); return; }
   if(new Date(to) < new Date(from)){ toast('End date must be after start date.','error'); return; }
   // Recalculate days
-  const days = countWorkingDays(from, to);
+  const days = countWorkingDays(from, to, req.empId);
   if(days <= 0){ toast('No working days in selected range.','error'); return; }
   // Reset approval — editing means it needs re-approval
   req.type       = type;
@@ -30711,7 +30768,12 @@ async function saveAttDirectEdit(recId, date, empId){
   const _locFinal = _intent.loc; _lvType = _intent.type; _lvHalf = _intent.half;
 
   rec.clockIn  = new Date(date+'T'+ciTime+':00').toISOString();
-  rec.clockOut = coTime ? new Date(date+'T'+coTime+':00').toISOString() : null;
+  // buildClockOut rolls the clock-out to the next day when the time is at or
+  // before the clock-in, which is what a night shift always looks like. Built
+  // on the clock-in's own date instead, 02:00 against a 21:00 start lands
+  // BEFORE it, and the guard below then refuses to save at all -- so a 24/7
+  // operation could not record a night shift.
+  rec.clockOut = coTime ? buildClockOut(rec.clockIn, coTime) : null;
   rec.durationMinutes = rec.clockOut ? calcDuration(rec.clockIn, rec.clockOut) : null;
   if(_locFinal) rec.location = _locFinal;
   if(notes !== undefined) rec.notes = notes;
@@ -30818,13 +30880,18 @@ async function submitAddAttRecord(){
   const _intent = _attLeaveIntentCheck(loc, notes, _lvType, _lvHalf);
   _lvType = _intent.type; _lvHalf = _intent.half;
 
+  const _ciISO = new Date(date+'T'+ci+':00').toISOString();
+  const _coISO = co ? buildClockOut(_ciISO, co) : null;
   const newRec = {
     id:              Date.now(),
     empId,
     date,
-    clockIn:         new Date(date+'T'+ci+':00').toISOString(),
-    clockOut:        co ? new Date(date+'T'+co+':00').toISOString() : null,
-    durationMinutes: co ? calcDuration(new Date(date+'T'+ci+':00').toISOString(), new Date(date+'T'+co+':00').toISOString()) : null,
+    clockIn:         _ciISO,
+    clockOut:        _coISO,
+    // From the ROLLED clock-out, not a fresh one built on the clock-in's date:
+    // computing it again from date+co would give a negative duration for every
+    // shift that runs past midnight.
+    durationMinutes: _coISO ? calcDuration(_ciISO, _coISO) : null,
     location:        _intent.loc||'Manual entry',
     notes:           notes||('Manual record added by '+CU.name),
   };
