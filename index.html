@@ -16669,7 +16669,7 @@ function openSubmitOT(){
   const emps = getScopedEmps().filter(e=>e.status!=='offboarded' && e.otEligible);
   const empOptions = emps.map(e=>`<option value="${e.id}">${e.name} — ${e.dept||''}</option>`).join('');
   openModal('submitOT');
-  document.getElementById('mb').innerHTML = `
+  _ensureModalBox('modal-box').innerHTML = `
     <div class="mh"><div class="mt">⏱ Submit Overtime Request</div><button class="mc" onclick="closeModal()">✕</button></div>
     <div class="mb-body" style="padding:20px">
       ${(CU&&(CU.role==='admin'||CU.role==='hr'))?`
@@ -17556,7 +17556,10 @@ function togCheck(id,item,val,isOff){
 
 // ─── MODALS ───────────────────────────────────────────────────────────────────
 function openModal(type,pid,pid2){
-  const mb=document.getElementById('mbox');mb.className='modal-box';
+  // _ensureModalBox, not getElementById: this threw a TypeError once #mbox had
+  // been deleted, so every modal in the session died rather than just one.
+  const mb=_ensureModalBox('modal-box');
+  if(!mb){ toast('Modal not found. Please refresh.','error'); return; }
 
   // ── ADD / EDIT EMPLOYEE ──
   if(type==='addEmployee'||type==='editEmployee'){
@@ -17967,7 +17970,35 @@ function openModal(type,pid,pid2){
   document.getElementById('mb').classList.add('open');
 }
 
-function closeModal(){document.getElementById('mb').classList.remove('open');}
+// #mb is the BACKDROP; #mbox is the white box inside it. Three functions
+// wrote their markup straight onto #mb with innerHTML, which deletes #mbox
+// from the document -- permanently, for the rest of the session. Every modal
+// after that failed: viewEmp() reported "Modal not found. Please refresh.",
+// and openModal() threw outright, because it reads #mbox without a guard.
+// Opening Submit Overtime Request and then clicking an employee reproduced it
+// exactly.
+//
+// Those three now write into #mbox like everything else, and this restores the
+// box if it is ever missing, so no future one can break the UI the same way.
+function _ensureModalBox(cls){
+  const back = document.getElementById('mb');
+  if(!back) return null;
+  let box = document.getElementById('mbox');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'mbox';
+    back.innerHTML = '';
+    back.appendChild(box);
+  }
+  if(cls !== undefined) box.className = cls;
+  return box;
+}
+
+function closeModal(){
+  const back = document.getElementById('mb');
+  if(back) back.classList.remove('open');
+  _ensureModalBox();
+}
 function updateRoleDesc(role,elId='role-desc-box'){
   const descs={admin:'Full access: manage users, view all data, offboard employees.',hr:'Can add employees, log events, manage onboarding & offboarding, view salaries, assign training.',manager:'Can view employees and events, log events for their team. Cannot view salaries or manage offboarding.',viewer:'Clock in/out only via employee screen.',kiosk:'Tablet kiosk account — opens clock-in screen immediately. No HR data access.'};
   const el=document.getElementById(elId);if(el)el.textContent=descs[role]||'';
@@ -20614,7 +20645,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION='1780761244';
+const _APP_VERSION='1780761245';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -25137,7 +25168,7 @@ function openLeaveSummaryReport(){
   const today = todayStr();
   const firstOfMonth = today.slice(0,7)+'-01';
   openModal('leaveSummaryReport');
-  document.getElementById('mb').innerHTML = `
+  _ensureModalBox('modal-box').innerHTML = `
     <div class="mh"><div class="mt">📊 Leave Summary Report</div><button class="mc" onclick="closeModal()">✕</button></div>
     <div class="mb-body" style="padding:20px">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
@@ -30945,7 +30976,7 @@ async function renderShifts(){
 
 function openAddShift(){
   openModal('addShift');
-  document.getElementById('mb').innerHTML = `
+  _ensureModalBox('modal-box').innerHTML = `
     <div class="mh"><div class="mt">⏱ Add Shift</div><button class="mc" onclick="closeModal()">✕</button></div>
     <div class="mb-body" style="padding:20px">
       <div class="fg"><label class="fl">Shift Name *</label><input class="fi" id="sh-name" placeholder="e.g. Night Shift"></div>
