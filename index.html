@@ -15584,9 +15584,20 @@ async function loginClockIn(empId, locationId, locationName){
     // so an employee whose phone refuses Location saw a normal clock-in and had
     // no idea HR would receive it as unverified.
     else if(g.status==='no_gps') toast('Clocked in, but your phone did not share its location — HR will see this as unverified. Please allow Location for this site.','error');
+    // A laptop reports a Wi-Fi fix kilometres wide. Saying "flagged for HR"
+    // there would alarm a branch admin standing at their own desk, so say
+    // plainly that the location could not be confirmed.
+    else if(g.status==='low_acc') toast('Clocked in at '+rec.location+'. This device could not confirm your location, so HR will see it as unverified.','info');
     if(!coords && !address && g.status==='unfenced') return;
     rec.lat=coords?coords.lat:null; rec.lng=coords?coords.lng:null;
-    if(address){rec.location=address;rec.notes='Auto clock-in on login | '+address;}
+    // Only let the geocoded address stand in for the chosen location when the
+    // fix is tight enough to mean it, and append it rather than replacing the
+    // notes -- this line used to overwrite the out-of-range warning that
+    // applyGeofence had just written, so a flagged record reached HR clean.
+    if(address && gpsFixIsPrecise(coords)){
+      rec.location = address;
+      rec.notes = (rec.notes ? rec.notes+' | ' : '') + address;
+    }
     dbSaveAttendance(rec).catch(()=>{});
   }).catch(()=>{});
 }
@@ -20645,7 +20656,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION='1780761245';
+const _APP_VERSION='1780761246';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -20877,19 +20888,43 @@ function distanceMetres(lat1, lng1, lat2, lng2){
   return Math.round(2 * R * Math.asin(Math.min(1, Math.sqrt(a))));
 }
 
-// status: 'ok' | 'out' | 'no_gps' | 'unfenced'
+// A reverse-geocoded address is only worth storing if the fix behind it is
+// tight enough to name a street. A laptop has no GPS chip: the browser derives
+// a position from Wi-Fi or IP that is routinely kilometres wide, and writing
+// its address over the location the person picked turns "Branch Curepipe" into
+// a wrong address with nothing left to recover the real one from.
+function gpsFixIsPrecise(coords){
+  if(!coords || coords.lat==null) return false;
+  if(coords.acc==null || coords.acc==='') return true;  // no accuracy reported — behave as before
+  const acc = parseInt(coords.acc);
+  if(isNaN(acc)) return true;
+  return acc <= GEOFENCE_DEFAULT_RADIUS;
+}
+
+// status: 'ok' | 'out' | 'low_acc' | 'no_gps' | 'unfenced'
 function evaluateGeofence(locationId, coords){
   const loc = (_attLocations||[]).find(l=>String(l.id)===String(locationId));
   if(!loc || loc.lat==null || loc.lng==null || loc.lat==='' || loc.lng===''){
-    return {status:'unfenced', distance:null, radius:null, name:loc?loc.name:''};
+    return {status:'unfenced', distance:null, radius:null, accuracy:null, name:loc?loc.name:''};
   }
   const radius = parseInt(loc.radius) || GEOFENCE_DEFAULT_RADIUS;
   if(!coords || coords.lat==null){
-    return {status:'no_gps', distance:null, radius, name:loc.name};
+    return {status:'no_gps', distance:null, radius, accuracy:null, name:loc.name};
   }
+  const accRaw = (coords.acc==null || coords.acc==='') ? null : parseInt(coords.acc);
+  const acc = (accRaw==null || isNaN(accRaw)) ? null : accRaw;
   const d = distanceMetres(parseFloat(coords.lat), parseFloat(coords.lng),
                            parseFloat(loc.lat),    parseFloat(loc.lng));
-  return {status: d<=radius ? 'ok' : 'out', distance:d, radius, name:loc.name};
+  // When the fix's own margin of error is wider than the fence, the fix cannot
+  // tell inside from outside, so asserting a breach would be a guess. Branch
+  // radii here are 50-100m and a laptop fix is commonly kilometres wide, which
+  // would flag every branch admin as out of range every morning. Record it as
+  // unverified instead -- the same standing as a refused location, visible to
+  // HR but not an accusation.
+  if(acc != null && acc > radius){
+    return {status:'low_acc', distance:d, radius, accuracy:acc, name:loc.name};
+  }
+  return {status: d<=radius ? 'ok' : 'out', distance:d, radius, accuracy:acc, name:loc.name};
 }
 
 // Stamp the outcome onto an attendance record. Returns the evaluation so the
@@ -20901,6 +20936,9 @@ function applyGeofence(rec, coords){
   if(g.status==='out'){
     rec.notes = (rec.notes ? rec.notes+' | ' : '') +
                 '⚠ Out of range: '+g.distance+'m from '+g.name+' (limit '+g.radius+'m)';
+  } else if(g.status==='low_acc'){
+    rec.notes = (rec.notes ? rec.notes+' | ' : '') +
+                'Location unverified — fix accurate to ±'+g.accuracy+'m, wider than the '+g.radius+'m limit at '+g.name;
   } else if(g.status==='no_gps'){
     rec.notes = (rec.notes ? rec.notes+' | ' : '') + 'Location unverified — no GPS';
   }
@@ -20922,7 +20960,7 @@ async function attachClockOutGPS(rec){
     rec.latOut        = coords ? coords.lat : null;
     rec.lngOut        = coords ? coords.lng : null;
     rec.locationIdOut = rec.locationId || null;
-    if(address) rec.locationOut = address;
+    if(address && gpsFixIsPrecise(coords)) rec.locationOut = address;
     await dbSaveAttendance(rec);
   }catch(e){ console.warn('Clock-out GPS:', e); }
 }
@@ -22805,9 +22843,10 @@ async function processClockAction(locationId, locationName, isClockedIn, empId){
       // so an employee whose phone refuses Location saw a normal clock-in and had
       // no idea HR would receive it as unverified.
       else if(g.status==='no_gps') toast('Clocked in, but your phone did not share its location — HR will see this as unverified. Please allow Location for this site.','error');
+      else if(g.status==='low_acc') toast('Clocked in at '+rec.location+'. This device could not confirm the location, so HR will see it as unverified.','info');
       if(!coords && !address && g.status==='unfenced') return;
       rec.lat=coords?coords.lat:null; rec.lng=coords?coords.lng:null;
-      if(address){rec.location=address;rec.notes=(rec.notes?rec.notes+' | ':'')+'GPS: '+address;}
+      if(address && gpsFixIsPrecise(coords)){rec.location=address;rec.notes=(rec.notes?rec.notes+' | ':'')+'GPS: '+address;}
       dbSaveAttendance(rec).catch(()=>{});
     }).catch(()=>{});
   }
@@ -25526,9 +25565,10 @@ async function empClockIn(empId, locationId, locationName){
       // so an employee whose phone refuses Location saw a normal clock-in and had
       // no idea HR would receive it as unverified.
       else if(g.status==='no_gps') toast('Clocked in, but your phone did not share its location — HR will see this as unverified. Please allow Location for this site.','error');
+      else if(g.status==='low_acc') toast('Clocked in at '+rec.location+'. This device could not confirm the location, so HR will see it as unverified.','info');
       if(!coords && !address && g.status==='unfenced') return;
       rec.lat=coords?coords.lat:null; rec.lng=coords?coords.lng:null;
-      if(address){rec.location=address;rec.notes=(rec.notes?rec.notes+' | ':'')+'QR clock-in | '+address;}
+      if(address && gpsFixIsPrecise(coords)){rec.location=address;rec.notes=(rec.notes?rec.notes+' | ':'')+'QR clock-in | '+address;}
       const la=S.get('attendance',[]);
       const idx=la.findIndex(r=>String(r.id)===String(rec.id));
       if(idx>=0){la[idx]=rec;S.set('attendance',la);}
@@ -26177,7 +26217,7 @@ async function kioskClockIn(emp,loc){
       if(!coords&&!address) return;
       savedRec.lat=coords?coords.lat:null;
       savedRec.lng=coords?coords.lng:null;
-      if(address){ savedRec.location=address; savedRec.notes='Kiosk PIN clock-in | '+address; }
+      if(address && gpsFixIsPrecise(coords)){ savedRec.location=address; savedRec.notes='Kiosk PIN clock-in | '+address; }
       const la2=S.get('attendance',[]);
       const idx2=la2.findIndex(r=>String(r.id)===String(savedRec.id));
       if(idx2>=0){la2[idx2]=savedRec;S.set('attendance',la2);}
