@@ -1829,6 +1829,10 @@ async function mpSubmitLeave(empId, user, emp, isHOD){
     if(!confirm(_rp.message)) return;
   }
 
+  const _mpHalf = (_mpLeaveHalf && allowsHalfDay(_mpLeaveFormType) && days > 0) ? (_mpLeaveHalfPeriod==='pm'?'pm':'am') : null;
+  const _mpOverlap = await findOverlappingLeave(empId, from, to, _mpHalf);
+  if(_mpOverlap){ alert(overlapMessage(_mpOverlap)); return; }
+
   const btn = document.getElementById('mp-submit-btn');
   if(btn){ btn.textContent = 'Submitting...'; btn.disabled = true; }
 
@@ -20656,7 +20660,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION='1780761246';
+const _APP_VERSION='1780761247';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -24032,6 +24036,51 @@ function workingDowSet(empId){
   return new Set(wd.map(Number).filter(n=>n>=0&&n<=6));
 }
 
+// Is there already a pending or approved request for this employee covering
+// any of these dates? Asked of the database rather than the page's cached
+// list: someone who logs in again and resubmits, or a phone left open for an
+// hour, would not see the first request in the cache. Until v247 the phone
+// form had no check at all and the desktop form looked only at APPROVED
+// leave, so the same day could be requested twice and, once both were
+// approved, deducted twice (Gregory COMMARMOND, 14 Nov 2026).
+// A morning and an afternoon half day on the same date do not clash.
+async function findOverlappingLeave(empId, from, to, half){
+  let rows = null;
+  if(sbReady()){
+    try{
+      const {data, error} = await _sb.from('leave_requests')
+        .select('id, type, from_date, to_date, days, half_period, status')
+        .eq('emp_id', String(empId))
+        .in('status', ['pending','approved'])
+        .lte('from_date', to)
+        .gte('to_date', from);
+      if(!error){
+        rows = (data||[]).map(r=>({id:r.id, type:r.type, fromDate:r.from_date, toDate:r.to_date,
+          days:parseFloat(r.days), halfPeriod:r.half_period, status:r.status}));
+      }
+    }catch(e){ rows = null; }
+  }
+  if(!rows){
+    rows = (_leaveRequests||[]).filter(r=>
+      String(r.empId)===String(empId) &&
+      ['pending','approved'].includes(String(r.status||'').toLowerCase()) &&
+      r.fromDate<=to && r.toDate>=from);
+  }
+  return rows.find(r=>{
+    if(half && from===to && r.fromDate===from && r.toDate===from && Number(r.days)===0.5){
+      const theirs = r.halfPeriod==='pm' ? 'pm' : 'am';
+      if(theirs !== half) return false;
+    }
+    return true;
+  }) || null;
+}
+
+function overlapMessage(o){
+  const label = (getLEAVE_TYPES()[o.type]||{}).label || o.type;
+  const when = o.fromDate===o.toDate ? fDate(o.fromDate) : fDate(o.fromDate)+' to '+fDate(o.toDate);
+  return 'There is already a '+String(o.status).toLowerCase()+' '+label+' request for '+when+'. Cancel that one first if you want to change it.';
+}
+
 function countWorkingDays(from, to, empId){
   const dows = workingDowSet(empId);
   let count=0, cur=new Date(from+'T00:00:00');
@@ -25021,13 +25070,9 @@ async function submitLeaveRequest(){
     }
   }
 
-  // Check for overlapping approved leave
-  const overlap = _leaveRequests.find(r=>
-    String(r.empId)===String(empId)&&
-    r.status==='approved'&&
-    r.fromDate<=to&&r.toDate>=from
-  );
-  if(overlap){ toast('Employee already has approved leave overlapping these dates.','error'); _submittingLeave=false; return; }
+  // Check for an overlapping pending or approved request (see findOverlappingLeave)
+  const overlap = await findOverlappingLeave(empId, from, to, isHalfDay ? halfPeriod : null);
+  if(overlap){ toast(overlapMessage(overlap),'error'); _submittingLeave=false; return; }
 
   // Determine if requester is a HOD (manager role)
   const requesterUser = getUsers().find(u=>
@@ -30225,7 +30270,7 @@ function removeJobTitle(i){var cs=getSettings();cs.jobTitles.splice(i,1);S.set('
 function renderCustomEventTypes(){var el=document.getElementById('custom-event-types-list');if(!el)return;var t=getSettings().customEventTypes||[];if(!t.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">No custom types yet. Built-in: Absence, Warning, Training, Milestone.</div>';return;}el.innerHTML='<table style="width:100%;font-size:12.5px;border-collapse:collapse"><thead><tr style="background:var(--bg2)"><th style="padding:6px 10px;text-align:left">Name</th><th style="padding:6px 10px;text-align:left">Key</th><th style="padding:6px 10px;text-align:left">Colour</th><th></th></tr></thead><tbody>'+t.map(function(x,i){return '<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 10px"><span style="background:'+(x.bg||'#f5f5f5')+';color:'+x.color+';padding:2px 8px;border-radius:20px;font-size:12px;font-weight:600">'+x.label+'</span></td><td style="padding:7px 10px;color:var(--text3)">'+x.key+'</td><td style="padding:7px 10px"><span style="display:inline-block;width:20px;height:20px;border-radius:4px;background:'+x.color+'"></span></td><td style="padding:7px 10px;text-align:right"><button class="btn btn-xs btn-danger" onclick="removeCustomEventType('+i+')">Remove</button></td></tr>';}).join('')+'</tbody></table>';}
 function addCustomEventType(){var label=document.getElementById('new-evt-label');var key=document.getElementById('new-evt-key');var colorEl=document.getElementById('new-evt-color');var lv=label&&label.value.trim();var kv=(key&&key.value.trim()||'').toLowerCase().replace(/[^a-z0-9_]/g,'_');var color=colorEl&&colorEl.value||'#6c3483';if(!lv||!kv){toast('Enter name and key.','error');return;}var cs=getSettings();if((cs.customEventTypes||[]).find(function(t){return t.key===kv;})||TCFG_BASE[kv]){toast('Key already exists.','error');return;}cs.customEventTypes=(cs.customEventTypes||[]).concat([{label:lv,key:kv,color:color,bg:color+'22'}]);S.set('companySettings',cs);if(label)label.value='';if(key)key.value='';renderCustomEventTypes();toast('Event type added.','success');}
 function removeCustomEventType(i){var cs=getSettings();cs.customEventTypes.splice(i,1);S.set('companySettings',cs);renderCustomEventTypes();}
-function populateKioskLeaveEmpSelect(){var sel=document.getElementById('kiosk-leave-emp');if(!sel)return;var emps=getEmps().filter(function(e){return e.status!=='offboarded'&&e.clockMode==='kiosk';});sel.innerHTML='<option value="">— Select employee —</option>'+emps.map(function(e){return '<option value="'+e.id+'">'+e.name+' — '+(e.dept||'')+'</option>';}).join('');}async function submitKioskLeave(){var empId=document.getElementById('kiosk-leave-emp')&&document.getElementById('kiosk-leave-emp').value;var type=document.getElementById('kiosk-leave-type')&&document.getElementById('kiosk-leave-type').value;var from=document.getElementById('kiosk-leave-from')&&document.getElementById('kiosk-leave-from').value;var to=document.getElementById('kiosk-leave-to')&&document.getElementById('kiosk-leave-to').value;var reason=(document.getElementById('kiosk-leave-reason')&&document.getElementById('kiosk-leave-reason').value)||'';if(!empId||!from||!to){toast('Fill employee and dates.','error');return;}if(to<from){toast('End date must be after start.','error');return;}var days=countWorkingDays(from,to);if(!days){toast('No working days in range.','error');return;}var req={id:Date.now(),empId:empId,type:type,fromDate:from,toDate:to,days:days,reason:reason,status:'approved',hodStatus:'approved',hodApprovedBy:CU.name,hodApprovedAt:new Date().toISOString(),hrStatus:'approved',hrApprovedBy:CU.name,hrApprovedAt:new Date().toISOString(),reviewedBy:CU.name,reviewNote:'Submitted by HR on behalf of kiosk employee',createdAt:new Date().toISOString(),submittedByHR:true};showLoader('Saving...');try{var saved=await dbSaveLeaveRequest(req);_leaveRequests.unshift(saved||req);await deductLeaveBalance(req);hideLoader();toast((gE(empId)&&gE(empId).name||'Employee')+': '+days+' day(s) leave recorded.','success');['kiosk-leave-emp','kiosk-leave-from','kiosk-leave-to','kiosk-leave-reason'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});dbAddAudit(CU.name,'Kiosk leave: '+(gE(empId)&&gE(empId).name||empId)+' '+from+' to '+to);}catch(e){hideLoader();toast('Error: '+(e.message||e),'error');}}
+function populateKioskLeaveEmpSelect(){var sel=document.getElementById('kiosk-leave-emp');if(!sel)return;var emps=getEmps().filter(function(e){return e.status!=='offboarded'&&e.clockMode==='kiosk';});sel.innerHTML='<option value="">— Select employee —</option>'+emps.map(function(e){return '<option value="'+e.id+'">'+e.name+' — '+(e.dept||'')+'</option>';}).join('');}async function submitKioskLeave(){var empId=document.getElementById('kiosk-leave-emp')&&document.getElementById('kiosk-leave-emp').value;var type=document.getElementById('kiosk-leave-type')&&document.getElementById('kiosk-leave-type').value;var from=document.getElementById('kiosk-leave-from')&&document.getElementById('kiosk-leave-from').value;var to=document.getElementById('kiosk-leave-to')&&document.getElementById('kiosk-leave-to').value;var reason=(document.getElementById('kiosk-leave-reason')&&document.getElementById('kiosk-leave-reason').value)||'';if(!empId||!from||!to){toast('Fill employee and dates.','error');return;}if(to<from){toast('End date must be after start.','error');return;}var days=countWorkingDays(from,to,empId);if(!days){toast('No working days in range.','error');return;}var _kOverlap=await findOverlappingLeave(empId,from,to,null);if(_kOverlap){toast(overlapMessage(_kOverlap),'error');return;}var req={id:Date.now(),empId:empId,type:type,fromDate:from,toDate:to,days:days,reason:reason,status:'approved',hodStatus:'approved',hodApprovedBy:CU.name,hodApprovedAt:new Date().toISOString(),hrStatus:'approved',hrApprovedBy:CU.name,hrApprovedAt:new Date().toISOString(),reviewedBy:CU.name,reviewNote:'Submitted by HR on behalf of kiosk employee',createdAt:new Date().toISOString(),submittedByHR:true};showLoader('Saving...');try{var saved=await dbSaveLeaveRequest(req);_leaveRequests.unshift(saved||req);await deductLeaveBalance(req);hideLoader();toast((gE(empId)&&gE(empId).name||'Employee')+': '+days+' day(s) leave recorded.','success');['kiosk-leave-emp','kiosk-leave-from','kiosk-leave-to','kiosk-leave-reason'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});dbAddAudit(CU.name,'Kiosk leave: '+(gE(empId)&&gE(empId).name||empId)+' '+from+' to '+to);}catch(e){hideLoader();toast('Error: '+(e.message||e),'error');}}
 
 // ── WHATSAPP HOD NOTIFICATION ────────────────────────────────────────────────
 function buildHODWhatsAppLink(emp, hodPhone, req){
