@@ -19370,6 +19370,7 @@ function renderSettings(){
   document.getElementById('settings-website').value=cs.website||'';
   const alertEl2=document.getElementById('settings-hr-alert-emails');
   if(alertEl2) alertEl2.value=cs.alertEmails||cs.hrEmail||'';
+  _renderHrEmailWarning(cs);
   const lnEl2=document.getElementById('settings-leave-notify-emails');
   if(lnEl2) lnEl2.value=cs.leaveNotifyEmails||'';
   const pmEl2=document.getElementById('settings-permission-max');
@@ -19716,6 +19717,7 @@ function saveCompanySettings(){
     Promise.all(toSave.map(([k,v])=>dbSetSetting(k, v===null||v===undefined?null:String(v))));
   }
   renderSettingsSummary(cs);
+  _renderHrEmailWarning(cs);
   toast('Company settings saved!','success');
 }
 
@@ -20529,7 +20531,7 @@ function _hrAlertContent(type, d){
 // HR alerts go through the same Cloudflare worker as the leave emails.
 // (They previously called a Supabase Edge Function named 'send-hr-alert'
 // that was never deployed, so none of them ever sent.)
-async function sendHRAlert(type, to, data){
+async function sendHRAlert(type, to, data, context){
   const cs = getSettings();
   const recipients = to || cs.hrEmail || null;
   if(!recipients){
@@ -20554,12 +20556,43 @@ async function sendHRAlert(type, to, data){
       </div>
     </div>`;
   try{
-    const result = await sendEmail({to: recipients, subject: c.subject, html});
+    // The context labels the audit line sendEmail writes. Without it every HR
+    // alert was logged as a bare "Email → …" and could not be told apart.
+    const result = await sendEmail({to: recipients, subject: c.subject, html,
+                                    context: context || ('HR alert — ' + type)});
     console.log('HR alert sent:', type, result);
     return result;
   } catch(e){
     console.error('HR alert send failed:', type, e);
   }
+}
+
+// True when this company has somewhere to send HR alerts: an alert address,
+// the HR email, or an active HR/admin login with an email.
+function _companyHasHrAddress(cs){
+  cs = cs || getSettings();
+  const hasAt = v => String(v||'').split(',').some(e=>e.trim().includes('@'));
+  if(hasAt(cs.alertEmails) || hasAt(cs.hrEmail)) return true;
+  return (_userCache||[]).some(u=>(u.role==='admin'||u.role==='hr') && u.active!==false && hasAt(u.email));
+}
+
+// Company Settings warning. Without an address, notices of managers'
+// attendance corrections were skipped with no trace -- six of the nine
+// companies had none set in November 2026.
+function _renderHrEmailWarning(cs){
+  const anchor = document.getElementById('settings-hr-alert-emails') || document.getElementById('settings-hr-email');
+  if(!anchor || !anchor.parentNode) return;
+  let w = document.getElementById('settings-hr-email-warn');
+  if(_companyHasHrAddress(cs)){ if(w) w.remove(); return; }
+  if(!w){
+    w = document.createElement('div');
+    w.id = 'settings-hr-email-warn';
+    w.style.cssText = 'margin-top:6px;padding:8px 10px;border-radius:6px;background:#fef2f2;'+
+                      'color:#991b1b;font-size:12px;border:1px solid #fecaca';
+    anchor.parentNode.insertBefore(w, anchor.nextSibling);
+  }
+  w.textContent = 'No HR email is set for this company, so HR is not told when a manager '+
+                  'corrects attendance. Add an address under HR email or HR alert emails.';
 }
 
 // Get HR email addresses (returns array)
@@ -20575,7 +20608,8 @@ function getHREmails(){
   // HR contact email
   if(cs.hrEmail&&!emails.includes(cs.hrEmail)) emails.push(cs.hrEmail);
   // Admin and HR users with emails
-  _userCache.filter(u=>u.role==='admin'||u.role==='hr').forEach(u=>{
+  // Active accounts only: a deactivated HR or admin login kept receiving alerts.
+  _userCache.filter(u=>(u.role==='admin'||u.role==='hr') && u.active!==false).forEach(u=>{
     if(u.email&&!emails.includes(u.email)) emails.push(u.email);
   });
   return emails.length ? emails : null;
@@ -20660,7 +20694,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION='1780761247';
+const _APP_VERSION='1780761248';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -22803,6 +22837,10 @@ async function anomalySaveNote(recId, idx, empId, type, date){
   try{
     await _sb.from('attendance').update({ notes: note }).eq('id', recId);
     toast('Note saved.','success');
+    const _nRec = (_attendance||[]).find(r=>String(r.id)===String(recId))
+               || S.get('attendance',[]).find(r=>String(r.id)===String(recId));
+    if(_nRec) notifyHROfAttendanceEdit(Object.assign({}, _nRec, {notes: note}),
+      'added a note ("'+note.slice(0,80)+'") to').catch(()=>{});
   } catch(e){
     // Save to local cache
     const rec = (_attendance||[]).find(r=>String(r.id)===String(recId));
@@ -22861,18 +22899,25 @@ function closeAttModal(){ stopQRScanner(); const m=document.getElementById('att-
 async function manualClockOut(recId){
   const rec=_attendance.find(r=>String(r.id)===String(recId));if(!rec)return;
   rec.clockOut=new Date().toISOString();rec.durationMinutes=calcDuration(rec.clockIn,rec.clockOut);
-  showLoader('Saving...');await dbSaveAttendance(rec);hideLoader();await renderAttendance();
+  showLoader('Saving...');await dbSaveAttendance(rec);hideLoader();
+  notifyHROfAttendanceEdit(rec,'clocked out').catch(()=>{});
+  await renderAttendance();
   toast('Clocked out. '+fmtDuration(rec.durationMinutes)+' recorded.','success');
 }
 
 async function deleteAttRecord(recId){
   if(!confirm('Delete this attendance record?'))return;
+  // Kept before it is removed, so HR can be told what was deleted.
+  const _delRec = _attendance.find(r=>String(r.id)===String(recId))
+               || S.get('attendance',[]).find(r=>String(r.id)===String(recId));
   _attendance=_attendance.filter(r=>String(r.id)!==String(recId));
   _attTodayRemove(recId);
   const local=S.get('attendance',[]).filter(r=>String(r.id)!==String(recId));
   S.set('attendance',local);
   if(sbReady())try{await _sb.from('attendance').delete().eq('id',recId);}catch(e){}
-  if(CU) dbAddAudit(CU.name,'Deleted attendance record ID '+recId).catch(()=>{});
+  if(CU) dbAddAudit(CU.name,'Deleted attendance record ID '+recId+
+    (_delRec?(' for '+(gE(_delRec.empId)?.name||_delRec.empId)+' on '+_delRec.date):'')).catch(()=>{});
+  if(_delRec) notifyHROfAttendanceEdit(_delRec,'deleted').catch(()=>{});
   await renderAttendance();toast('Record deleted.','info');
 }
 
@@ -26675,6 +26720,7 @@ async function anomalyClockOut(recId, rowIdx){
   hideLoader();
   toast('Clock-out set: '+fmtTime(rec.clockOut)+' ('+fmtDuration(rec.durationMinutes)+')','success');
   dbAddAudit(CU.name,'Anomaly fix: set clock-out for '+gE(rec.empId)?.name+' on '+rec.date);
+  notifyHROfAttendanceEdit(rec,'set the clock-out on').catch(()=>{});
   runAnomalyCheck(); // refresh
 }
 
@@ -26716,6 +26762,7 @@ async function anomalyAddRecord(empId, date, rowIdx){
   S.set('attendance', local);
   toast('Record added for '+emp?.name+'.','success');
   dbAddAudit(CU.name,'Anomaly fix: added attendance record for '+(emp?.name||empId)+' on '+date);
+  notifyHROfAttendanceEdit(saved||rec,'added a record to').catch(()=>{});
   runAnomalyCheck();
 }
 
@@ -26928,6 +26975,7 @@ async function addAttRecordFromReview(empId, reviewIdx){
     hideLoader();
     toast('Record added.','success');
     dbAddAudit(CU.name,'Added attendance record for '+(gE(empId)?.name||empId)+' on '+date);
+    notifyHROfAttendanceEdit(saved||newRec,'added a record to').catch(()=>{});
     await refreshReviewRowDB(reviewIdx);
     openAttendanceEditModal(empId, window._attEditFrom, window._attEditTo, reviewIdx);
   } catch(e){
@@ -26938,6 +26986,7 @@ async function addAttRecordFromReview(empId, reviewIdx){
 
 async function deleteAttRecordFromReview(recId, empId, dateFrom, dateTo, reviewIdx){
   if(!confirm('Delete this attendance record?')) return;
+  const _delRec = (_attendance||[]).find(r=>String(r.id)===String(recId));
   showLoader('Deleting…');
   try{
     if(sbReady()) await _sb.from('attendance').delete().eq('id', recId);
@@ -26945,6 +26994,7 @@ async function deleteAttRecordFromReview(recId, empId, dateFrom, dateTo, reviewI
     const local = S.get('attendance',[]).filter(r=>String(r.id)!==String(recId));
     S.set('attendance', local);
     if(CU) dbAddAudit(CU.name,'Deleted attendance record ID '+recId+' for emp '+empId).catch(()=>{});
+    if(_delRec) notifyHROfAttendanceEdit(_delRec,'deleted').catch(()=>{});
     hideLoader();
     toast('Record deleted.','success');
     await refreshReviewRowDB(reviewIdx);
@@ -26968,6 +27018,7 @@ async function quickClockOut(recId, reviewIdx){
     const idx = _attendance.findIndex(r=>String(r.id)===String(recId));
     if(idx>=0) _attendance[idx] = saved||rec;
     _attTodayUpsert(saved||rec);
+    notifyHROfAttendanceEdit(saved||rec,'set the clock-out on').catch(()=>{});
     hideLoader();
     toast('Clock-out set to '+settings.workEnd+'.','success');
     await refreshReviewRowDB(reviewIdx);
@@ -28313,6 +28364,7 @@ async function quickFixAnomalies(idx){
           const saved = await dbSaveAttendance(rec);
           const i = _attendance.findIndex(r=>String(r.id)===String(rec.id));
           if(i>=0) _attendance[i] = saved||rec;
+          notifyHROfAttendanceEdit(saved||rec,'set the clock-out on').catch(()=>{});
           fixed++;
         } catch(e){ console.error('quickFix error:',e); skipped++; }
       }
@@ -29862,8 +29914,15 @@ async function applyManualLeaveChange(rec, wasKind, nowKind, type, half){
 async function notifyHROfAttendanceEdit(rec, action, leaveNote){
   try{
     if(CU?.role==='admin' || CU?.role==='hr') return;
+    const who  = gE(rec.empId)?.name || rec.empId;
+    const ctx  = 'HR alert — attendance ' + action + ' for ' + who + ' (' + rec.date + ')';
     const to = getHREmails();
-    if(!to) return;
+    if(!to){
+      // Was a silent return: HR was never told and nothing recorded why.
+      dbAddAudit(CU?.name || 'SolentraHR',
+        ctx + ' — NOT SENT: no HR email set in Company Settings').catch(()=>{});
+      return;
+    }
     await sendHRAlert('attendance_edited', to, {
       employeeName: gE(rec.empId)?.name || rec.empId,
       dept:         gE(rec.empId)?.dept || '',
@@ -29874,7 +29933,7 @@ async function notifyHROfAttendanceEdit(rec, action, leaveNote){
       location:     rec.location || '',
       leaveEffect:  leaveNote || '',
       editedBy:     CU?.name || '',
-    });
+    }, ctx);
   } catch(e){ console.warn('HR attendance notice failed:', e); }
 }
 
