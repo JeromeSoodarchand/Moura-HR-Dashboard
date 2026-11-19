@@ -13635,8 +13635,13 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
                   <select class="fs" id="settings-ot-basis" onchange="toggleOTThresholdRow()">
                     <option value="midnight">Calendar day &mdash; overtime starts after midnight</option>
                     <option value="daily">Daily threshold &mdash; overtime starts past N hours in the day</option>
+                    <option value="weekly">Weekly &mdash; overtime starts past N hours Monday to Sunday</option>
                   </select>
                   <div style="font-size:11px;color:var(--text3);margin-top:3px">This setting is per company.</div>
+                </div>
+                <div class="fg" id="ot-weekly-threshold-row" style="display:none"><label class="fl">Weekly threshold (hours)</label>
+                  <input class="fi" id="settings-ot-weekly-threshold" type="number" min="1" max="84" step="0.5" value="45">
+                  <div style="font-size:11px;color:var(--text3);margin-top:3px">Weekday and Saturday hours, Monday to Sunday.</div>
                 </div>
                 <div class="fg" id="ot-threshold-row" style="display:none"><label class="fl">Daily threshold (hours)</label>
                   <input class="fi" id="settings-ot-daily-threshold" type="number" min="1" max="24" step="0.5" value="8">
@@ -13649,7 +13654,10 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
                 Suits a fixed day/night roster.<br>
                 <b style="color:var(--text2)">Daily threshold</b> &mdash; the day's hours are added up across every clock-in and
                 clock-out, and anything past the threshold is overtime. Suits a 24/7 operation where
-                shifts start at any hour and a day may be split into several.
+                shifts start at any hour and a day may be split into several.<br>
+                <b style="color:var(--text2)">Weekly</b> &mdash; weekday and Saturday hours are added up Monday to Sunday and
+                anything past the weekly threshold is overtime at 1.5. Sunday and public-holiday hours are paid
+                2.0 for the first 8 hours of the day and 3.0 after, outside the weekly count.
                 Sunday and public-holiday multipliers apply under both.
               </div>
               <div style="margin-top:14px;padding:10px 12px;background:var(--bg2);border-radius:var(--radius);border:1px solid var(--border)">
@@ -19408,7 +19416,9 @@ function renderSettings(){
   if(owdEl) owdEl.value = cs.otWeekend || 2.0;
   if(ohdEl) ohdEl.value = cs.otHoliday || 2.5;
   const basisEl = document.getElementById('settings-ot-basis');
-  if(basisEl) basisEl.value = (cs.otBasis === 'daily') ? 'daily' : 'midnight';
+  if(basisEl) basisEl.value = ['daily','weekly'].includes(cs.otBasis) ? cs.otBasis : 'midnight';
+  const wthrEl = document.getElementById('settings-ot-weekly-threshold');
+  if(wthrEl) wthrEl.value = otWeeklyThresholdHours(cs);
   const thrEl = document.getElementById('settings-ot-daily-threshold');
   if(thrEl) thrEl.value = otDailyThresholdHours(cs);
   toggleOTThresholdRow();
@@ -20694,7 +20704,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION='1780761248';
+const _APP_VERSION='1780761249';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -27065,6 +27075,8 @@ function toggleOTThresholdRow(){
   const sel = document.getElementById('settings-ot-basis');
   const row = document.getElementById('ot-threshold-row');
   if(row) row.style.display = (sel && sel.value === 'daily') ? '' : 'none';
+  const wrow = document.getElementById('ot-weekly-threshold-row');
+  if(wrow) wrow.style.display = (sel && sel.value === 'weekly') ? '' : 'none';
 }
 
 function saveWorkingHoursSettings(){
@@ -27077,7 +27089,12 @@ function saveWorkingHoursSettings(){
   cs.otWeekend  = parseFloat(document.getElementById('settings-ot-weekend')?.value) || 2.0;
   cs.otHoliday  = parseFloat(document.getElementById('settings-ot-holiday')?.value) || 2.5;
   const basisSel = document.getElementById('settings-ot-basis');
-  if(basisSel) cs.otBasis = (basisSel.value === 'daily') ? 'daily' : 'midnight';
+  if(basisSel) cs.otBasis = ['daily','weekly'].includes(basisSel.value) ? basisSel.value : 'midnight';
+  const wIn = document.getElementById('settings-ot-weekly-threshold');
+  if(wIn){
+    const n = parseFloat(wIn.value);
+    cs.otWeeklyThreshold = (wIn.value === '' || isNaN(n) || n <= 0) ? 45 : n;
+  }
   // Explicit null check -- a blank field must not become a zero threshold,
   // which would make every hour of the day overtime.
   const thrIn = document.getElementById('settings-ot-daily-threshold');
@@ -27090,7 +27107,7 @@ function saveWorkingHoursSettings(){
   S.set('companySettings', cs);
   // Also persist to Supabase for each key
   if(sbReady()){
-    ['workStart','workEnd','workHours','workDays','otWeekday','otWeekend','otHoliday','otShiftRules','otBasis','otDailyThreshold'].forEach(k=>{
+    ['workStart','workEnd','workHours','workDays','otWeekday','otWeekend','otHoliday','otShiftRules','otBasis','otDailyThreshold','otWeeklyThreshold'].forEach(k=>{
       dbSetSetting(k, JSON.stringify(cs[k])).catch(()=>{});
     });
   }
@@ -27620,7 +27637,29 @@ function calcOTMins(rec, settings){
 function otBasis(settings){
   const v = (settings && settings.otBasis !== undefined && settings.otBasis !== null && settings.otBasis !== '')
     ? settings.otBasis : getSettings().otBasis;
-  return v === 'daily' ? 'daily' : 'midnight';
+  return v === 'daily' ? 'daily' : (v === 'weekly' ? 'weekly' : 'midnight');
+}
+
+// Hours in a Monday-Sunday week before ordinary (weekday and Saturday) hours
+// become overtime, under the 'weekly' basis. 45 is the Mauritius statutory week.
+function otWeeklyThresholdHours(settings){
+  const raw = (settings && settings.otWeeklyThreshold !== undefined && settings.otWeeklyThreshold !== null && settings.otWeeklyThreshold !== '')
+    ? settings.otWeeklyThreshold : getSettings().otWeeklyThreshold;
+  const n = parseFloat(raw);
+  return (raw === null || raw === undefined || raw === '' || isNaN(n) || n <= 0) ? 45 : n;
+}
+
+// Monday of the week a date falls in, as YYYY-MM-DD (local date parts).
+function otWeekStart(dateStr){
+  const d = new Date(dateStr+'T00:00:00');
+  const back = (d.getDay() + 6) % 7;            // Mon=0 .. Sun=6
+  d.setDate(d.getDate() - back);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function otWeekEnd(dateStr){
+  const d = new Date(otWeekStart(dateStr)+'T00:00:00');
+  d.setDate(d.getDate() + 6);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 
 // Hours past which a day's cumulative work becomes overtime, under the 'daily'
@@ -27639,10 +27678,82 @@ function otDailyThresholdHours(settings){
 // applies to the hours accumulated across the whole day, so the day has to be
 // assembled first. Returns totals plus a per-date breakdown in the same shape
 // the OT report and payroll already consume.
-function calcOvertimeForEmployee(records, settings){
+function calcOvertimeForEmployee(records, settings, opts){
   const out = { otMins:0, normalMins:0, workedMins:0, weightedMins:0, byDate:{} };
   const recs = (records||[]).filter(r=>r && r.clockIn && r.clockOut);
   if(!recs.length) return out;
+
+  // ── Weekly basis (MTI Meet & Greet and SCO, confirmed by HR Nov 2026) ──
+  // Each shift is split at midnight and every hour belongs to its calendar day.
+  //   * Sunday and public-holiday hours: the first 8 of each shift's part on
+  //     that day at 2.0, the rest at 3.0 -- per shift, as HR's sheet does (a
+  //     Saturday-night shift's 8h30 into Sunday is 8h + 0.5h at 3.0, and that
+  //     evening's 7h shift is all 2.0). They are paid at these rates whatever
+  //     the week's total and do not count toward the 45.
+  //   * Weekday and Saturday hours are added up Monday to Sunday; hours above
+  //     the weekly threshold (45) are overtime at 1.5. The excess is placed on
+  //     the latest days of the week -- the hours that took it over 45.
+  // No lunch is deducted (HR's sheet counts 08:30-17:00 as 8h30).
+  // A week is only judged with all its days in hand, so callers pass the full
+  // Monday-Sunday span of records; opts.from / opts.to then limit which dates
+  // are reported, so an hour's overtime is counted in exactly one period.
+  if(otBasis(settings) === 'weekly'){
+    const thrMins  = Math.round(otWeeklyThresholdHours(settings) * 60);
+    const premThr  = OT_RULES_MU.sundayThresholdHours * 60;
+    const mins = {}, locs = {}, prem = {};
+    recs.forEach(rec=>{
+      splitShiftAtMidnight(rec.clockIn, rec.clockOut).forEach(sg=>{
+        mins[sg.date] = (mins[sg.date]||0) + sg.minutes;
+        if(otDayType(sg.date) !== 'weekday') (prem[sg.date] = prem[sg.date] || []).push(sg.minutes);
+        if(!locs[sg.date] && rec.location) locs[sg.date] = rec.location;
+      });
+    });
+    const weeks = {};
+    Object.keys(mins).sort().forEach(d=>{ (weeks[otWeekStart(d)] = weeks[otWeekStart(d)] || []).push(d); });
+    const day = {};
+    Object.keys(weeks).sort().forEach(wk=>{
+      const dates = weeks[wk];
+      const ordinary = dates.filter(d=>otDayType(d)==='weekday');
+      let excess = Math.max(0, ordinary.reduce((t,d)=>t+mins[d],0) - thrMins);
+      const overOn = {};
+      ordinary.slice().reverse().forEach(d=>{
+        if(excess<=0) return;
+        const take = Math.min(excess, mins[d]);
+        overOn[d] = take; excess -= take;
+      });
+      dates.forEach(d=>{
+        const type = otDayType(d), worked = mins[d], segs = [];
+        if(type === 'weekday'){
+          const over = overOn[d]||0, normal = worked - over;
+          if(normal) segs.push({date:d, minutes:normal, kind:'normal',   type, rate:OT_RULES_MU.normal.weekday});
+          if(over)   segs.push({date:d, minutes:over,   kind:'overtime', type, rate:OT_RULES_MU.overtime.weekday});
+        } else {
+          let first = 0, rest = 0;
+          (prem[d]||[]).forEach(m=>{ first += Math.min(m, premThr); rest += Math.max(0, m - premThr); });
+          if(first) segs.push({date:d, minutes:first, kind:'overtime', type, rate:OT_RULES_MU.normal[type]});
+          if(rest)  segs.push({date:d, minutes:rest,  kind:'overtime', type, rate:OT_RULES_MU.sundayBeyondThreshold});
+        }
+        day[d] = {type, worked, segs};
+      });
+    });
+    const from = opts && opts.from, to = opts && opts.to;
+    Object.keys(day).sort().forEach(d=>{
+      if((from && d < from) || (to && d > to)) return;
+      const v = day[d];
+      let n = 0, o = 0, w = 0, ow = 0;
+      v.segs.forEach(sg=>{
+        w += sg.minutes * sg.rate;
+        if(sg.kind === 'normal') n += sg.minutes; else { o += sg.minutes; ow += sg.minutes * sg.rate; }
+      });
+      out.normalMins += n; out.otMins += o; out.workedMins += v.worked; out.weightedMins += w;
+      // rate = the day's average overtime rate, so callers that price a day as
+      // otMins x rate (the report and both payroll runs) get 2.0 and 3.0 right.
+      out.byDate[d] = { workedMins:v.worked, normalMins:n, otMins:o, type:v.type,
+                        rate: o ? ow/o : OT_RULES_MU.overtime.weekday,
+                        location:locs[d]||'', segments:v.segs };
+    });
+    return out;
+  }
 
   if(otBasis(settings) === 'daily'){
     const thrMins = Math.round(otDailyThresholdHours(settings) * 60);
@@ -27721,8 +27832,14 @@ async function runOvertimeReport(){
   let emps = getScopedEmps().filter(e=>e.status!=='offboarded'&&e.otEligible&&(!deptF||e.dept===deptF));
 
   // Fetch attendance — filter by scoped employee IDs
+  // Under the weekly basis a week is judged with all seven days in hand, so
+  // fetch from the Monday before the period to the Sunday after it. The engine
+  // then reports only the dates inside the period.
+  const _weekly = otBasis(settings) === 'weekly';
+  const _fetchFrom = _weekly ? otWeekStart(from) : from;
+  const _fetchTo   = _weekly ? otWeekEnd(to)     : to;
   let recs = [];
-  try{ recs = await dbGetAttendance(from, to); } catch(e){ recs = S.get('attendance',[]).filter(r=>r.date>=from&&r.date<=to); }
+  try{ recs = await dbGetAttendance(_fetchFrom, _fetchTo); } catch(e){ recs = S.get('attendance',[]).filter(r=>r.date>=_fetchFrom&&r.date<=_fetchTo); }
 
   // Filter records to scoped employees only
   const scopedEmpIds = new Set(emps.flatMap(e=>[String(e.id), e.userId?String(e.userId):''].filter(Boolean)));
@@ -27767,9 +27884,14 @@ async function runOvertimeReport(){
     // Employee-level: under the daily basis the threshold applies to the day's
     // cumulative hours, so every record has to be in hand before overtime can
     // be worked out. Under the midnight basis this is still record by record.
-    const _pay = calcOvertimeForEmployee(dedupedRecs, settings);
+    const _pay = calcOvertimeForEmployee(dedupedRecs, settings, {from, to});
     const totalRegMins = _pay.normalMins;
     const totalOTMins  = _pay.otMins;
+    // Overtime minutes by multiplier (1.5 / 2 / 3), the columns HR's sheet uses.
+    const rateMins = {};
+    Object.values(_pay.byDate).forEach(v=>(v.segments||[]).forEach(sg=>{
+      if(sg.kind==='overtime' && sg.rate) rateMins[sg.rate] = (rateMins[sg.rate]||0) + sg.minutes;
+    }));
     const dayBreakdown = {};
     Object.keys(_pay.byDate).forEach(d=>{
       const v = _pay.byDate[d];
@@ -27788,7 +27910,7 @@ async function runOvertimeReport(){
     const dailyRate    = annualSalary > 0 ? annualSalary / (52 * workDaysPerWeek) : 0;
     const hourlyRate   = dailyRate > 0 ? dailyRate / settings.workHours : 0;
 
-    return { emp, totalRegMins, totalOTMins, hourlyRate, dailyRate, currency, dayBreakdown, annualSalary };
+    return { emp, totalRegMins, totalOTMins, hourlyRate, dailyRate, currency, dayBreakdown, annualSalary, rateMins };
   }).filter(e=>e.totalOTMins>0 || e.totalRegMins>0);
 
   // Check for unmatched attendance records (empId not found in any employee)
@@ -27862,8 +27984,16 @@ function renderOTReportTable(rows, settings, from, to, unmatched){
       const otH = row.totalOTMins/60;
       const hourlyRate = row.hourlyRate;
       const dailyRate  = row.dailyRate;
-      const mult = settings.otWeekday;
+      // Average multiplier across the row's overtime, so Sunday and holiday
+      // hours at 2.0 / 3.0 are priced at their own rate. This used to apply the
+      // weekday rate (1.5) to every overtime hour.
+      const _rm = row.rateMins || {};
+      const _rmTot = Object.values(_rm).reduce((a,b)=>a+b,0);
+      const mult = _rmTot ? Math.round(Object.entries(_rm).reduce((a,[r,m])=>a+parseFloat(r)*m,0)/_rmTot*100)/100
+                          : (settings.otWeekday||1.5);
       const otPay = otH * hourlyRate * mult;
+      const _rmHtml = Object.keys(_rm).sort((a,b)=>parseFloat(a)-parseFloat(b)).map(r=>
+        '<div style="font-size:10.5px;color:var(--text3);font-weight:500">'+parseFloat(r)+'× '+fmtDuration(_rm[r])+'</div>').join('');
       // Store defaults for recalc
       row.overrideRate = hourlyRate;
       row.overrideMult = mult;
@@ -27886,6 +28016,7 @@ function renderOTReportTable(rows, settings, from, to, unmatched){
         '<td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--text2)">'+fmtDuration(row.totalRegMins)+'</td>'+
         '<td style="padding:10px 12px;text-align:right;font-weight:700;color:'+(row.totalOTMins>0?'var(--amber)':'var(--text3)')+'">'+
           (row.totalOTMins>0?fmtDuration(row.totalOTMins):'—')+
+          (Object.keys(_rm).length>1 || (Object.keys(_rm)[0] && parseFloat(Object.keys(_rm)[0])!==1.5) ? _rmHtml : '')+
         '</td>'+
         '<td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--text2)">'+
           (dailyRate>0?fCur(dailyRate,row.currency)+'<div style="font-size:10px;color:var(--text3)">per day</div>':'<span style="color:var(--text3)">No salary</span>')+
