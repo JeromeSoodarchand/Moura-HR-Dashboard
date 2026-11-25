@@ -20704,7 +20704,7 @@ function copyInviteMessage(){
 
 
 // Cache bust — force reload once if version mismatch
-const _APP_VERSION='1780761249';
+const _APP_VERSION='1780761250';
 const _storedVersion = localStorage.getItem('pdhr_app_version');
 if(_storedVersion && _storedVersion !== _APP_VERSION && !sessionStorage.getItem('_reloaded')){
   sessionStorage.setItem('_reloaded','1');
@@ -28068,23 +28068,34 @@ function exportOvertimeCSV(){
   const settings = getOTSettings();
   const from = document.getElementById('ot-date-from')?.value||'';
   const to   = document.getElementById('ot-date-to')?.value||'';
-  const rows = [['Employee','Department','Period','Regular Hours','OT Hours','Hourly Rate','OT Multiplier','OT Pay (est.)','Currency','OT Days']];
+  // One column per overtime multiplier (1.5 / 2.0 / 3.0, plus any other rate
+  // that appears), so HR gets the same split the screen shows.
+  const _rates = new Set(['1.5','2','3']);
+  _otData.forEach(row=>Object.keys(row.rateMins||{}).forEach(r=>_rates.add(String(parseFloat(r)))));
+  const rateCols = Array.from(_rates).sort((a,b)=>parseFloat(a)-parseFloat(b));
+  const rows = [['Employee','Department','Period','Regular Hours','OT Hours']
+    .concat(rateCols.map(r=>'OT Hours at '+parseFloat(r).toFixed(1)+'x'))
+    .concat(['Hourly Rate','OT Multiplier (average)','OT Pay (est.)','Currency','OT Days'])];
   _otData.forEach((row,idx)=>{
     const rate = row.overrideRate ?? row.hourlyRate;
     const mult = row.overrideMult ?? settings.otWeekday;
     const otPay = row.calculatedPay ?? (row.totalOTMins/60*rate*mult);
     const otDays = Object.keys(row.dayBreakdown).join(', ');
+    const _rm = {};
+    Object.entries(row.rateMins||{}).forEach(([r,m])=>{ const k=String(parseFloat(r)); _rm[k]=(_rm[k]||0)+m; });
     rows.push([
       row.emp.name, row.emp.dept||'',
       from+' to '+to,
       (row.totalRegMins/60).toFixed(2),
-      (row.totalOTMins/60).toFixed(2),
+      (row.totalOTMins/60).toFixed(2)]
+      .concat(rateCols.map(r=>((_rm[r]||0)/60).toFixed(2)))
+      .concat([
       rate.toFixed(2),
       mult.toFixed(2),
       otPay.toFixed(2),
       row.currency,
       otDays
-    ]);
+    ]));
   });
   const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a = document.createElement('a');
